@@ -1,0 +1,24 @@
+# Vite/React SPA fallback for Hostinger (Apache)
+ErrorDocument 404 /index.html
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Serve existing files directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Fallback all other routes to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Basic caching for static assets in /assets (adjust paths if needed)
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/javascript "access plus 7 days"
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
+  ExpiresByType image/webp "access plus 30 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+</IfModule>

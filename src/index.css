@@ -1,0 +1,339 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Sistema de Temas - CSS Custom Properties */
+:root {
+  /* Tema Escuro (padrão) */
+  --bg-primary: #0a0a0a;      /* gray-950 */
+  --bg-secondary: #111827;     /* gray-900 */
+  --bg-tertiary: #1f2937;     /* gray-800 */
+  --bg-card: #374151;         /* gray-700 */
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;   /* gray-400 */
+  --text-muted: #6b7280;      /* gray-500 */
+  --border-primary: #374151;   /* gray-700 */
+  --border-secondary: #4b5563; /* gray-600 */
+  
+  /* Cores de acento (mantidas entre temas) */
+  --accent-blue: #3b82f6;     /* blue-600 */
+  --accent-purple: #9333ea;   /* purple-600 */
+  --success: #10b981;         /* emerald-500 */
+  --warning: #f59e0b;         /* amber-500 */
+  --error: #ef4444;           /* red-500 */
+  
+  /* Cor primária dinâmica (controlada pelo ThemeProvider) */
+  --primary-color: #3b82f6;
+  --primary-color-hover: #2563eb;
+  --primary-color-light: rgba(59, 130, 246, 0.1);
+}
+
+/* Tema Claro */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;     /* gray-50 */
+  --bg-tertiary: #f3f4f6;     /* gray-100 */
+  --bg-card: #ffffff;
+  --text-primary: #111827;     /* gray-900 */
+  --text-secondary: #6b7280;   /* gray-500 */
+  --text-muted: #9ca3af;      /* gray-400 */
+  --border-primary: #e5e7eb;   /* gray-200 */
+  --border-secondary: #d1d5db; /* gray-300 */
+}
+
+/* Classes utilitárias para o sistema de temas */
+.bg-theme-primary { background-color: var(--bg-primary); }
+.bg-theme-secondary { background-color: var(--bg-secondary); }
+.bg-theme-tertiary { background-color: var(--bg-tertiary); }
+.bg-theme-card { background-color: var(--bg-card); }
+
+.text-theme-primary { color: var(--text-primary); }
+.text-theme-secondary { color: var(--text-secondary); }
+.text-theme-muted { color: var(--text-muted); }
+
+.border-theme-primary { border-color: var(--border-primary); }
+.border-theme-secondary { border-color: var(--border-secondary); }
+
+.bg-primary-color { background-color: var(--primary-color); }
+.text-primary-color { color: var(--primary-color); }
+.border-primary-color { border-color: var(--primary-color); }
+
+/* Hover states com cor primária */
+.hover\:bg-primary-color:hover { background-color: var(--primary-color-hover); }
+.hover\:bg-primary-light:hover { background-color: var(--primary-color-light); }
+
+/* Animações personalizadas */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+/* Regras para contenção de scroll e isolamento */
+@layer base {
+  /* Garantir que o body não tenha scroll horizontal */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Contenção de elementos para melhor performance e isolamento */
+  .kanban-container {
+    contain: layout style paint;
+    isolation: isolate;
+  }
+  
+  .kanban-column {
+    contain: layout style;
+  }
+  
+  .kanban-scroll {
+    contain: strict;
+    transform: translateZ(0); /* Force hardware acceleration */
+  }
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* React PDF Styles */
+.react-pdf__Page {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  margin: 1rem;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-pdf__Page__canvas {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.react-pdf__Document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.react-pdf__Page__textContent {
+  display: none;
+}
+
+.react-pdf__Page__annotations {
+  display: none;
+}
+
+/* Custom Scrollbar Styles */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(75 85 99) rgb(31 41 55);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgb(31 41 55);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(75 85 99);
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(107 114 128);
+}
+
+/* Scrollbar para modal de imóvel */
+.property-modal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(75 85 99) transparent;
+}
+
+.property-modal-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.property-modal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.property-modal-scroll::-webkit-scrollbar-thumb {
+  background: rgb(75 85 99);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: all 0.2s ease;
+}
+
+.property-modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(107 114 128);
+  background-clip: content-box;
+}
+
+/* Correções de Z-Index para Modais e Dropdowns */
+.modal-overlay {
+  z-index: 9998 !important;
+}
+
+.modal-content {
+  z-index: 9999 !important;
+}
+
+/* Garantir que dropdowns apareçam acima dos modais */
+[data-radix-popper-content-wrapper] {
+  z-index: 10000 !important;
+}
+
+[data-radix-select-content] {
+  z-index: 10000 !important;
+}
+
+[data-radix-popover-content] {
+  z-index: 10000 !important;
+}
+
+[data-radix-command-list] {
+  z-index: 10000 !important;
+}
+
+/* Correção específica para o PopoverContent */
+[data-radix-popover-content] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Correção para SelectContent */
+[data-radix-select-content] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Correção para Command */
+[data-radix-command-list] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Garantir que o modal tenha z-index alto */
+[data-radix-dialog-content] {
+  z-index: 9999 !important;
+}
+
+/* Correção para o backdrop do modal */
+[data-radix-dialog-overlay] {
+  z-index: 9998 !important;
+}

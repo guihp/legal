@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-build:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: true
+      - name: Lint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+
+  types-gen-check:
+    name: Types Generation Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: true
+      - name: Type check
+        run: |
+          pnpm -s tsc -p tsconfig.json --noEmit
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          auditOn: push
+          generateSarif: true
+          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+          config: >
+            p/ci
+
+  rls-verify:
+    name: Verify RLS & SQL
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations (dry-run like)
+        run: |
+          for f in $(ls -1 supabase/migrations/*.sql | sort); do
+            echo "Applying $f";
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f" >/dev/null;
+          done
+      - name: Run RLS tests
+        run: |
+          for f in $(ls -1 *verify_access_levels.sql *test_*.sql 2>/dev/null || true); do
+            echo "Running $f";
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f";
+          done
+
+  require-all:
+    name: Require All
+    needs: [lint-build, types-gen-check, semgrep, rls-verify]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All required jobs passed."

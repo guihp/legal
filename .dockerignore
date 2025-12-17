@@ -1,0 +1,64 @@
+# Dependências
+node_modules
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# Build output (será gerado no container)
+dist
+build
+.next
+out
+
+# Arquivos de ambiente locais
+.env
+.env.local
+.env.*.local
+
+# IDE e editores
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentação
+*.md
+!README.md
+docs/
+
+# Scripts de desenvolvimento e teste
+scripts/
+test-*.js
+debug-*.js
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Supabase local (se houver)
+supabase/.temp
+supabase/.branches
+
+# Logs
+logs
+*.log
+
+# Arquivos temporários
+tmp
+temp
+.cache
+
+# CI/CD
+.github
+
+# Outros
+coverage
+.nyc_output
+

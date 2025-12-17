@@ -1,0 +1,406 @@
+---
+alwaysApply: false
+---
+
+## Project Rule — Gráficos (MUI X Charts) v8
+
+- **Contexto**: Este documento padroniza o uso de gráficos no `dark-estate-dashboard` com **MUI X Charts v8** (SVG + D3). Cobre escolha de pacote, instalação, composição, performance, acessibilidade, tema, exportação e migração.
+- **Escopo**: Aplicável a todos os gráficos no painel (KPIs, listas, dashboards, CRM, WhatsApp, agenda, funis, etc.).
+- **Referência principal**: [MUI X Charts](https://mui.com/x/react-charts/)
+
+### 1) Biblioteca e versões
+- **Pacotes**:
+  - Community (MIT): `@mui/x-charts`
+  - Pro (licença comercial): funcionalidades avançadas como zoom/pan e export nativas
+- **Peer deps mínimos**:
+  - `@mui/material`: ^5.15.14 | ^6 | ^7
+  - `react`/`react-dom`: ^17 | ^18 | ^19
+- **Justificativa**: Integração nativa com MUI (tema, tipografia, RTL, A11y), composição granular, API consistente e manutenção ativa.
+
+### 2) Instalação e setup
+- **Instalar Material (peer deps)**:
+```bash
+pnpm add @mui/material @emotion/react @emotion/styled
+```
+- **Instalar Charts**:
+```bash
+pnpm add @mui/x-charts
+```
+- (Opcional Pro)
+```bash
+# usar somente se precisarmos de zoom/pan/export avançado
+pnpm add @mui/x-charts-pro
+# export como imagem pode precisar de rasterizehtml
+pnpm add rasterizehtml
+```
+- **Tipos e tema** (habilitar overrides de tema dos charts):
+```ts
+import type {} from '@mui/x-charts/themeAugmentation';
+```
+
+### 3) Diretrizes de uso (Community vs Pro)
+- **Use Community** quando:
+  - KPIs simples (Bar/Line/Pie/Scatter/Sparkline/Gauge)
+  - Tooltips/Legendas/Highlighting/Stacking/Styling básicos
+- **Use Pro** quando:
+  - Necessário **Zoom/Pan**, **Export (toolbar ou API)**, múltiplos eixos avançados, heatmap grande com navegação
+  - Requisitos de impressão/relatórios com export programático (`apiRef.exportAsPrint/exportAsImage`)
+- **Critério**: se o requisito não for estritamente necessário, preferir Community.
+
+### 4) Padrão de composição
+- Para casos simples, use componentes prontos (`BarChart`, `LineChart`, `PieChart`, etc.).
+- Para customizações finas, use **ChartContainer** + plots.
+```tsx
+import { ChartContainer } from '@mui/x-charts/ChartContainer';
+import { BarPlot } from '@mui/x-charts/BarChart';
+import { ChartsLegend, ChartsAxis, ChartsTooltip } from '@mui/x-charts';
+
+<ChartContainer
+  series={[{ type: 'bar', data: [100, 200, 150] }]}
+  xAxis={[{ scaleType: 'band', data: ['A', 'B', 'C'] }]}
+  width={500}
+  height={300}
+>
+  <ChartsLegend direction="horizontal" />
+  <ChartsAxis />
+  <BarPlot />
+  <ChartsTooltip />
+</ChartContainer>
+```
+- Preferir `ChartContainer` (v8) em vez de `ResponsiveChartContainer` (removido).
+### 5) Eixos, escalas e migração v7→v8
+- Defina eixos via `xAxis`/`yAxis` com `position`: `'top'|'bottom'|'left'|'right'|'none'`. Não use props antigas (`topAxis`, `leftAxis`, etc.).
+- `position: 'none'` oculta o eixo mantendo escala.
+- Tipos de escala: `'band'|'point'|'linear'|'log'|'sqrt'|'time'|'utc'`.
+```tsx
+<ChartContainer
+  xAxis={[{ scaleType: 'band', data: ['A','B'], position: 'bottom' }]}
+  yAxis={[{ scaleType: 'linear', position: 'right' }]}
+  series={[{ type: 'bar', data: [10, 20] }]}
+  width={400}
+  height={240}
+>
+  <BarPlot />
+</ChartContainer>
+```
+- `ChartsXAxis/ChartsYAxis` não recebem mais `position`; configure no `xAxis/yAxis` do container.
+- Legenda: `direction` agora é `'horizontal'|'vertical'` (antes `'row'|'column'`).
+
+### 6) Acessibilidade (A11y)
+- Forneça `aria-labelledby` e `aria-valuetext` quando apropriado (ex.: `Gauge`).
+- Respeito a `prefers-reduced-motion`: use `skipAnimation` para desabilitar animações.
+```tsx
+<Gauge value={6} valueMax={12} aria-labelledby="battery_level_label" aria-valuetext="50% (6 horas) restantes" />
+```
+
+### 7) Localização (i18n)
+- Global via `ThemeProvider` com locale do pacote:
+```tsx
+import { frFR } from '@mui/x-charts/locales';
+const theme = createTheme({}, frFR);
+<ThemeProvider theme={theme}>{/* app */}</ThemeProvider>
+```
+- Escopo local via `ChartsLocalizationProvider`:
+```tsx
+import { ChartsLocalizationProvider } from '@mui/x-charts/ChartsLocalizationProvider';
+import { frFRLocaleText } from '@mui/x-charts/locales';
+<ChartsLocalizationProvider localeText={frFRLocaleText}>
+  <BarChart />
+</ChartsLocalizationProvider>
+```
+
+### 8) Tooltips e overlays
+- Para tooltips customizados: usar `slots={{ tooltip: CustomTooltip }}` nos charts simples ou incluir componente na composição.
+- Mensagens de overlay customizáveis via `localeText` (ex.: `loading`, `noData`).
+
+### 9) Performance e UX
+- Preferir **SVG + composição** com `clipPath` quando necessário limitar overflow.
+- Desabilitar animações em listas grandes ou ambientes restritos: `skipAnimation`.
+- Linhas com dados parciais: aceite `null/undefined` e avalie interpolação.
+- Usar `highlightScope` e `axisHighlight` para foco sem custo alto de re-render.
+- Para export em imagem, instalar `rasterizehtml` quando usar API de export.
+- Evitar CSS no tooltip via `sx` no chart devido a portal; estilize via slots/tema.
+
+### 10) Estilização e tema
+- Preferir `sx` e **theme augmentation** para overrides consistentes.
+```tsx
+const theme = createTheme({
+  components: {
+    MuiChartsAxis: {
+      styleOverrides: { tick: { stroke: '#006BD6' } },
+    },
+  },
+});
+```
+- Estilização por série: usar seletores `data-series`.
+```tsx
+<LineChart sx={{ '& .MuiAreaElement-root[data-series="Germany"]': { fill: "url('#myGradient')" } }} />
+```
+
+### 11) Exportação (Pro)
+- Toolbar: `slotProps={{ toolbar: { printOptions, imageExportOptions } }}`.
+- API programática via `apiRef.current.exportAsPrint()` e `exportAsImage()`.
+- Para imagem: instalar `rasterizehtml`.
+
+### 12) Padrões de escolha de gráfico
+- **Bar**: comparações categóricas; use `scaleType='band'`.
+- **Line/Area**: séries temporais; considerar `curve` (`monotoneX`, `linear`, etc.).
+- **Pie/Donut**: proporções até ~5-7 categorias.
+- **Scatter**: correlação entre duas variáveis, `trigger="item"` no tooltip.
+- **Gauge**: KPIs simples (0–100 ou com `valueMax`).
+- **Radar/Heatmap/Funnel**: use quando realmente necessários e com dados agregados/coerentes.
+
+### 13) Boas práticas de dados
+- Sempre normalizar data/hora para `time|utc` conforme necessidade.
+- Definir `valueFormatter` por eixo para ticks/tooltip consistentes.
+- Para múltiplos eixos, defina `id` e referencie corretamente.
+- Forneça `series.id` estáveis ao adicionar/remover séries dinamicamente.
+
+### 14) Checklists
+- Implementação:
+  - [ ] Escolha do tipo de gráfico adequada ao objetivo
+  - [ ] Escalas e eixos corretos (inclui `position`)
+  - [ ] A11y e i18n aplicados
+  - [ ] Performance ajustada (`skipAnimation`, highlight)
+  - [ ] Estilização via tema/`sx` (sem CSS frágil em portal)
+  - [ ] Teste visual responsivo
+- Pro (se aplicável):
+  - [ ] Export testado (print/image)
+  - [ ] `rasterizehtml` instalado
+  - [ ] Zoom/Pan validado
+
+### 15) Exemplos rápidos
+- Linha com dados parciais:
+```tsx
+<LineChart series={[{ data: [null, 2, 5, 8, 13] }]} xAxis={[{ data: [0,1,2,3,4,5] }]} />
+```
+- Composição Bar + Line:
+```tsx
+<ChartContainer
+  series={[
+    { type: 'bar', data: [1,2,3] },
+    { type: 'line', data: [3,2,1] },
+  ]}
+>
+  <BarPlot />
+  <LinePlot />
+  <ChartsLegend />
+  <ChartsTooltip />
+</ChartContainer>
+```
+
+### 16) Migração e compatibilidade
+- Remover aliases de bundles "modern".
+- Substituir `ResponsiveChartContainer` por `ChartContainer`.
+- Atualizar legend `direction` e `position` de eixos conforme v8.
+
+### 17) Roadmap interno
+- Validar necessidade de Pro para **Export** automatizado em relatórios.
+- Criar wrappers utilitários por tipo de gráfico para evitar repetição.
+- Padronizar paleta e tipografia via tema.
+
+### 18) Referências
+- Documentação oficial MUI X Charts (v8): https://mui.com/x/react-charts/
+- Snippets e APIs consultadas (docs MUI X):
+  - Quickstart, Composition, Axis, Lines, Bars, Pie, Scatter, Gauge, Tooltip, Highlighting, Localization, Export, Migration v7/v8.
+## Project Rule — Gráficos (MUI X Charts) v8
+
+- **Contexto**: Este documento padroniza o uso de gráficos no `dark-estate-dashboard` com **MUI X Charts v8** (SVG + D3). Cobre escolha de pacote, instalação, composição, performance, acessibilidade, tema, exportação e migração.
+- **Escopo**: Aplicável a todos os gráficos no painel (KPIs, listas, dashboards, CRM, WhatsApp, agenda, funis, etc.).
+- **Referência principal**: [MUI X Charts](https://mui.com/x/react-charts/)
+
+### 1) Biblioteca e versões
+- **Pacotes**:
+  - Community (MIT): `@mui/x-charts`
+  - Pro (licença comercial): funcionalidades avançadas como zoom/pan e export nativas
+- **Peer deps mínimos**:
+  - `@mui/material`: ^5.15.14 | ^6 | ^7
+  - `react`/`react-dom`: ^17 | ^18 | ^19
+- **Justificativa**: Integração nativa com MUI (tema, tipografia, RTL, A11y), composição granular, API consistente e manutenção ativa.
+
+### 2) Instalação e setup
+- **Instalar Material (peer deps)**:
+```bash
+pnpm add @mui/material @emotion/react @emotion/styled
+```
+- **Instalar Charts**:
+```bash
+pnpm add @mui/x-charts
+```
+- (Opcional Pro)
+```bash
+# usar somente se precisarmos de zoom/pan/export avançado
+pnpm add @mui/x-charts-pro
+# export como imagem pode precisar de rasterizehtml
+pnpm add rasterizehtml
+```
+- **Tipos e tema** (habilitar overrides de tema dos charts):
+```ts
+import type {} from '@mui/x-charts/themeAugmentation';
+```
+
+### 3) Diretrizes de uso (Community vs Pro)
+- **Use Community** quando:
+  - KPIs simples (Bar/Line/Pie/Scatter/Sparkline/Gauge)
+  - Tooltips/Legendas/Highlighting/Stacking/Styling básicos
+- **Use Pro** quando:
+  - Necessário **Zoom/Pan**, **Export (toolbar ou API)**, múltiplos eixos avançados, heatmap grande com navegação
+  - Requisitos de impressão/relatórios com export programático (`apiRef.exportAsPrint/exportAsImage`)
+- **Critério**: se o requisito não for estritamente necessário, preferir Community.
+
+### 4) Padrão de composição
+- Para casos simples, use componentes prontos (`BarChart`, `LineChart`, `PieChart`, etc.).
+- Para customizações finas, use **ChartContainer** + plots.
+```tsx
+import { ChartContainer } from '@mui/x-charts/ChartContainer';
+import { BarPlot } from '@mui/x-charts/BarChart';
+import { ChartsLegend, ChartsAxis, ChartsTooltip } from '@mui/x-charts';
+
+<ChartContainer
+  series={[{ type: 'bar', data: [100, 200, 150] }]}
+  xAxis={[{ scaleType: 'band', data: ['A', 'B', 'C'] }]}
+  width={500}
+  height={300}
+>
+  <ChartsLegend direction="horizontal" />
+  <ChartsAxis />
+  <BarPlot />
+  <ChartsTooltip />
+</ChartContainer>
+```
+- Preferir `ChartContainer` (v8) em vez de `ResponsiveChartContainer` (removido).
+### 5) Eixos, escalas e migração v7→v8
+- Defina eixos via `xAxis`/`yAxis` com `position`: `'top'|'bottom'|'left'|'right'|'none'`. Não use props antigas (`topAxis`, `leftAxis`, etc.).
+- `position: 'none'` oculta o eixo mantendo escala.
+- Tipos de escala: `'band'|'point'|'linear'|'log'|'sqrt'|'time'|'utc'`.
+```tsx
+<ChartContainer
+  xAxis={[{ scaleType: 'band', data: ['A','B'], position: 'bottom' }]}
+  yAxis={[{ scaleType: 'linear', position: 'right' }]}
+  series={[{ type: 'bar', data: [10, 20] }]}
+  width={400}
+  height={240}
+>
+  <BarPlot />
+</ChartContainer>
+```
+- `ChartsXAxis/ChartsYAxis` não recebem mais `position`; configure no `xAxis/yAxis` do container.
+- Legenda: `direction` agora é `'horizontal'|'vertical'` (antes `'row'|'column'`).
+
+### 6) Acessibilidade (A11y)
+- Forneça `aria-labelledby` e `aria-valuetext` quando apropriado (ex.: `Gauge`).
+- Respeito a `prefers-reduced-motion`: use `skipAnimation` para desabilitar animações.
+```tsx
+<Gauge value={6} valueMax={12} aria-labelledby="battery_level_label" aria-valuetext="50% (6 horas) restantes" />
+```
+
+### 7) Localização (i18n)
+- Global via `ThemeProvider` com locale do pacote:
+```tsx
+import { frFR } from '@mui/x-charts/locales';
+const theme = createTheme({}, frFR);
+<ThemeProvider theme={theme}>{/* app */}</ThemeProvider>
+```
+- Escopo local via `ChartsLocalizationProvider`:
+```tsx
+import { ChartsLocalizationProvider } from '@mui/x-charts/ChartsLocalizationProvider';
+import { frFRLocaleText } from '@mui/x-charts/locales';
+<ChartsLocalizationProvider localeText={frFRLocaleText}>
+  <BarChart />
+</ChartsLocalizationProvider>
+```
+
+### 8) Tooltips e overlays
+- Para tooltips customizados: usar `slots={{ tooltip: CustomTooltip }}` nos charts simples ou incluir componente na composição.
+- Mensagens de overlay customizáveis via `localeText` (ex.: `loading`, `noData`).
+
+### 9) Performance e UX
+- Preferir **SVG + composição** com `clipPath` quando necessário limitar overflow.
+- Desabilitar animações em listas grandes ou ambientes restritos: `skipAnimation`.
+- Linhas com dados parciais: aceite `null/undefined` e avalie interpolação.
+- Usar `highlightScope` e `axisHighlight` para foco sem custo alto de re-render.
+- Para export em imagem, instalar `rasterizehtml` quando usar API de export.
+- Evitar CSS no tooltip via `sx` no chart devido a portal; estilize via slots/tema.
+
+### 10) Estilização e tema
+- Preferir `sx` e **theme augmentation** para overrides consistentes.
+```tsx
+const theme = createTheme({
+  components: {
+    MuiChartsAxis: {
+      styleOverrides: { tick: { stroke: '#006BD6' } },
+    },
+  },
+});
+```
+- Estilização por série: usar seletores `data-series`.
+```tsx
+<LineChart sx={{ '& .MuiAreaElement-root[data-series="Germany"]': { fill: "url('#myGradient')" } }} />
+```
+
+### 11) Exportação (Pro)
+- Toolbar: `slotProps={{ toolbar: { printOptions, imageExportOptions } }}`.
+- API programática via `apiRef.current.exportAsPrint()` e `exportAsImage()`.
+- Para imagem: instalar `rasterizehtml`.
+
+### 12) Padrões de escolha de gráfico
+- **Bar**: comparações categóricas; use `scaleType='band'`.
+- **Line/Area**: séries temporais; considerar `curve` (`monotoneX`, `linear`, etc.).
+- **Pie/Donut**: proporções até ~5-7 categorias.
+- **Scatter**: correlação entre duas variáveis, `trigger="item"` no tooltip.
+- **Gauge**: KPIs simples (0–100 ou com `valueMax`).
+- **Radar/Heatmap/Funnel**: use quando realmente necessários e com dados agregados/coerentes.
+
+### 13) Boas práticas de dados
+- Sempre normalizar data/hora para `time|utc` conforme necessidade.
+- Definir `valueFormatter` por eixo para ticks/tooltip consistentes.
+- Para múltiplos eixos, defina `id` e referencie corretamente.
+- Forneça `series.id` estáveis ao adicionar/remover séries dinamicamente.
+
+### 14) Checklists
+- Implementação:
+  - [ ] Escolha do tipo de gráfico adequada ao objetivo
+  - [ ] Escalas e eixos corretos (inclui `position`)
+  - [ ] A11y e i18n aplicados
+  - [ ] Performance ajustada (`skipAnimation`, highlight)
+  - [ ] Estilização via tema/`sx` (sem CSS frágil em portal)
+  - [ ] Teste visual responsivo
+- Pro (se aplicável):
+  - [ ] Export testado (print/image)
+  - [ ] `rasterizehtml` instalado
+  - [ ] Zoom/Pan validado
+
+### 15) Exemplos rápidos
+- Linha com dados parciais:
+```tsx
+<LineChart series={[{ data: [null, 2, 5, 8, 13] }]} xAxis={[{ data: [0,1,2,3,4,5] }]} />
+```
+- Composição Bar + Line:
+```tsx
+<ChartContainer
+  series={[
+    { type: 'bar', data: [1,2,3] },
+    { type: 'line', data: [3,2,1] },
+  ]}
+>
+  <BarPlot />
+  <LinePlot />
+  <ChartsLegend />
+  <ChartsTooltip />
+</ChartContainer>
+```
+
+### 16) Migração e compatibilidade
+- Remover aliases de bundles "modern".
+- Substituir `ResponsiveChartContainer` por `ChartContainer`.
+- Atualizar legend `direction` e `position` de eixos conforme v8.
+
+### 17) Roadmap interno
+- Validar necessidade de Pro para **Export** automatizado em relatórios.
+- Criar wrappers utilitários por tipo de gráfico para evitar repetição.
+- Padronizar paleta e tipografia via tema.
+
+### 18) Referências
+- Documentação oficial MUI X Charts (v8): https://mui.com/x/react-charts/
+- Snippets e APIs consultadas (docs MUI X):
+  - Quickstart, Composition, Axis, Lines, Bars, Pie, Scatter, Gauge, Tooltip, Highlighting, Localization, Export, Migration v7/v8.
