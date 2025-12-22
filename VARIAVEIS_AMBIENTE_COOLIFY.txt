@@ -1,0 +1,37 @@
+# ============================================
+# VARIÁVEIS DE AMBIENTE PARA COOLIFY
+# ============================================
+# Copie e cole estas variáveis no Coolify
+# Substitua os valores pelos seus dados reais
+# ============================================
+
+# ============================================
+# OBRIGATÓRIAS - Preencha com seus valores
+# ============================================
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua_anon_key_aqui
+
+# ============================================
+# OPCIONAIS - Configure se estiver usando
+# ============================================
+
+# WhatsApp API Base (fallback padrão: https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook)
+VITE_WHATSAPP_API_BASE=https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook
+
+# Evolution API (fallback padrão: https://api.evolution.com.br)
+VITE_EVOLUTION_API_URL=https://api.evolution.com.br
+
+# Senha padrão para novos usuários (fallback padrão: Imobi@1234)
+VITE_DEFAULT_NEW_USER_PASSWORD=Imobi@1234
+
+# ============================================
+# VARIÁVEIS DE DESENVOLVIMENTO (opcional)
+# Não precisa configurar para produção
+# ============================================
+# VITE_ENABLE_ANON_LOGIN=true
+# VITE_FEATURE_RT_DEBUG_LEADS=true
+# VITE_FEATURE_RT_TRANSFER_FIX=true
+
+
+
+

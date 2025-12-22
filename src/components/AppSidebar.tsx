@@ -34,13 +34,6 @@ const menuItems = [
     permissionKey: "menu_properties",
   },
   {
-    title: "Contratos (MVP)",
-    url: "#",
-    icon: FileText,
-    view: "contracts" as const,
-    permissionKey: "menu_contracts",
-  },
-  {
     title: "Agenda",
     url: "#",
     icon: Calendar,
@@ -142,7 +135,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -350,7 +343,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                         // Prefetch sob hover
                         const map: Record<string, () => Promise<any>> = {
                           properties: () => import('@/components/PropertyList'),
-                          contracts: () => import('@/components/ContractsView'),
                           agenda: () => import('@/components/AgendaView'),
                           clients: () => import('@/components/ClientsView'),
                           'clients-crm': () => import('@/components/ClientsCRMView'),
@@ -441,23 +433,18 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       }
                     `}
                   >
-                    {('view' in item) ? (
-                      <button 
-                        onClick={() => {
+                    <button 
+                      onClick={() => {
+                        if ('view' in item) {
                           onViewChange(item.view);
                           navigate(`/${item.view}`);
-                        }}
-                        className="flex items-center gap-3 w-full px-3 py-2"
-                      >
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </button>
-                    ) : (
-                      <a href={item.url} className="flex items-center gap-3 px-3 py-2">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </a>
-                    )}
+                        }
+                      }}
+                      className="flex items-center gap-3 w-full px-3 py-2"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

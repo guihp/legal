@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verificar Variáveis de Ambiente</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+        .warning { color: #ffff00; }
+        pre {
+            background: #000;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verificação de Variáveis de Ambiente</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        // Verificar se as variáveis estão no código (não funcionará porque são injetadas no build)
+        const check = {
+            'VITE_SUPABASE_URL': typeof import !== 'undefined' && import.meta?.env?.VITE_SUPABASE_URL || 'NÃO ENCONTRADA',
+            'VITE_SUPABASE_ANON_KEY': typeof import !== 'undefined' && import.meta?.env?.VITE_SUPABASE_ANON_KEY ? 'CONFIGURADA (mas não mostrada por segurança)' : 'NÃO ENCONTRADA'
+        };
+        
+        let html = '<h2>Status:</h2><pre>';
+        
+        if (check.VITE_SUPABASE_URL === 'NÃO ENCONTRADA' || check.VITE_SUPABASE_ANON_KEY === 'NÃO ENCONTRADA') {
+            html += '<span class="error">❌ ERRO: Variáveis não foram injetadas durante o build!</span>\n\n';
+            html += 'Você precisa:\n';
+            html += '1. Configurar as variáveis no Coolify\n';
+            html += '2. Marcar "Use Docker Build Secrets"\n';
+            html += '3. Fazer um Redeploy completo\n';
+        } else {
+            html += '<span class="success">✅ Variáveis encontradas no build</span>\n';
+        }
+        
+        html += `\nVITE_SUPABASE_URL: ${check.VITE_SUPABASE_URL}\n`;
+        html += `VITE_SUPABASE_ANON_KEY: ${check.VITE_SUPABASE_ANON_KEY}\n`;
+        html += '</pre>';
+        
+        html += '<h2>Como verificar no console do navegador:</h2>';
+        html += '<pre>1. Abra o DevTools (F12)\n';
+        html += '2. Vá na aba Console\n';
+        html += '3. Procure por erros relacionados a Supabase\n';
+        html += '4. Procure por: "Configuração do Supabase ausente"</pre>';
+        
+        results.innerHTML = html;
+    </script>
+</body>
+</html>
+
+
+

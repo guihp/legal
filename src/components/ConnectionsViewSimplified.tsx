@@ -98,6 +98,43 @@ export function ConnectionsViewSimplified() {
   
   // Novos estados para funcionalidades completas
   const [qrTimer, setQrTimer] = useState(15);
+
+  // Função para formatar telefone brasileiro: (DDD) 9 XXXX-XXXX
+  const formatPhoneInput = (value: string): string => {
+    // Remove tudo que não é número
+    const numbers = value.replace(/\D/g, '');
+    
+    // Limita a 11 dígitos (DDD + 9 dígitos do número)
+    const limitedNumbers = numbers.slice(0, 11);
+    
+    if (limitedNumbers.length === 0) return '';
+    
+    const ddd = limitedNumbers.slice(0, 2);
+    let numero = limitedNumbers.slice(2);
+    
+    // Garante que sempre começa com 9 após o DDD
+    if (numero.length > 0 && !numero.startsWith('9')) {
+      numero = '9' + numero.slice(0, 8);
+    }
+    
+    // Aplica a máscara progressivamente
+    if (limitedNumbers.length <= 2) {
+      return `(${ddd}`;
+    } else if (limitedNumbers.length <= 7) {
+      return `(${ddd}) ${numero.slice(0, 5)}`;
+    } else if (limitedNumbers.length <= 10) {
+      return `(${ddd}) ${numero.slice(0, 1)} ${numero.slice(1, 5)}-${numero.slice(5)}`;
+    } else {
+      // Completo: (DDD) 9 XXXX-XXXX
+      return `(${ddd}) ${numero.slice(0, 1)} ${numero.slice(1, 5)}-${numero.slice(5, 9)}`;
+    }
+  };
+
+  // Handler para mudança do telefone
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhoneInput(e.target.value);
+    setNewInstancePhone(formatted);
+  };
   const [qrExpired, setQrExpired] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [connectedInstanceName, setConnectedInstanceName] = useState("");
@@ -390,9 +427,18 @@ export function ConnectionsViewSimplified() {
         throw new Error('Número de telefone é obrigatório para criar a instância');
       }
 
+      // Remove formatação do telefone antes de enviar (apenas números)
+      const phoneNumbersOnly = newInstancePhone.replace(/\D/g, '');
+      // Adiciona código do país +55 se não tiver
+      const formattedPhone = phoneNumbersOnly.length === 11 
+        ? `55${phoneNumbersOnly}` 
+        : phoneNumbersOnly.startsWith('55') 
+          ? phoneNumbersOnly 
+          : `55${phoneNumbersOnly}`;
+
       const result = await createInstance({
         instance_name: newInstanceName,
-        phone_number: newInstancePhone,
+        phone_number: formattedPhone,
         assigned_user_id: assignedUserId === "self" ? undefined : assignedUserId
       });
 
@@ -1057,10 +1103,12 @@ export function ConnectionsViewSimplified() {
               <Input
                 id="instancePhone"
                 value={newInstancePhone}
-                onChange={(e) => setNewInstancePhone(e.target.value)}
-                placeholder="Ex: +55 11 99999-9999"
+                onChange={handlePhoneChange}
+                placeholder="Ex: (11) 9 9999-9999"
                 className="bg-gray-800/50 border-gray-700 text-white placeholder-gray-400"
                 required
+                type="tel"
+                inputMode="numeric"
               />
               <p className="text-xs text-gray-500">
                 Número que será usado para conectar ao WhatsApp

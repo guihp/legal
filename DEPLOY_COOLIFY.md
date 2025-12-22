@@ -143,3 +143,6 @@ O container já inclui um healthcheck configurado no Dockerfile, mas você pode 
 
 **Última atualização:** Janeiro 2025
 
+
+
+
