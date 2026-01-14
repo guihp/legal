@@ -14,11 +14,31 @@ export function useTheme() {
   return context;
 }
 
+// Props que devem ser filtradas (vindas de extensões do browser)
+const FILTERED_PROPS = [
+  'data-lov-id',
+  'data-lov-name', 
+  'data-component-path',
+  'data-component-line',
+  'data-component-file',
+  'data-component-name',
+  'data-component-content'
+];
+
 interface ThemeProviderProps {
   children: React.ReactNode;
+  [key: string]: any; // Permitir outras props que podem vir de extensões
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
+  // Filtrar props problemáticas vindas de extensões do browser
+  const filteredProps = { ...props };
+  FILTERED_PROPS.forEach(prop => {
+    if (prop in filteredProps) {
+      delete (filteredProps as any)[prop];
+    }
+  });
+
   // Aplicar tema dark fixo no documento
   useEffect(() => {
     const root = document.documentElement;

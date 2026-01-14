@@ -28,6 +28,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { toast } from 'sonner';
+import { CompanyDataEditor } from './CompanyDataEditor';
 
 const FONT_OPTIONS = [
   { value: 'Inter', label: 'Inter', category: 'Sans-serif' },
@@ -399,7 +400,16 @@ export function ConfigurationsView() {
           
           {/* Coluna Principal - Configurações */}
           <div className="lg:col-span-2 space-y-6">
-            
+
+            {/* Dados da Empresa */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+            >
+              <CompanyDataEditor />
+            </motion.div>
+
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

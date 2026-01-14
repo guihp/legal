@@ -5,7 +5,7 @@ import { validatePermissionChange, getManagedRoles, canAccessPermissionsModule }
 
 export interface RolePermission {
   id: string;
-  role: 'corretor' | 'gestor' | 'admin';
+  role: 'corretor' | 'gestor' | 'admin' | 'super_admin';
   permission_key: string;
   permission_name: string;
   category: string;
@@ -85,7 +85,8 @@ export function usePermissions() {
   // Verificar permissão com cache
   const hasPermission = useCallback((permissionKey: string): boolean => {
     console.log(`🔐 DEBUG PERMISSION: ${permissionKey} - Role: ${profile?.role}, UserPermissions:`, userPermissions);
-    if (profile?.role === 'admin') return true;
+    // super_admin e admin tem todas as permissões
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') return true;
     const hasAccess = userPermissions[permissionKey] || false;
     console.log(`🔐 DEBUG RESULT: ${permissionKey} = ${hasAccess}`);
     return hasAccess;
@@ -144,7 +145,7 @@ export function usePermissions() {
   }, [profile, permissions]);
 
   // Obter permissões por role (memoizado)
-  const getPermissionsByRole = useCallback((role: 'corretor' | 'gestor' | 'admin') => {
+  const getPermissionsByRole = useCallback((role: 'corretor' | 'gestor' | 'admin' | 'super_admin') => {
     return permissions.filter(perm => perm.role === role);
   }, [permissions]);
 

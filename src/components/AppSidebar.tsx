@@ -83,13 +83,13 @@ const menuItems = [
     view: "inquilinato" as const,
     permissionKey: "menu_inquilinato",
   },
-  {
-    title: "Disparador",
-    url: "#",
-    icon: Send,
-    view: "disparador" as const,
-    permissionKey: "menu_disparador",
-  },
+  // {
+  //   title: "Disparador",
+  //   url: "#",
+  //   icon: Send,
+  //   view: "disparador" as const,
+  //   permissionKey: "menu_disparador",
+  // },
   {
     title: "Conversas",
     url: "#",
@@ -146,7 +146,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
-  const { 
+  const {
     isPreviewMode,
     previewName,
     previewSubtitle,
@@ -189,8 +189,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   }, []);
 
   const toggleExpanded = (title: string) => {
-    setExpandedItems(prev => 
-      prev.includes(title) 
+    setExpandedItems(prev =>
+      prev.includes(title)
         ? prev.filter(item => item !== title)
         : [...prev, title]
     );
@@ -204,13 +204,15 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
       ? profile.full_name
       : (user?.user_metadata?.name || user?.email || 'Usuário');
 
-  const roleLabelMap: Record<'admin' | 'gestor' | 'corretor', string> = {
+  const roleLabelMap: Record<'admin' | 'gestor' | 'corretor' | 'super_admin', string> = {
+    super_admin: 'Super Admin',
     admin: 'Administrador',
     gestor: 'Gestor',
     corretor: 'Corretor',
   };
 
-  const roleClassMap: Record<'admin' | 'gestor' | 'corretor', string> = {
+  const roleClassMap: Record<'admin' | 'gestor' | 'corretor' | 'super_admin', string> = {
+    super_admin: 'bg-orange-500/15 text-orange-300 border border-orange-500/30',
     admin: 'bg-red-500/15 text-red-300 border border-red-500/30',
     gestor: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
     corretor: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
@@ -226,14 +228,14 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
       console.log('⚠️ DEBUG: Profile não disponível no filtro de menus');
       return false; // Se não tem perfil, não mostrar menus
     }
-    
+
     // Verificação especial para o módulo de permissões
     if (item.permissionKey === 'menu_permissions') {
       const canAccess = canAccessPermissionsModule(profile.role);
       console.log(`🔍 DEBUG: ${item.title} (permissions) - Role: ${profile.role}, CanAccess: ${canAccess}`);
       return canAccess;
     }
-    
+
     const hasAccess = hasPermission(item.permissionKey);
     console.log(`🔍 DEBUG: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
     return hasAccess;
@@ -248,16 +250,16 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     console.log(`🔍 DEBUG ANALYTICS: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
     return hasAccess;
   });
-  
+
   const filteredSecondaryItems = secondaryItems.filter(item => {
     if (!('permissionKey' in item) || !item.permissionKey) return true;
     if (!profile) return false;
-    
+
     // Verificação especial para o módulo de permissões
     if (item.permissionKey === 'menu_permissions') {
       return canAccessPermissionsModule(profile.role);
     }
-    
+
     return hasPermission(item.permissionKey);
   });
 
@@ -266,21 +268,21 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
       <SidebarHeader className="p-6 border-b border-theme-primary bg-theme-secondary">
         <div className="flex items-center gap-3">
           {settings?.logo_url ? (
-            <img 
-              src={settings.logo_url} 
+            <img
+              src={settings.logo_url}
               alt="Logo da empresa"
-              style={{ 
-                height: `${logoSize || 40}px`, 
-                width: `${logoSize || 40}px` 
+              style={{
+                height: `${logoSize || 40}px`,
+                width: `${logoSize || 40}px`
               }}
               className="rounded-xl object-contain shadow-lg"
             />
           ) : (
-            <div 
-              style={{ 
-                height: `${logoSize || 40}px`, 
+            <div
+              style={{
+                height: `${logoSize || 40}px`,
                 width: `${logoSize || 40}px`,
-                background: settings?.primary_color 
+                background: settings?.primary_color
                   ? `linear-gradient(45deg, ${settings.primary_color}, ${settings.primary_color}dd)`
                   : 'linear-gradient(45deg, #3b82f6, #2563eb)'
               }}
@@ -290,8 +292,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             </div>
           )}
           <div className="flex flex-col">
-            <span 
-              style={{ 
+            <span
+              style={{
                 fontFamily: nameFont || 'Inter',
                 fontSize: `${nameSize || 20}px`,
                 color: nameColor || '#FFFFFF',
@@ -300,8 +302,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             >
               {companyDisplayName || 'ImobiPro'}
             </span>
-            <span 
-              style={{ 
+            <span
+              style={{
                 fontFamily: subtitleFont || 'Inter',
                 fontSize: `${subtitleSize || 12}px`,
                 color: subtitleColor || '#9CA3AF',
@@ -313,7 +315,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </div>
         </div>
       </SidebarHeader>
-      
+
       <SidebarContent className="px-3 bg-theme-secondary">
         <SidebarGroup>
           <SidebarGroupLabel className="text-gray-400 text-xs uppercase tracking-wider px-3 py-2">
@@ -323,18 +325,18 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             <SidebarMenu>
               {filteredMenuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
+                  <SidebarMenuButton
                     asChild
                     isActive={currentView === item.view}
                     className={`
                       text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
-                      ${currentView === item.view 
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500' 
+                      ${currentView === item.view
+                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
                         : ''
                       }
                     `}
                   >
-                    <button 
+                    <button
                       onClick={() => {
                         onViewChange(item.view);
                         navigate(`/${item.view}`);
@@ -379,18 +381,18 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             <SidebarMenu>
               {filteredAnalyticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
+                  <SidebarMenuButton
                     asChild
                     isActive={currentView === item.view}
                     className={`
                       text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
-                      ${currentView === item.view 
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500' 
+                      ${currentView === item.view
+                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
                         : ''
                       }
                     `}
                   >
-                    <button 
+                    <button
                       onClick={() => {
                         onViewChange(item.view);
                         navigate(`/${item.view}`);
@@ -422,18 +424,18 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             <SidebarMenu>
               {filteredSecondaryItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
+                  <SidebarMenuButton
                     asChild
                     isActive={('view' in item) && currentView === item.view}
                     className={`
                       text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
-                      ${('view' in item) && currentView === item.view 
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500' 
+                      ${('view' in item) && currentView === item.view
+                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
                         : ''
                       }
                     `}
                   >
-                    <button 
+                    <button
                       onClick={() => {
                         if ('view' in item) {
                           onViewChange(item.view);
@@ -482,8 +484,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             <div className="px-1 text-[10px] text-gray-500 text-center" title="Versão da aplicação">
               Versão 1.0.0
             </div>
-            
-            <Button 
+
+            <Button
               onClick={async () => {
                 await supabase.auth.signOut();
               }}

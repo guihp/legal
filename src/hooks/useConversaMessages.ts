@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useUserProfile } from './useUserProfile';
 
 export interface ConversaMessage {
   id: string;
@@ -24,6 +25,7 @@ export function useConversaMessages() {
   const [messages, setMessages] = useState<ConversaMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { profile } = useUserProfile();
 
   const currentSessionRef = useRef<string | null>(null);
   const rtChannelRef = useRef<RealtimeChannel | null>(null);
@@ -36,6 +38,7 @@ export function useConversaMessages() {
   const hydratedRef = useRef<boolean>(false);
   const pendingEventsRef = useRef<any[]>([]);
   const lastRefetchAtRef = useRef<number>(0);
+  const companyPhoneRef = useRef<string | null>(null);
   const refetchThrottleMs = 250;
 
   const mapRows = useCallback((data: any[]): ConversaMessage[] => {
@@ -96,16 +99,86 @@ export function useConversaMessages() {
     return next;
   }, [normalizeId]);
 
+  // Buscar whatsapp_ai_phone da empresa
+  useEffect(() => {
+    const fetchCompanyPhone = async () => {
+      if (!profile?.company_id) {
+        companyPhoneRef.current = null;
+        return;
+      }
+
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('companies')
+          .select('whatsapp_ai_phone')
+          .eq('id', profile.company_id)
+          .single();
+        
+        if (fetchError) throw fetchError;
+        
+        if (data) {
+          companyPhoneRef.current = data.whatsapp_ai_phone || null;
+        }
+      } catch (err) {
+        console.error('Erro ao buscar whatsapp_ai_phone da empresa:', err);
+        companyPhoneRef.current = null;
+      }
+    };
+
+    fetchCompanyPhone();
+  }, [profile?.company_id]);
+
   const fetchConversation = useCallback(async (sessionId: string) => {
     try {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase.rpc('conversation_for_user', {
+      
+      const phone = companyPhoneRef.current;
+      if (!phone) {
+        console.error('[useConversaMessages] Telefone da empresa não encontrado. Tentando buscar novamente...');
+        // Tentar buscar novamente se não tiver
+        if (profile?.company_id) {
+          try {
+            const { data: fetchData, error: fetchError } = await supabase
+              .from('companies')
+              .select('whatsapp_ai_phone')
+              .eq('id', profile.company_id)
+              .single();
+            
+            if (fetchError) throw fetchError;
+            
+            if (fetchData) {
+              companyPhoneRef.current = fetchData.whatsapp_ai_phone || null;
+            }
+          } catch (err) {
+            console.error('[useConversaMessages] Erro ao buscar whatsapp_ai_phone:', err);
+          }
+        }
+        
+        if (!companyPhoneRef.current) {
+          setError('Telefone da empresa não encontrado');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const phoneToUse = companyPhoneRef.current;
+      console.log('[useConversaMessages] Buscando mensagens:', { sessionId, phone: phoneToUse });
+
+      const { data, error } = await supabase.rpc('conversation_for_user_by_phone', {
         p_session_id: sessionId,
+        p_phone: phoneToUse,
         p_limit: 500,
         p_offset: 0,
       });
-      if (error) throw error;
+      
+      if (error) {
+        console.error('[useConversaMessages] Erro na função RPC:', error);
+        throw error;
+      }
+      
+      console.log('[useConversaMessages] Mensagens recebidas:', data?.length || 0);
+      
       const mapped = mapRows(data ?? []);
       const hts = computeHandoffTs(mapped);
       handoffTsRef.current = hts;
@@ -118,11 +191,12 @@ export function useConversaMessages() {
         evts.forEach(e => applyRealtimeDiff(e));
       }
     } catch (e: any) {
+      console.error('[useConversaMessages] Erro ao carregar conversa:', e);
       setError(e?.message ?? 'Erro ao carregar conversa');
     } finally {
       setLoading(false);
     }
-  }, [mapRows, computeHandoffTs, applyHandoffFlags, normalizeId]);
+  }, [mapRows, computeHandoffTs, applyHandoffFlags, normalizeId, profile?.company_id]);
 
   const safeRefetchNow = useCallback((sessionId: string) => {
     const now = Date.now();

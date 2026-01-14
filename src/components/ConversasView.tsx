@@ -59,7 +59,7 @@ export function ConversasView() {
     isOpen: boolean;
     data: any;
   }>({ isOpen: false, data: null });
-  
+
   const { conversas, loading: loadingConversas, error: errorConversas, updateConversation } = useConversasList(selectedInstance);
   const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch, setMyInstance } = useConversaMessages();
   const endOfMessagesRef = React.useRef<HTMLDivElement | null>(null);
@@ -85,10 +85,10 @@ export function ConversasView() {
     let v = x;
     for (let i = 0; i < 2; i++) {
       if (typeof v === 'string') {
-        try { 
-          v = JSON.parse(v); 
-        } catch { 
-          break; 
+        try {
+          v = JSON.parse(v);
+        } catch {
+          break;
         }
       }
     }
@@ -118,13 +118,13 @@ export function ConversasView() {
       });
 
       const result = await response.json();
-      
+
       // Parse robusto do retorno
       let summaryData;
       try {
         // Se for array, pegar o primeiro item
         const item = Array.isArray(result) ? result[0] : result;
-        
+
         // Pegar item.output e fazer parse seguro
         if (item && item.output) {
           summaryData = safeParse(item.output);
@@ -180,9 +180,9 @@ export function ConversasView() {
         description: "Falha ao solicitar follow up.",
         variant: "destructive",
         action: (
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => handleFollowUp(conversation)}
           >
             Tentar novamente
@@ -266,8 +266,8 @@ export function ConversasView() {
                     onClick={() => setSelectedInstance(instance.instancia)}
                     className={`
                       p-3 rounded-lg cursor-pointer transition-all duration-200
-                      ${selectedInstance === instance.instancia 
-                        ? 'bg-blue-600/20 border border-blue-500/30' 
+                      ${selectedInstance === instance.instancia
+                        ? 'bg-blue-600/20 border border-blue-500/30'
                         : 'bg-gray-800/50 hover:bg-gray-800'
                       }
                     `}
@@ -288,8 +288,8 @@ export function ConversasView() {
                         <p className="text-gray-400 text-sm">
                           {instance.conversationCount} conversas
                         </p>
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className="text-xs mt-1 border-green-500/30 text-green-300"
                         >
                           <Wifi className="h-3 w-3 mr-1" />
@@ -357,17 +357,16 @@ export function ConversasView() {
                     onClick={() => { setSelectedConversation(conversa.sessionId); openSession(conversa.sessionId); }}
                     className={`
                       p-4 cursor-pointer transition-all duration-200 border-b border-gray-800/50
-                      ${selectedConversation === conversa.sessionId 
-                        ? 'bg-blue-600/20 border-l-2 border-l-blue-500' 
+                      ${selectedConversation === conversa.sessionId
+                        ? 'bg-blue-600/20 border-l-2 border-l-blue-500'
                         : 'hover:bg-gray-800/50'
                       }
                     `}
                   >
                     <div className="flex items-start gap-3">
                       <Avatar className="h-12 w-12 flex-shrink-0">
-                        <AvatarFallback className={`text-white ${
-                          conversa.displayName !== conversa.sessionId ? 'bg-purple-600' : 'bg-gray-700'
-                        }`}>
+                        <AvatarFallback className={`text-white ${conversa.displayName !== conversa.sessionId ? 'bg-purple-600' : 'bg-gray-700'
+                          }`}>
                           {conversa.displayName.charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
@@ -391,25 +390,25 @@ export function ConversasView() {
                             })}
                           </span>
                         </div>
-                        
+
                         {/* Mostrar telefone do lead se disponível */}
                         {conversa.leadPhone && (
                           <p className="text-blue-300 text-xs mb-1 truncate">
                             📞 {conversa.leadPhone.replace('@s.whatsapp.net', '')}
                           </p>
                         )}
-                        
+
                         {/* Se não há nome do lead, mostrar session_id como subtítulo */}
 
-                        
+
                         <p className="text-gray-400 text-sm truncate mb-2">
                           {conversa.lastMessageContent}
                         </p>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             {conversa.leadStage && (
-                              <Badge 
-                                variant="outline" 
+                              <Badge
+                                variant="outline"
                                 className="text-xs border-purple-500/30 text-purple-300"
                               >
                                 {conversa.leadStage}
@@ -439,21 +438,20 @@ export function ConversasView() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
-                    <AvatarFallback className={`text-white ${
-                      currentConversation.displayName !== currentConversation.sessionId ? 'bg-purple-600' : 'bg-gray-700'
-                    }`}>
+                    <AvatarFallback className={`text-white ${currentConversation.displayName !== currentConversation.sessionId ? 'bg-purple-600' : 'bg-gray-700'
+                      }`}>
                       {currentConversation.displayName.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     {/* Título principal */}
                     <h3 className="text-base md:text-lg font-semibold text-white">
-                      {currentConversation.displayName === currentConversation.sessionId 
-                        ? 'Aguardando nome do lead...' 
+                      {currentConversation.displayName === currentConversation.sessionId
+                        ? 'Aguardando nome do lead...'
                         : currentConversation.displayName
                       }
                     </h3>
-                    
+
                     {/* Subtítulo com telefone e badge de estágio */}
                     {(currentConversation.leadPhone || currentConversation.leadStage) && (
                       <div className="flex items-center gap-2 mt-1">
@@ -462,11 +460,11 @@ export function ConversasView() {
                             {currentConversation.leadPhone.replace('@s.whatsapp.net', '')}
                           </span>
                         )}
-                        
+
                         {currentConversation.leadPhone && currentConversation.leadStage && (
                           <span className="text-zinc-500">•</span>
                         )}
-                        
+
                         {currentConversation.leadStage && (
                           <span className="inline-flex items-center rounded-full border border-white/10 px-2 py-0.5 text-xs text-purple-300 border-purple-500/30">
                             {currentConversation.leadStage}
@@ -477,7 +475,7 @@ export function ConversasView() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <ConversationActionsMenu 
+                  <ConversationActionsMenu
                     conversation={currentConversation}
                     onGenerateSummary={handleGenerateSummary}
                     onFollowUp={handleFollowUp}
@@ -526,84 +524,81 @@ export function ConversasView() {
                       return messages.map((message: any, i: number) => {
                         if (idxForward > 0 && i > idxForward) return null;
                         return (
-                      <div
-                        key={message.id}
-                        className={`flex ${message.message.type === 'ai' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        {i === idxHandoff && idxHandoff > 0 && (
-                          <div className="flex items-center gap-2 my-2 w-full">
-                            <div className="h-px flex-1 bg-gray-700/60" />
-                            <span className="text-[11px] text-gray-400 whitespace-nowrap">
-                              Atendido pelo SDR até aqui
-                            </span>
-                            <div className="h-px flex-1 bg-gray-700/60" />
-                          </div>
-                        )}
-                        {profile?.role === 'gestor' && idxForward > 0 && i === idxForward && (
                           <div
-                            className="flex items-center gap-2 my-2 w-full cursor-pointer select-none"
-                            onClick={() => {
-                              const targetInst = messages[idxForward]?.instancia;
-                              if (targetInst) {
-                                setSelectedInstance(String(targetInst).trim().toLowerCase());
-                                if (selectedConversation) openSession(selectedConversation);
-                              }
-                            }}
-                            title="Ir para conversa na instância do corretor"
+                            key={message.id}
+                            className={`flex ${message.message.type === 'ai' ? 'justify-end' : 'justify-start'}`}
                           >
-                            <div className="h-px flex-1 bg-emerald-600/60" />
-                            <span className="text-[11px] text-emerald-300 whitespace-nowrap">
-                              Enviado para o corretor responsável — clicar para abrir
-                            </span>
-                            <div className="h-px flex-1 bg-emerald-600/60" />
-                          </div>
-                        )}
-                        <div
-                          className={`
+                            {i === idxHandoff && idxHandoff > 0 && (
+                              <div className="flex items-center gap-2 my-2 w-full">
+                                <div className="h-px flex-1 bg-gray-700/60" />
+                                <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                                  Atendido pelo SDR até aqui
+                                </span>
+                                <div className="h-px flex-1 bg-gray-700/60" />
+                              </div>
+                            )}
+                            {profile?.role === 'gestor' && idxForward > 0 && i === idxForward && (
+                              <div
+                                className="flex items-center gap-2 my-2 w-full cursor-pointer select-none"
+                                onClick={() => {
+                                  const targetInst = messages[idxForward]?.instancia;
+                                  if (targetInst) {
+                                    setSelectedInstance(String(targetInst).trim().toLowerCase());
+                                    if (selectedConversation) openSession(selectedConversation);
+                                  }
+                                }}
+                                title="Ir para conversa na instância do corretor"
+                              >
+                                <div className="h-px flex-1 bg-emerald-600/60" />
+                                <span className="text-[11px] text-emerald-300 whitespace-nowrap">
+                                  Enviado para o corretor responsável — clicar para abrir
+                                </span>
+                                <div className="h-px flex-1 bg-emerald-600/60" />
+                              </div>
+                            )}
+                            <div
+                              className={`
                             max-w-xs lg:max-w-md px-4 py-3 rounded-lg
-                            ${message.message.type === 'ai' 
-                              ? 'bg-blue-600 text-white rounded-br-sm' 
-                              : 'bg-gray-700 text-white rounded-bl-sm'
-                            }
+                            ${message.message.type === 'ai'
+                                  ? 'bg-blue-600 text-white rounded-br-sm'
+                                  : 'bg-gray-700 text-white rounded-bl-sm'
+                                }
                           `}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge 
-                              variant="outline" 
-                              className={`text-xs ${
-                                message.message.type === 'ai' 
-                                  ? 'border-blue-200/30 text-blue-100' 
-                                  : 'border-gray-400/30 text-gray-300'
-                              }`}
                             >
-                              {message.message.type === 'ai' ? 'IA' : 'Cliente'}
-                            </Badge>
-                            <span className={`text-xs ${
-                              message.message.type === 'ai' ? 'text-blue-100' : 'text-gray-400'
-                            }`}>
-                              {message.instancia}
-                            </span>
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${message.message.type === 'ai'
+                                      ? 'border-blue-200/30 text-blue-100'
+                                      : 'border-gray-400/30 text-gray-300'
+                                    }`}
+                                >
+                                  {message.message.type === 'ai' ? 'IA' : 'Cliente'}
+                                </Badge>
+                                <span className={`text-xs ${message.message.type === 'ai' ? 'text-blue-100' : 'text-gray-400'
+                                  }`}>
+                                  {message.instancia}
+                                </span>
+                              </div>
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                {message.message.content}
+                              </p>
+                              <p className={`text-xs mt-2 ${message.message.type === 'ai' ? 'text-blue-100' : 'text-gray-400'
+                                }`}>
+                                {new Date(message.data).toLocaleString('pt-BR', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  timeZone: 'America/Sao_Paulo'
+                                })}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {message.message.content}
-                          </p>
-                          <p className={`text-xs mt-2 ${
-                            message.message.type === 'ai' ? 'text-blue-100' : 'text-gray-400'
-                          }`}>
-                            {new Date(message.data).toLocaleString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              timeZone: 'America/Sao_Paulo'
-                            })}
-                          </p>
-                        </div>
-                      </div>
                         );
-                    });
+                      });
                     })()}
                     <div ref={endOfMessagesRef} />
                   </div>
@@ -631,16 +626,16 @@ export function ConversasView() {
                       }
                     }}
                   />
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
                   >
                     <Smile className="h-4 w-4" />
                   </Button>
                 </div>
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   className="bg-green-600 hover:bg-green-700 text-white"
                   onClick={() => {
                     // Aqui seria implementado o envio da mensagem
@@ -666,11 +661,11 @@ export function ConversasView() {
 
 
       {/* Modal de Resumo */}
-              <SummaryModalAnimated
-          isOpen={summaryModal.isOpen}
-          onClose={() => setSummaryModal({ isOpen: false, data: null })}
-          summaryData={summaryModal.data}
-        />
+      <SummaryModalAnimated
+        isOpen={summaryModal.isOpen}
+        onClose={() => setSummaryModal({ isOpen: false, data: null })}
+        summaryData={summaryModal.data}
+      />
     </div>
   );
 }

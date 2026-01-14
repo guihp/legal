@@ -8,8 +8,8 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
-  role: 'corretor' | 'gestor' | 'admin';
-  company_id: string;
+  role: 'corretor' | 'gestor' | 'admin' | 'super_admin';
+  company_id: string | null;
   department?: string;
   phone?: string;
   avatar_url?: string;
@@ -210,7 +210,7 @@ export function useUserProfile() {
   // Criar perfil para novo usuário
   const createProfile = async (profileData: {
     full_name: string;
-    role?: 'corretor' | 'gestor' | 'admin';
+    role?: 'corretor' | 'gestor' | 'admin' | 'super_admin';
     company_id?: string;
     department?: string;
     phone?: string;
@@ -272,7 +272,7 @@ export function useUserProfile() {
   };
 
   // Alterar role de usuário (apenas para admins)
-  const changeUserRole = async (userId: string, newRole: 'corretor' | 'gestor' | 'admin') => {
+  const changeUserRole = async (userId: string, newRole: 'corretor' | 'gestor' | 'admin' | 'super_admin') => {
     try {
       if (!isAdmin) {
         throw new Error('Sem permissão para alterar roles');
@@ -390,7 +390,7 @@ export function useUserProfile() {
     email: string;
     password: string;
     full_name: string;
-    role: 'corretor' | 'gestor' | 'admin';
+    role: 'corretor' | 'gestor' | 'admin' | 'super_admin';
     department?: string;
     phone?: string;
   }) => {

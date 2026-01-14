@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +80,6 @@ const PlantaoView = () => {
     conferenceAllowed?: string;
   }>>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'calendarios' | 'escala'>('calendarios');
   const [isAddAgendaOpen, setIsAddAgendaOpen] = useState(false);
   const [newAgendaName, setNewAgendaName] = useState("");
@@ -199,7 +198,7 @@ const PlantaoView = () => {
   const submitAddAgenda = async () => {
     const name = newAgendaName.trim();
     if (!name) {
-      toast({ description: 'Informe o nome da agenda' });
+      toast.error('Informe o nome da agenda');
       return;
     }
     try {
@@ -212,14 +211,14 @@ const PlantaoView = () => {
         body: JSON.stringify({ funcao: 'adicionar', nome: name }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      toast({ description: 'Agenda adicionada com sucesso' });
+      toast.success('Agenda adicionada com sucesso');
       setIsAddAgendaOpen(false);
       setNewAgendaName("");
       // Recarregar lista
       await puxarAgendas('manual');
     } catch (e) {
       console.error(e);
-      toast({ description: 'Falha ao adicionar agenda' });
+      toast.error('Falha ao adicionar agenda');
     } finally {
       setAddingAgenda(false);
     }
@@ -285,8 +284,8 @@ const PlantaoView = () => {
       const nextEscalas = { ...escalas };
       delete nextEscalas[deleteTargetId];
       persistEscalas(nextEscalas);
-      
-      toast({ description: 'Agenda removida com sucesso' });
+
+      toast.success('Agenda removida com sucesso');
       setIsDeleteOpen(false);
       setDeleteTargetId("");
       setDeleteTargetName("");
@@ -296,7 +295,7 @@ const PlantaoView = () => {
       
     } catch (e) {
       console.error(e);
-      toast({ description: 'Falha ao remover agenda' });
+      toast.error('Falha ao remover agenda');
     } finally {
       setDeletingAgenda(false);
     }
@@ -456,7 +455,7 @@ const PlantaoView = () => {
     const candidateFim = field === 'fim' ? value : currentFim;
 
     if (toMinutes(candidateInicio) >= toMinutes(candidateFim)) {
-      toast({ description: 'Horário inválido: o início deve ser antes do fim.' });
+      toast.error('Horário inválido: o início deve ser antes do fim.');
       return; // não persiste alteração inválida
     }
 
@@ -778,26 +777,14 @@ const PlantaoView = () => {
         // Toast específico baseado no tipo de operação
         if (assignedOverride !== undefined) {
           if (assignedOverride === null) {
-            toast({ 
-              description: 'Vinculação removida da agenda',
-              duration: 4000
-            });
+            toast.success('Vinculação removida da agenda');
           } else {
-            toast({ 
-              description: 'Corretor vinculado à agenda com sucesso',
-              duration: 4000
-            });
+            toast.success('Corretor vinculado à agenda com sucesso');
           }
         } else if (cfg.slots.length > 0) {
-          toast({ 
-            description: 'Horários do plantão salvos com sucesso',
-            duration: 4000
-          });
+          toast.success('Horários do plantão salvos com sucesso');
         } else {
-          toast({ 
-            description: 'Configuração da escala salva no banco',
-            duration: 4000
-          });
+          toast.success('Configuração da escala salva no banco');
         }
         
         setDirtyCalendars(prev => ({ ...prev, [calendarId]: false }));
@@ -806,12 +793,8 @@ const PlantaoView = () => {
         await loadAllSchedules();
         console.log('✅ salvarCalendario: Recarregamento concluído');
       } catch (e: any) {
-        console.error(e);
-        toast({ 
-          description: `Erro ao salvar: ${e.message || 'Falha ao comunicar com o banco de dados'}`,
-          variant: "destructive",
-          duration: 6000
-        });
+        console.error('Erro ao salvar calendário:', e);
+        toast.error(`Erro ao salvar: ${e.message || 'Falha ao comunicar com o banco de dados'}`);
       } finally {
         setSavingCalendars(prev => ({ ...prev, [calendarId]: false }));
       }
@@ -845,10 +828,7 @@ const PlantaoView = () => {
         }
       } catch (e) {
         console.error('Falha ao carregar corretores da empresa:', e);
-        toast({
-          description: 'Erro ao carregar lista de corretores',
-          variant: "destructive"
-        });
+        toast.error('Erro ao carregar lista de corretores');
       }
     };
     
@@ -1068,7 +1048,7 @@ const PlantaoView = () => {
                                   className="px-2 h-7 text-blue-300 hover:text-blue-200"
                                   onClick={async () => {
                                     await navigator.clipboard.writeText(cal.id);
-                                    toast({ description: 'Calendar ID copiado' });
+                                    toast.success('Calendar ID copiado');
                                   }}
                                 >
                                   <Copy className="h-3.5 w-3.5" />

@@ -237,6 +237,15 @@ const ArchitecturalGrid = () => (
   </div>
 );
 
+// Função auxiliar para normalizar estágios (hífens -> espaços, trim, lowercase)
+const normalizeStage = (stage: string): string => {
+  return (stage || '')
+    .trim()
+    .replace(/-/g, ' ') // Converte hífens em espaços
+    .replace(/\s+/g, ' ') // Remove múltiplos espaços
+    .toLowerCase();
+};
+
 const kanbanStages = [
   { 
     id: "novo-lead", 
@@ -655,7 +664,12 @@ export function ClientsView() {
   });
 
   const getLeadsByStage = (stageTitle: string) => {
-    return filteredLeads.filter(lead => lead.stage === stageTitle);
+    // Normalizar comparação (hífens -> espaços, trim, lowercase)
+    const normalizedTitle = normalizeStage(stageTitle);
+    return filteredLeads.filter(lead => {
+      const leadStage = normalizeStage(lead.stage || '');
+      return leadStage === normalizedTitle;
+    });
   };
 
   const handleDragStart = (event: DragStartEvent) => {

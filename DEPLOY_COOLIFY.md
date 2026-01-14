@@ -146,3 +146,4 @@ O container já inclui um healthcheck configurado no Dockerfile, mas você pode 
 
 
 
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -6,6 +6,7 @@ import { LoginPage } from "./components/LoginPage";
 import { UserOnboarding } from "./components/UserOnboarding";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
+import { AdminLayout } from "./components/admin/AdminLayout";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -14,21 +15,25 @@ import { supabase } from './integrations/supabase/client';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useAuthAudit } from './hooks/useAuthAudit';
 import { useAuthManager } from './hooks/useAuthManager';
+import { useCompanyAccess } from './hooks/useCompanyAccess';
+import { BlockedAccessScreen, GracePeriodBanner } from './components/shared/SubscriptionAlert';
+import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
   const { profile, loading: profileLoading, error: profileError } = useUserProfile();
+  const { accessStatus, loading: accessLoading } = useCompanyAccess();
   const location = useLocation();
   const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
-  
+
   // Hook para auditoria de autenticação
   useAuthAudit();
 
-  if (profileLoading) {
+  if (profileLoading || accessLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center">
         <div className="text-white">Carregando perfil...</div>
@@ -57,6 +62,26 @@ function AppContent() {
   // Se não tem perfil, mostrar onboarding
   if (!profile) {
     return <UserOnboarding onComplete={() => { /* evita reload global em dev */ }} />;
+  }
+
+  // Se é super_admin, mostrar layout administrativo
+  if (profile.role === 'super_admin') {
+    return (
+      <AdminLayout
+        userName={profile.full_name}
+        userEmail={profile.email}
+      />
+    );
+  }
+
+  // Verificar acesso da empresa (exceto super_admin)
+  if (accessStatus && !accessStatus.canAccess) {
+    return (
+      <BlockedAccessScreen
+        accessStatus={accessStatus}
+        onLogout={async () => { await supabase.auth.signOut(); }}
+      />
+    );
   }
 
   const mustChangePassword = false; // revertido: sem fluxo obrigatório de troca de senha
@@ -90,6 +115,13 @@ function AppContent() {
 
   return (
     <ContractTemplatesProvider>
+      {/* Banner de impersonação (super_admin acessando como outro usuário) */}
+      <ImpersonationBanner />
+
+      {/* Banner de período de carência */}
+      {accessStatus?.isGracePeriod && (
+        <GracePeriodBanner accessStatus={accessStatus} />
+      )}
       {/* Persistência de rota atual */}
       {null}
       <Routes>
@@ -116,7 +148,7 @@ function AppContent() {
       </Routes>
 
       {/* Modal obrigatório de troca de senha */}
-      <Dialog open={mustChangePassword} onOpenChange={() => {}}>
+      <Dialog open={mustChangePassword} onOpenChange={() => { }}>
         <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-white">Troca de senha necessária</DialogTitle>
@@ -195,11 +227,27 @@ function App() {
   }
 
   if (!session) {
+    // Permitir acesso à Landing Page mesmo sem sessão
+    if (window.location.pathname === '/landing') {
+      const LandingPage = lazy(() => import("@/pages/LandingPage"));
+      return (
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/landing" element={
+              <Suspense fallback={<div className="min-h-screen bg-black" />}>
+                <LandingPage />
+              </Suspense>
+            } />
+            <Route path="*" element={<LoginPage onLoginSuccess={() => { }} />} />
+          </Routes>
+        </Router>
+      );
+    }
     return <LoginPage onLoginSuccess={() => { /* evita reload global em dev */ }} />;
   }
 
   return (
-    <Router 
+    <Router
       future={{
         v7_startTransition: true,
         v7_relativeSplatPath: true

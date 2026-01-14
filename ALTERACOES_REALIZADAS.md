@@ -30,3 +30,4 @@
 
 Todas as chamadas passam pelos webhooks N8N configurados, não há integração direta com Evolution API no frontend.
 
+

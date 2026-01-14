@@ -320,7 +320,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         // Verificar se o usuário está ativo no perfil antes de prosseguir
         const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
-          .select('is_active')
+          .select('is_active, role, company_id')
           .eq('id', data.user.id)
           .single();
 
@@ -329,6 +329,39 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           await supabase.auth.signOut();
           setError('Seu acesso está desativado. Entre em contato com o administrador.');
           return;
+        }
+
+        // Super admin sempre pode acessar
+        if (profile.role === 'super_admin') {
+          onLoginSuccess();
+          return;
+        }
+
+        // Verificar status da empresa usando a função RPC
+        const { data: accessData, error: accessError } = await supabase
+          .rpc('check_current_user_access');
+
+        if (accessError) {
+          console.error('Erro ao verificar acesso da empresa:', accessError);
+          // Permitir acesso em caso de erro na verificação (para não bloquear por falha técnica)
+          onLoginSuccess();
+          return;
+        }
+
+        // Verificar resultado da verificação
+        if (accessData && accessData.length > 0) {
+          const accessStatus = accessData[0];
+          
+          if (!accessStatus.can_access) {
+            await supabase.auth.signOut();
+            setError(accessStatus.message || 'Acesso bloqueado. Entre em contato com o suporte.');
+            return;
+          }
+
+          // Se está em período de carência, mostrar aviso mas permitir acesso
+          if (accessStatus.is_grace_period) {
+            setMessage(`⚠️ ${accessStatus.message}`);
+          }
         }
 
         onLoginSuccess();

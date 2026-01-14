@@ -47,14 +47,5 @@ export const ensureAuthenticated = async () => {
 
 ;(window as any).supabase = supabase
 
-// Teste básico de conectividade (silencioso caso falhe em dev)
-supabase
-  .from('properties')
-  .select('count', { count: 'exact', head: true })
-  .then(({ error, count }) => {
-    if (error) {
-      console.warn('Supabase ainda não acessível ou sem permissões para properties.');
-    } else {
-      console.log('Supabase inicializado. Propriedades encontradas:', count);
-    }
-  });
+// Teste básico de conectividade removido - a tabela 'properties' não existe no banco
+// Se necessário, usar outra tabela para teste de conectividade

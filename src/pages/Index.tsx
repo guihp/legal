@@ -94,12 +94,16 @@ const UserManagementView = createLazyComponent(
   "UserManagementView"
 );
 const ConfigurationsView = createLazyComponent(
-  () => import("@/components/ConfigurationsView").then(m => ({ default: m.ConfigurationsView })),
+  () => import("@/components/ConfigurationsViewSimple").then(m => ({ default: m.ConfigurationsViewSimple })),
   "ConfigurationsView"
 );
 const ConversasView = createLazyComponent(
   () => import("@/components/ConversasViewPremium").then(m => ({ default: m.ConversasViewPremium })),
   "ConversasView"
+);
+const LandingPage = createLazyComponent(
+  () => import("@/pages/LandingPage").then(m => ({ default: m.default })),
+  "LandingPage"
 );
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
@@ -110,12 +114,12 @@ import { PreviewProvider } from "@/contexts/PreviewContext";
 const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
   const { hasPermission } = usePermissions();
-  
+
   //
 
   const renderContent = () => {
     //
-    
+
     switch (currentView) {
       case "dashboard":
         return (
@@ -157,7 +161,7 @@ const Index = () => {
             </div>
           );
         }
-        
+
         return <UserManagementView />;
       case "permissions":
         // Verificar permissão de acesso ao módulo de Permissões usando a função específica
@@ -175,7 +179,7 @@ const Index = () => {
             </div>
           );
         }
-        
+
         return <PermissionsManagementView />;
       case "inquilinato":
         return <InquilinatoView />;
@@ -183,9 +187,11 @@ const Index = () => {
         return <DisparadorView />;
       case "conversas":
         return <ConversasView />;
+      case "landing" as any: // Cast para evitar erro de tipo estrito se 'landing' não estiver em basicNavigation
+        return <LandingPage />;
       case "configurations":
         console.log('🔧 Renderizando ConfigurationsView...');
-        
+
         // Verificar permissão de acesso ao módulo Configurações
         if (!hasPermission('menu_configurations')) {
           console.log('🚫 Acesso negado ao módulo Configurações');
@@ -201,7 +207,7 @@ const Index = () => {
             </div>
           );
         }
-        
+
         try {
           return <ConfigurationsView />;
         } catch (error) {
@@ -224,9 +230,9 @@ const Index = () => {
     <PreviewProvider>
       <SidebarProvider className="bg-gray-950">
         <div className="flex min-h-screen bg-gray-950 flex-1 min-w-0">
-          <AppSidebar 
-            currentView={currentView} 
-            onViewChange={(view) => changeView(view, "sidebar-click")} 
+          <AppSidebar
+            currentView={currentView}
+            onViewChange={(view) => changeView(view, "sidebar-click")}
           />
           <div className="flex-1 min-w-0">
             <DashboardHeader />

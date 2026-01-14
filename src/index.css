@@ -231,10 +231,98 @@
   display: none;
 }
 
-/* Custom Scrollbar Styles */
+/* Estilos Globais de Scrollbar - Tema Escuro (padrão) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59, 130, 246, 0.3) rgba(31, 41, 55, 0.5);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.3);
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.4);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: all 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.6);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: rgba(59, 130, 246, 0.8);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(31, 41, 55, 0.3);
+}
+
+/* Scrollbar para tema claro */
+[data-theme="light"] * {
+  scrollbar-color: rgba(59, 130, 246, 0.2) rgba(243, 244, 246, 0.5);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-track {
+  background: rgba(243, 244, 246, 0.5);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb:active {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-corner {
+  background: rgba(243, 244, 246, 0.5);
+}
+
+/* Scrollbar para modo dark do shadcn */
+.dark * {
+  scrollbar-color: rgba(59, 130, 246, 0.3) rgba(31, 41, 55, 0.5);
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.3);
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.4);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.6);
+}
+
+.dark *::-webkit-scrollbar-thumb:active {
+  background: rgba(59, 130, 246, 0.8);
+}
+
+.dark *::-webkit-scrollbar-corner {
+  background: rgba(31, 41, 55, 0.3);
+}
+
+/* Custom Scrollbar Styles (mantido para compatibilidade) */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgb(75 85 99) rgb(31 41 55);
+  scrollbar-color: rgba(59, 130, 246, 0.3) rgba(31, 41, 55, 0.5);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -242,24 +330,24 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgb(31 41 55);
+  background: rgba(31, 41, 55, 0.3);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(75 85 99);
+  background: rgba(59, 130, 246, 0.4);
   border-radius: 10px;
   transition: background-color 0.2s ease;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgb(107 114 128);
+  background: rgba(59, 130, 246, 0.6);
 }
 
 /* Scrollbar para modal de imóvel */
 .property-modal-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgb(75 85 99) transparent;
+  scrollbar-color: rgba(59, 130, 246, 0.3) transparent;
 }
 
 .property-modal-scroll::-webkit-scrollbar {
@@ -272,7 +360,7 @@
 }
 
 .property-modal-scroll::-webkit-scrollbar-thumb {
-  background: rgb(75 85 99);
+  background: rgba(59, 130, 246, 0.4);
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: content-box;
@@ -280,7 +368,7 @@
 }
 
 .property-modal-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(107 114 128);
+  background: rgba(59, 130, 246, 0.6);
   background-clip: content-box;
 }
 

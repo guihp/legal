@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
-import { 
-  MessageSquare, 
-  Search, 
-  Send, 
-  Paperclip
+import {
+  MessageSquare,
+  Search,
+  Send,
+  Paperclip,
+  ArrowLeft,
+  MoreVertical,
+  Phone,
+  Video,
+  Mic,
+  Image as ImageIcon,
+  File as FileIcon
 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -22,18 +30,19 @@ import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { LeadDetailsModal } from './LeadDetailsModal';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
 // Variants de animação exatas
-const list = { 
-  hidden: {}, 
-  visible: { 
-    transition: { 
-      staggerChildren: 0.05, 
-      delayChildren: 0.03 
-    } 
-  } 
+const list = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.05,
+      delayChildren: 0.03
+    }
+  }
 };
 
 const bubble = {
@@ -68,6 +77,18 @@ const EmptyChat = () => (
 // Função para formatar hora
 const formatHour = (dateString: string) => {
   return new Date(dateString).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+// Função para formatar data/hora no fuso de Brasília
+const formatDateTimeBR = (dateString: string) => {
+  return new Date(dateString).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   });
@@ -112,15 +133,16 @@ function formatNowSP(): string {
 
 // POST helper
 async function sendPayload(
-  sessionId: string, 
-  instancia: string, 
-  tipo: "texto"|"imagem"|"audio", 
-  mensagem: string, 
-  mimeType?: string
+  sessionId: string,
+  instancia: string,
+  tipo: "texto" | "imagem" | "audio" | "arquivo",
+  mensagem: string,
+  mimeType?: string,
+  caption?: string
 ) {
   // Normalizar instância
   const normalizedInstancia = instancia.trim().toLowerCase();
-  
+
   // Validar instância
   if (!normalizedInstancia) {
     throw new Error("INSTANCE_REQUIRED");
@@ -137,6 +159,11 @@ async function sendPayload(
   // Adicionar mime_type se fornecido
   if (mimeType) {
     body.mime_type = mimeType;
+  }
+
+  // Adicionar caption se fornecido
+  if (caption) {
+    body.caption = caption;
   }
 
   const r = await fetch("https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/enviar_mensagem", {
@@ -173,20 +200,20 @@ function isValidBase64(str: string): boolean {
       console.log('❌ Base64 contém caracteres inválidos');
       return false;
     }
-    
+
     // Verificar se o comprimento é múltiplo de 4 (após padding)
     if (str.length % 4 !== 0) {
       console.log('❌ Base64 tem comprimento inválido:', str.length);
       return false;
     }
-    
+
     // Tentar decodificar para verificar integridade
     const decoded = atob(str);
     if (decoded.length === 0) {
       console.log('❌ Base64 decodifica para string vazia');
       return false;
     }
-    
+
     console.log('✅ Base64 válido, tamanho decodificado:', decoded.length);
     return true;
   } catch (e) {
@@ -197,17 +224,17 @@ function isValidBase64(str: string): boolean {
 
 // Helper para construir Data URL válido a partir da coluna media
 function buildDataUrlFromMedia(raw: unknown): string | null {
-  console.log('🔧 buildDataUrlFromMedia input:', { 
-    type: typeof raw, 
-    value: typeof raw === 'string' ? raw.substring(0, 50) + '...' : raw, 
-    stringLength: typeof raw === 'string' ? raw.length : 0 
+  console.log('🔧 buildDataUrlFromMedia input:', {
+    type: typeof raw,
+    value: typeof raw === 'string' ? raw.substring(0, 50) + '...' : raw,
+    stringLength: typeof raw === 'string' ? raw.length : 0
   });
 
   if (typeof raw !== 'string') {
     console.log('❌ Não é string, retornando null');
     return null;
   }
-  
+
   let s = raw.trim();
   if (!s || s.toLowerCase() === 'null') {
     console.log('❌ String vazia ou null, retornando null');
@@ -229,26 +256,28 @@ function buildDataUrlFromMedia(raw: unknown): string | null {
   // base64 cru → escolher MIME (melhorada detecção de áudio)
   const mime =
     s.startsWith('/9j/') ? 'image/jpeg' :
-    s.startsWith('iVBORw0') ? 'image/png' :
-    s.startsWith('SUQz') ? 'audio/mpeg' :
-    s.startsWith('FF FB') ? 'audio/mpeg' :
-    s.startsWith('FF F3') ? 'audio/mpeg' :
-    s.startsWith('FF F2') ? 'audio/mpeg' :
-    s.startsWith('OggS') ? 'audio/ogg' :
-    s.startsWith('RIFF') ? 'audio/wav' :
-    s.startsWith('GkXf') ? 'audio/webm' :
-    s.includes('webm') ? 'audio/webm;codecs=opus' :
-    // Se não detectou nada específico, tentar áudio como fallback mais provável
-    'audio/webm'; // mudança: fallback para áudio em vez de imagem
+      s.startsWith('iVBORw0') ? 'image/png' :
+        s.startsWith('SUQz') ? 'audio/mpeg' :
+          s.startsWith('FF FB') ? 'audio/mpeg' :
+            s.startsWith('FF F3') ? 'audio/mpeg' :
+              s.startsWith('FF F2') ? 'audio/mpeg' :
+                s.startsWith('OggS') ? 'audio/ogg' :
+                  s.startsWith('RIFF') ? 'audio/wav' :
+                    s.startsWith('GkXf') ? 'audio/webm' :
+                      s.includes('webm') ? 'audio/webm;codecs=opus' :
+                        s.startsWith('JVBERi0') ? 'application/pdf' :
+                          s.startsWith('UEsDBBQ') ? 'application/zip' :
+                            // Se não detectou nada específico, tentar áudio como fallback mais provável ou octet-stream
+                            'application/octet-stream';
 
   const result = `data:${mime};base64,${s}`;
-  console.log('🔧 Construindo data URL:', { 
-    mime, 
-    base64Preview: s.substring(0, 20) + '...', 
+  console.log('🔧 Construindo data URL:', {
+    mime,
+    base64Preview: s.substring(0, 20) + '...',
     base64Length: s.length,
-    resultLength: result.length 
+    resultLength: result.length
   });
-  
+
   return result;
 }
 
@@ -291,7 +320,7 @@ function MessageBubble({ row }: { row: any }) {
   if (dataUrl) {
     const isImage = dataUrl.includes('image/');
     const isAudio = dataUrl.includes('audio/');
-    
+
     console.log('🎬 Renderizando mídia:', {
       dataUrlLength: dataUrl.length,
       dataUrlPreview: dataUrl.substring(0, 50) + '...',
@@ -301,8 +330,8 @@ function MessageBubble({ row }: { row: any }) {
 
     // Componente de Mídia com Fallback
     const MediaComponent = () => {
-      const [mediaType, setMediaType] = React.useState<'image' | 'audio' | 'error'>(
-        isImage ? 'image' : isAudio ? 'audio' : 'image' // tentar imagem primeiro se não detectado
+      const [mediaType, setMediaType] = React.useState<'image' | 'audio' | 'document' | 'error'>(
+        isImage ? 'image' : isAudio ? 'audio' : 'document'
       );
 
       // Renderizar baseado no tipo atual
@@ -320,8 +349,8 @@ function MessageBubble({ row }: { row: any }) {
               console.log('❌ Imagem falhou, tentando áudio como fallback');
               setMediaType('audio'); // FALLBACK: tentar áudio
             }}
-            style={{ 
-              maxWidth: '100%', 
+            style={{
+              maxWidth: '100%',
               height: 'auto',
               backgroundColor: '#27272a'
             }}
@@ -333,7 +362,7 @@ function MessageBubble({ row }: { row: any }) {
         return (
           <div className="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600/30">
             <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-full flex items-center justify-center">
-              🎧
+              <span className="text-xl">🎧</span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-zinc-200 mb-1">Mensagem de áudio</div>
@@ -346,8 +375,8 @@ function MessageBubble({ row }: { row: any }) {
                   console.log('✅ Áudio carregado com sucesso:', e.target);
                 }}
                 onError={(e) => {
-                  console.log('❌ Áudio também falhou, mostrando erro');
-                  setMediaType('error'); // FALLBACK FINAL: erro
+                  console.log('❌ Áudio também falhou, tentando documento');
+                  setMediaType('document'); // FALLBACK FINAL: erro ou doc
                 }}
                 style={{
                   height: '32px',
@@ -359,13 +388,35 @@ function MessageBubble({ row }: { row: any }) {
         );
       }
 
+      if (mediaType === 'document') {
+        return (
+          <div className="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600/30 min-w-[200px]">
+            <div className="flex-shrink-0 w-10 h-10 bg-zinc-600 rounded-full flex items-center justify-center">
+              <span className="text-xl">📄</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-zinc-200 truncate">Arquivo</div>
+              <a
+                href={dataUrl}
+                download={`arquivo-${Date.now()}`}
+                className="text-xs text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Baixar arquivo
+              </a>
+            </div>
+          </div>
+        );
+      }
+
       // Fallback final: erro
       return (
         <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
           ❌ Erro ao carregar mídia
           <br />
           <small className="text-xs text-zinc-500">
-            Tentou imagem e áudio - Base64 pode estar corrompido
+            Arquivo corrompido ou formato não suportado
           </small>
         </div>
       );
@@ -402,27 +453,32 @@ function MessageBubble({ row }: { row: any }) {
 
   // 2) SEM mídia → renderiza texto (message.content) normalmente
   const content = m?.content ?? '';
-  
+
   console.log('📝 Renderizando texto:', { content: content.substring(0, 50) + '...', isAI });
 
   return (
     <div className={isAI ? 'self-end' : 'self-start'}>
       <div className={isAI
-        ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow'
-        : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow'}>
-        <div className="whitespace-pre-wrap break-words">{content}</div>
+        ? 'max-w-[72ch] rounded-lg bg-[#005c4b] px-3 py-2 text-white shadow-sm rounded-tr-none'
+        : 'max-w-[72ch] rounded-lg bg-[#202c33] px-3 py-2 text-zinc-100 shadow-sm rounded-tl-none'}>
+        <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{content}</div>
+        <div className="text-[10px] text-white/60 text-right mt-1 -mb-1">
+          {/* Placeholder for time if available in row */}
+          {row.data ? formatHour(row.data) : ''}
+        </div>
       </div>
     </div>
   );
 }
 
-interface ConversasViewPremiumProps {}
+interface ConversasViewPremiumProps { }
 
-export function ConversasViewPremium({}: ConversasViewPremiumProps) {
+export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const { profile } = useUserProfile();
   const { toast } = useToast();
   const controls = useAnimation();
-  
+  const isMobile = useIsMobile();
+
   // Estados
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
@@ -432,19 +488,48 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
     isOpen: false,
     data: null
   });
+  const [leads, setLeads] = useState<any[]>([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
+  const [showLeads, setShowLeads] = useState(false);
+  const [leadMessages, setLeadMessages] = useState<any[]>([]);
+  const [loadingLeadMessages, setLoadingLeadMessages] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+
+  // Hook para controlar visualização Mobile
+  useEffect(() => {
+    if (isMobile) {
+      if (selectedConversation || selectedLead) {
+        setShowSidebar(false);
+      } else {
+        setShowSidebar(true);
+      }
+    } else {
+      setShowSidebar(true);
+    }
+  }, [isMobile, selectedConversation, selectedLead]);
 
   // Estados para mídia
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [sec, setSec] = useState(0);
-  
+
   // Refs para mídia
   const imgInputRef = useRef<HTMLInputElement | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const endOfMessagesRef = useRef<HTMLDivElement | null>(null);
-  
+
+  // Estado para Preview de Mídia
+  const [previewData, setPreviewData] = useState<{
+    file: File;
+    base64: string;
+    type: "imagem" | "audio" | "arquivo";
+    caption: string;
+  } | null>(null);
+
   const maxAudioSec = 60;
 
   // Hooks de dados
@@ -479,7 +564,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   // Auto scroll para o final quando novas mensagens chegam ou conversa muda
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, selectedConversation, loadingMessages]);
+  }, [messages.length, selectedConversation, loadingMessages, leadMessages.length]);
 
   // Informar instância atual ao hook de mensagens para calcular handoff
   useEffect(() => {
@@ -495,6 +580,114 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
 
   // Conversa atual
   const currentConversation = conversas.find(conv => conv.sessionId === selectedConversation);
+
+  // Função para buscar mensagens do lead
+  const fetchLeadMessages = async (lead: any) => {
+    if (!lead?.phone || !profile?.company_id) {
+      toast({
+        title: "Dados insuficientes",
+        description: "Telefone do lead ou empresa não encontrado",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoadingLeadMessages(true);
+      setSelectedLead(lead);
+      setLeadMessages([]);
+
+      // Buscar whatsapp_ai_phone da empresa
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', profile.company_id)
+        .single();
+
+      if (companyError) {
+        throw new Error('Erro ao buscar dados da empresa');
+      }
+
+      // A coluna whatsapp_ai_phone pode não estar no tipo, mas existe no banco
+      const companyPhone = (companyData as any)?.whatsapp_ai_phone;
+      if (!companyPhone) {
+        throw new Error('Telefone da empresa não encontrado');
+      }
+
+      // Limpar o telefone do lead (remover + e caracteres não numéricos)
+      const leadPhoneClean = lead.phone.replace(/[^0-9]/g, '');
+
+      console.log('[ConversasViewPremium] Buscando mensagens do lead:', {
+        leadPhone: lead.phone,
+        leadId: lead.id,
+        companyPhone
+      });
+
+      // Usar a função RPC para buscar mensagens (usar any para contornar tipo não registrado)
+      // FIX: usar lead.id como session_id, pois é assim que está salvo no banco
+      const { data: messagesData, error: messagesError } = await (supabase.rpc as any)('conversation_for_user_by_phone', {
+        p_session_id: lead.id,
+        p_phone: companyPhone,
+        p_limit: 500,
+        p_offset: 0,
+      });
+
+      if (messagesError) {
+        console.error('[ConversasViewPremium] Erro ao buscar mensagens:', messagesError);
+        throw messagesError;
+      }
+
+      const messagesArray = Array.isArray(messagesData) ? messagesData : [];
+      console.log('[ConversasViewPremium] Mensagens encontradas:', messagesArray.length);
+
+      // Filtrar apenas mensagens do tipo 'ai' e 'human' e mapear
+      const filteredMessages = messagesArray
+        .map((row: any) => {
+          let parsedMessage: any;
+          if (typeof row.message === 'string') {
+            try {
+              parsedMessage = JSON.parse(row.message);
+            } catch {
+              parsedMessage = { type: 'human', content: row.message };
+            }
+          } else {
+            parsedMessage = row.message;
+          }
+
+          const messageType = String(parsedMessage?.type || '').toLowerCase();
+
+          // Filtrar apenas 'ai' e 'human'
+          if (messageType !== 'ai' && messageType !== 'human') {
+            return null;
+          }
+
+          return {
+            id: row.id,
+            sessionId: row.session_id,
+            message: {
+              type: messageType as 'ai' | 'human',
+              content: parsedMessage?.content || '',
+            },
+            data: row.data,
+            media: row.media ?? null,
+          };
+        })
+        .filter((msg: any) => msg !== null)
+        .sort((a: any, b: any) => new Date(a.data).getTime() - new Date(b.data).getTime());
+
+      setLeadMessages(filteredMessages);
+    } catch (err: any) {
+      console.error('[ConversasViewPremium] Erro ao buscar mensagens do lead:', err);
+      toast({
+        title: "Erro ao carregar mensagens",
+        description: err?.message || "Erro desconhecido",
+        variant: "destructive",
+      });
+      setLeadMessages([]);
+    } finally {
+      setLoadingLeadMessages(false);
+    }
+  };
 
   // Handlers
   const handleGenerateSummary = async (conversation: any) => {
@@ -523,7 +716,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
       const result = await response.json();
       const item = Array.isArray(result) ? result[0] : result;
       let summaryData;
-      
+
       if (item && item.output) {
         summaryData = typeof item.output === 'string' ? JSON.parse(item.output) : item.output;
       } else {
@@ -571,65 +764,152 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   };
 
   // Handlers para mídia
-  
+
   // IMAGE
-  const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // FILE / IMAGE / AUDIO UPLOAD
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedConversation || !selectedInstance) return;
-    
+    if (!file) return;
+
+    // Se não tiver conversa/lead selecionado, alerta
+    if (!selectedConversation && !selectedLead) {
+      toast({
+        title: "Selecione uma conversa para enviar",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setBusy(true);
       const base64 = await fileToBase64(file);
-      await sendPayload(selectedConversation, selectedInstance, "imagem", base64, file.type);
-      toast({
-        title: "Imagem enviada com sucesso",
-        variant: "default",
+
+      // Determinar tipo
+      let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
+      if (file.type.startsWith("image/")) tipo = "imagem";
+      else if (file.type.startsWith("audio/")) tipo = "audio";
+
+      // Abrir preview em vez de enviar direto
+      setPreviewData({
+        file,
+        base64,
+        type: tipo,
+        caption: ""
       });
+
     } catch (err: any) {
-      console.error('Erro ao enviar imagem:', err);
-      if (err.message === "INSTANCE_REQUIRED") {
-        toast({
-          title: "Selecione uma instância antes de enviar",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Falha ao enviar imagem",
-          variant: "destructive",
-        });
-      }
+      console.error('Erro ao processar arquivo:', err);
+      toast({
+        title: "Falha ao processar arquivo",
+        description: err.message,
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
       if (e.target) e.target.value = "";
     }
   };
 
+  const cancelPreview = () => {
+    setPreviewData(null);
+  };
+
+  const sendPreview = async () => {
+    if (!previewData) return;
+
+    try {
+      setBusy(true);
+
+      // Target: se tiver lead selecionado usa lead, senao conversation
+      const targetSession = selectedLead?.id || selectedConversation;
+      // Usar a instância selecionada globalmente ou da conversa
+      const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+
+      if (!targetSession) throw new Error("Sessão inválida");
+
+      // Usar caption do preview se existir
+      const msgToSend = previewData.caption || previewData.base64; // Se for texto, usa caption? Não, backend espera base64 no 'mensagem' para midia?
+      // Pelo sendPayload original:
+      // tipo='imagem' -> mensagem = base64
+      // Mas se tiver caption, como manda?
+      // O backend n8n parece esperar 'mensagem' como conteudo (base64 para midia) e 'caption' como legenda opcional.
+
+      await sendPayload(
+        targetSession,
+        targetInstancia,
+        previewData.type,
+        previewData.base64,
+        previewData.file.type,
+        previewData.caption
+      );
+
+      toast({
+        title: `${previewData.type === 'imagem' ? 'Imagem' : previewData.type === 'audio' ? 'Áudio' : 'Arquivo'} enviado(a) com sucesso`,
+        variant: "default",
+      });
+
+      setPreviewData(null);
+
+      // Refresh
+      // Refresh imediato + 2s conforme solicitado
+      if (selectedLead) {
+        fetchLeadMessages(selectedLead);
+        setTimeout(() => fetchLeadMessages(selectedLead), 2000);
+      } else {
+        refetchMessages();
+        refetchConversas();
+        setTimeout(() => {
+          refetchMessages();
+          refetchConversas();
+        }, 2000);
+      }
+
+    } catch (err: any) {
+      console.error('Erro ao enviar mídia:', err);
+      toast({
+        title: "Falha ao enviar",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // TEXT
   const sendText = async () => {
     const val = messageInput.trim();
-    if (!val || !selectedConversation || !selectedInstance) return;
-    
+    if (!val) return;
+    if (!selectedConversation && !selectedLead) return;
+
     try {
       setBusy(true);
-      await sendPayload(selectedConversation, selectedInstance, "texto", val);
+      const targetSession = selectedLead ? selectedLead.id : selectedConversation;
+      const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+
+      if (!targetSession) throw new Error("Sessão inválida");
+
+      await sendPayload(targetSession, targetInstancia, "texto", val);
       setMessageInput("");
-      toast({
-        title: "Mensagem enviada com sucesso",
-        variant: "default",
-      });
+
+      if (selectedLead) {
+        fetchLeadMessages(selectedLead);
+        setTimeout(() => fetchLeadMessages(selectedLead), 2000);
+      } else {
+        refetchMessages();
+        refetchConversas();
+        setTimeout(() => {
+          refetchMessages();
+          refetchConversas();
+        }, 2000);
+      }
     } catch (err: any) {
       console.error('Erro ao enviar texto:', err);
-      if (err.message === "INSTANCE_REQUIRED") {
-        toast({
-          title: "Selecione uma instância antes de enviar",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Falha ao enviar texto",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Erro ao enviar mensagem",
+        description: err?.message || "Erro desconhecido",
+        variant: "destructive"
+      });
     } finally {
       setBusy(false);
     }
@@ -650,7 +930,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
         ? "audio/webm;codecs=opus"
         : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
       const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      
+
       chunksRef.current = [];
       mr.ondataavailable = (e) => e.data && chunksRef.current.push(e.data);
       mr.onstop = async () => {
@@ -658,12 +938,27 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
           setBusy(true);
           const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
           const base64 = await blobToBase64(blob);
-          if (selectedConversation && selectedInstance) {
-            await sendPayload(selectedConversation, selectedInstance, "audio", base64, mr.mimeType || "audio/webm");
+
+          const targetSession = selectedLead ? selectedLead.id : selectedConversation;
+          const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+
+          if (targetSession) {
+            await sendPayload(targetSession, targetInstancia, "audio", base64, mr.mimeType || "audio/webm");
             toast({
               title: "Áudio enviado com sucesso",
               variant: "default",
             });
+            if (selectedLead) {
+              fetchLeadMessages(selectedLead);
+              setTimeout(() => fetchLeadMessages(selectedLead), 2000);
+            } else {
+              refetchMessages();
+              refetchConversas();
+              setTimeout(() => {
+                refetchMessages();
+                refetchConversas();
+              }, 2000);
+            }
           }
         } catch (err: any) {
           console.error('Erro ao enviar áudio:', err);
@@ -684,22 +979,22 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
           setBusy(false);
           setRecording(false);
           setSec(0);
-          if (timerRef.current) { 
-            clearInterval(timerRef.current); 
-            timerRef.current = null; 
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
           }
         }
       };
-      
+
       mr.start(100);
       recRef.current = mr;
       setRecording(true);
       setSec(0);
       timerRef.current = window.setInterval(() => {
         setSec((s) => {
-          if (s + 1 >= maxAudioSec) { 
-            stopRecord(); 
-            return maxAudioSec; 
+          if (s + 1 >= maxAudioSec) {
+            stopRecord();
+            return maxAudioSec;
           }
           return s + 1;
         });
@@ -714,9 +1009,9 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   };
 
   const stopRecord = () => {
-    try { 
+    try {
       if (recRef.current?.state === "recording") {
-        recRef.current.stop(); 
+        recRef.current.stop();
       }
     } catch (err) {
       console.error('Erro ao parar gravação:', err);
@@ -728,395 +1023,317 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   };
 
   return (
-    <div className="h-full p-3 md:p-4">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
-        {/* Coluna 1: Instâncias WhatsApp */}
-        <div className="lg:col-span-3 space-y-4">
-          <div className="h-full bg-zinc-900/60 border border-zinc-700/60 rounded-2xl p-4">
-            <div className="mb-4">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-green-400" />
-                <h2 className="text-lg font-semibold text-white">Instâncias</h2>
-              </div>
+    // Ajuste de altura para compensar o layout pai (sidebar/header) e padding (aprox 7rem / 112px)
+    <div className="h-[calc(100vh-7rem)] bg-[#111b21] text-[#e9edef] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[#202c33]">
+      {/* SIDEBAR (Lista de Conversas) */}
+      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[#202c33] bg-[#111b21] z-20`}>
+        {/* HEADER SIDEBAR */}
+        <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden">
+              <Avatar className="h-full w-full">
+                <AvatarFallback>U</AvatarFallback>
+              </Avatar>
             </div>
-            
-            <ScrollArea className="h-[calc(100vh-12rem)]">
-              <div className="space-y-3">
-                {loadingInstances ? (
-                  <SkeletonCards />
-                ) : instances.length === 0 ? (
-                  <div className="grid h-40 place-items-center rounded-2xl border border-dashed border-zinc-700/60 text-zinc-400">
-                    Nenhuma instância encontrada
-                  </div>
-                ) : (
-                  instances.map((instance) => (
-                    <div
-                      key={instance.name}
-                      className={`
-                        group relative rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-3 shadow-lg transition
-                        hover:-translate-y-0.5 hover:shadow-2xl cursor-pointer
-                        ${selectedInstance === instance.name 
-                          ? 'ring-2 ring-sky-500/40' 
-                          : ''
-                        }
-                      `}
-                      data-active={selectedInstance === instance.name}
-                      onClick={() => setSelectedInstance(instance.name)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-green-400/30 to-emerald-400/30 text-sm font-medium text-white ring-1 ring-white/10">
-                          {instance.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-white truncate">
-                            {instance.name}
-                          </h3>
-                          <span className="relative inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
-                            <span className="relative h-2 w-2">
-                              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/60"></span>
-                              <span className="absolute inset-0 rounded-full bg-emerald-400"></span>
-                            </span>
-                            Ativa
-                          </span>
-                        </div>
-                        <span className="ml-auto rounded-full bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-200">{instance.conversationCount}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
+            <h1 className="font-semibold text-[#e9edef] text-sm md:text-base">Conversas</h1>
+          </div>
+          <div className="flex gap-3 text-[#aebac1]">
+            <MessageSquare className="w-5 h-5 cursor-pointer" />
+            <MoreVertical className="w-5 h-5 cursor-pointer" />
           </div>
         </div>
 
-        {/* Coluna 2: Lista de Conversas */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="h-full bg-zinc-900/60 border border-zinc-700/60 rounded-2xl p-4">
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-white">Conversas</h2>
-                <span className="rounded-full bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-200">
-                  {filteredConversas.length}
-                </span>
-              </div>
-              
-              {/* Input de Busca */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <Input
-                  placeholder="Buscar conversas..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-zinc-800/60 border-zinc-700/60 text-white placeholder-zinc-400 focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/50"
-                />
-              </div>
-            </div>
-            
-            <ScrollArea className="h-[calc(100vh-16rem)]">
-              <div className="space-y-3">
-                {!selectedInstance ? (
-                  <EmptyConversas />
-                ) : loadingConversas ? (
-                  <SkeletonCards />
-                ) : filteredConversas.length === 0 ? (
-                  <EmptyConversas />
-                ) : (
-                  filteredConversas.map((conversa) => (
-                    <div
-                      key={conversa.sessionId}
-                      className={`
-                        group relative flex gap-3 rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-3 shadow
-                        transition hover:-translate-y-0.5 hover:shadow-2xl cursor-pointer
-                        ${selectedConversation === conversa.sessionId
-                          ? 'border-sky-500/30 bg-zinc-800/70'
-                          : ''
-                        }
-                      `}
-                      data-active={selectedConversation === conversa.sessionId}
-                      onClick={() => { setSelectedConversation(conversa.sessionId); openSession(conversa.sessionId); }}
-                    >
-                      <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-fuchsia-400/30 to-sky-400/30 text-sm font-medium text-white ring-1 ring-white/10 group-hover:scale-[1.02] transition">
-                        {conversa.displayName.charAt(0).toUpperCase()}
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <h3 className="text-sm font-semibold text-zinc-100 group-hover:text-white truncate">
-                            {conversa.displayName === conversa.sessionId 
-                              ? 'Aguardando nome do lead...'
-                              : conversa.displayName
-                            }
-                          </h3>
-                          <span className="text-[11px] text-zinc-500 ml-2">
-                            {formatHour(conversa.lastMessageDate)}
-                          </span>
-                        </div>
-                        
-                        <p className="truncate text-xs text-zinc-400 group-hover:text-zinc-300 mb-2">
-                          {conversa.lastMessageContent || 'Sem prévia de mensagem'}
-                        </p>
-                        
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {conversa.leadPhone && (
-                              <span className="text-xs text-zinc-500">
-                                {conversa.leadPhone.replace('@s.whatsapp.net', '')}
-                              </span>
-                            )}
-                            
-                            {conversa.leadPhone && conversa.leadStage && (
-                              <span className="text-zinc-600">•</span>
-                            )}
-                            
-                            {conversa.leadStage && (
-                              <span className="rounded-full border border-white/10 bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-300">
-                                {conversa.leadStage}
-                              </span>
-                            )}
-                          </div>
-                          
-                          <span className="rounded-full bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-200">
-                            {conversa.messageCount}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
+        {/* SEARCH & FILTER */}
+        <div className="p-2 border-b border-[#202c33]">
+          <div className="bg-[#202c33] rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <Search className="w-4 h-4 text-[#8696a0]" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Pesquisar ou começar uma nova..."
+              className="bg-transparent border-none outline-none text-sm text-[#d1d7db] w-full placeholder-[#8696a0]"
+            />
           </div>
         </div>
 
-        {/* Coluna 3: Chat Aberto */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="h-full bg-zinc-900/60 border border-zinc-700/60 rounded-2xl p-4 flex flex-col">
-            {!currentConversation ? (
-              <EmptyChat />
-            ) : (
-              <>
-                {/* Header Glass */}
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mb-3 flex items-center justify-between rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-3 shadow-xl"
-                >
-                  {/* Esquerda: avatar + nome + linha de apoio */}
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-violet-400/30 to-sky-400/30 text-white ring-1 ring-white/10">
-                      {currentConversation.displayName.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-zinc-100">
-                        {currentConversation.displayName === currentConversation.sessionId 
-                          ? "Aguardando nome do lead…" 
-                          : currentConversation.displayName
-                        }
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-400">
-                        {currentConversation.leadPhone && (
-                          <span>{currentConversation.leadPhone.replace('@s.whatsapp.net', '')}</span>
-                        )}
-                        {currentConversation.leadStage && (
-                          <span className="rounded-full border border-white/10 bg-zinc-800/60 px-2 py-0.5">
-                            {currentConversation.leadStage}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Direita: menu ⋯ */}
-                  <ConversationActionsMenu 
-                    conversation={currentConversation}
-                    onGenerateSummary={handleGenerateSummary}
-                    onFollowUp={handleFollowUp}
-                  />
-                </motion.div>
+        {/* INSTANCES LIST (Horizontal) */}
+        <div className="py-2 px-3 border-b border-[#202c33] overflow-x-auto whitespace-nowrap custom-scrollbar">
+          {instances?.map((inst: any) => (
+            <button
+              key={inst.name}
+              onClick={() => {
+                setSelectedInstance(inst.name);
+                setSelectedConversation(null);
+                setSelectedLead(null);
+              }}
+              className={`inline-block px-3 py-1 text-xs rounded-full mr-2 transition-colors border ${selectedInstance === inst.name
+                ? "bg-[#00a884] text-[#111b21] border-[#00a884]"
+                : "bg-[#202c33] text-[#8696a0] border-transparent hover:bg-[#2a3942]"
+                }`}
+            >
+              {inst.name}
+            </button>
+          ))}
+        </div>
 
-                {/* Lista de mensagens com stagger real */}
-                <div className="flex-1 overflow-hidden">
-                  <ScrollArea className="h-[calc(100vh-24rem)]">
-                    {loadingMessages ? (
-                      <div className="space-y-3 px-1.5 pb-3">
-                        {[1, 2, 3].map(i => (
-                          <div key={i} className="h-16 rounded-2xl bg-zinc-800/50 animate-pulse" />
-                        ))}
-                      </div>
-                    ) : errorMessages ? (
-                      <EmptyChat />
-                    ) : messages.length === 0 ? (
-                      <EmptyChat />
-                    ) : (
-                      <AnimatePresence mode="popLayout">
-                        <motion.div 
-                          variants={list} 
-                          initial="hidden" 
-                          animate="visible" 
-                          className="flex flex-col gap-2.5 px-1.5 pb-3"
-                        >
-                          {(() => {
-                            const currentInst = String((selectedInstance || scopedInstance || '')).toLowerCase();
-                            const idxHandoff = messages.findIndex((m: any) => m && m.before_handoff === false);
-                            const hasCurrent = !!currentInst && messages.some((m: any) => String(m?.instancia || '').toLowerCase() === currentInst);
-                            const idxFirstCurrent = hasCurrent ? messages.findIndex((m: any) => String(m?.instancia || '').toLowerCase() === currentInst) : -1;
-                            const idxForward = idxFirstCurrent >= 0
-                              ? messages.findIndex((m: any, ii: number) => ii > idxFirstCurrent && String(m?.instancia || '').toLowerCase() !== currentInst)
-                              : -1;
-                            return messages.map((row: any, i: number) => {
-                              // Se chegou o ponto de encaminhamento (mudança de instância), não mostrar mais mensagens do SDR além dele
-                              if (idxForward > 0 && i > idxForward) return null;
-                              if (idxForward > 0 && i === idxForward) {
-                                return (
-                                  <motion.div 
-                                    key={`forward-${row.id}`} 
-                                    variants={bubble} 
-                                    layout
-                                    animate={controls}
-                                  >
-                                    {profile?.role === 'gestor' ? (
-                                      <div
-                                        className="flex items-center gap-2 my-2 cursor-pointer select-none"
-                                        onClick={() => {
-                                          const targetInst = messages[idxForward]?.instancia;
-                                          if (targetInst) {
-                                            setSelectedInstance(String(targetInst).trim().toLowerCase());
-                                            if (selectedConversation) openSession(selectedConversation);
-                                          }
-                                        }}
-                                        title="Ir para conversa na instância do corretor"
-                                      >
-                                        <div className="h-px flex-1 bg-emerald-600/60" />
-                                        <span className="text-[11px] text-emerald-300 whitespace-nowrap">
-                                          Enviado para o corretor responsável — clicar para abrir
-                                        </span>
-                                        <div className="h-px flex-1 bg-emerald-600/60" />
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2 my-2">
-                                        <div className="h-px flex-1 bg-zinc-700/60" />
-                                        <span className="text-[11px] text-zinc-400 whitespace-nowrap">
-                                          Conversa encaminhada ao corretor
-                                        </span>
-                                        <div className="h-px flex-1 bg-zinc-700/60" />
-                                      </div>
-                                    )}
-                                  </motion.div>
-                                );
-                              }
-
-                              return (
-                              <motion.div 
-                                key={row.id} 
-                                variants={bubble} 
-                                layout
-                                animate={controls}
-                              >
-                                {i === idxHandoff && idxHandoff > 0 && (
-                                  <div className="flex items-center gap-2 my-2">
-                                    <div className="h-px flex-1 bg-zinc-700/60" />
-                                    <span className="text-[11px] text-zinc-400 whitespace-nowrap">
-                                      Atendido pelo SDR até aqui
-                                    </span>
-                                    <div className="h-px flex-1 bg-zinc-700/60" />
-                                  </div>
-                                )}
-                                <MessageBubble row={row} />
-                                
-                                <div className={(() => {
-                                  const rawMessage = row?.message;
-                                  const m = typeof rawMessage === 'string'
-                                    ? (() => { try { return JSON.parse(rawMessage); } catch { return {}; } })()
-                                    : (rawMessage || {});
-                                  const isAI = String(m?.type || '').toLowerCase() === 'ai';
-                                  return isAI 
-                                    ? "mt-1 text-right text-[11px] text-zinc-300" 
-                                    : "mt-1 text-left text-[11px] text-zinc-400";
-                                })()}
-                                >
-                                  {formatHour(row.data)}
-                                </div>
-                              </motion.div>
-                              );
-                            });
-                          })()}
-                          <div ref={endOfMessagesRef} />
-                        </motion.div>
-                      </AnimatePresence>
-                    )}
-                  </ScrollArea>
+        {/* CHAT LIST */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {filteredConversas.length === 0 && selectedInstance ? (
+            <div className="p-4 text-center text-[#8696a0] text-sm">
+              Nenhuma conversa encontrada.
+            </div>
+          ) : (
+            filteredConversas.map((conv: any) => (
+              <div
+                key={conv.sessionId}
+                onClick={() => {
+                  setSelectedConversation(conv.sessionId);
+                  openSession(conv.sessionId);
+                  setSelectedLead(null);
+                }}
+                className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[#202c33] transition-colors border-b border-[#202c33] ${selectedConversation === conv.sessionId ? 'bg-[#2a3942]' : ''}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-slate-600 flex-shrink-0 relative overflow-hidden">
+                  <Avatar className="h-full w-full">
+                    <AvatarFallback>{(conv.displayName?.charAt(0) || '?').toUpperCase()}</AvatarFallback>
+                  </Avatar>
                 </div>
-
-                {/* Composer evidente */}
-                <div className="mt-2 rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-2 shadow-xl">
-                  <div className="flex items-end gap-2">
-                    {/* IMAGEM */}
-                    <button
-                      onClick={() => imgInputRef.current?.click()}
-                      disabled={busy}
-                      title="Enviar imagem"
-                      className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-700/60 bg-zinc-900/60 text-zinc-300 hover:text-white disabled:opacity-50"
-                    >
-                      🖼️
-                    </button>
-                    <input 
-                      ref={imgInputRef} 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={onPickImage} 
-                    />
-
-                    {/* ÁUDIO */}
-                    <button
-                      onClick={recording ? stopRecord : startRecord}
-                      disabled={busy}
-                      title={recording ? "Parar e enviar" : "Gravar áudio"}
-                      className={`grid h-10 w-10 place-items-center rounded-xl border border-zinc-700/60 
-                                  ${recording ? "bg-rose-600 text-white animate-pulse" : "bg-zinc-900/60 text-zinc-300 hover:text-white"} 
-                                  disabled:opacity-50`}
-                    >
-                      🎙️
-                    </button>
-                    {recording && (
-                      <span className="mb-1 select-none text-xs text-rose-300">
-                        {String(Math.floor(sec/60)).padStart(2,"0")}:{String(sec%60).padStart(2,"0")}
-                      </span>
-                    )}
-
-                    {/* TEXTAREA */}
-                    <textarea
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      onKeyDown={onTextareaKeyDown}
-                      placeholder="Digite sua mensagem..."
-                      disabled={busy}
-                      className="min-h-[44px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-700/60 bg-zinc-800/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/30 disabled:opacity-50"
-                      rows={1}
-                    />
-
-                    {/* ENVIAR TEXTO */}
-                    <button
-                      onClick={sendText}
-                      disabled={busy || !messageInput.trim()}
-                      title="Enviar"
-                      className="grid h-10 w-10 place-items-center rounded-xl bg-sky-600 text-white shadow hover:brightness-110 disabled:opacity-60"
-                    >
-                      🛩️
-                    </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-baseline mb-0.5">
+                    <h3 className="text-[#e9edef] font-normal truncate max-w-[70%] text-base">{conv.displayName}</h3>
+                    <span className="text-xs text-[#8696a0] whitespace-nowrap">
+                      {conv.lastMessageDate ? formatHour(conv.lastMessageDate) : ''}
+                    </span>
                   </div>
+                  <p className="text-[#8696a0] text-sm truncate flex items-center">
+                    <span className="truncate">{conv.lastMessageContent || "Toque para abrir conversa"}</span>
+                  </p>
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Modal de Resumo */}
+      {/* MAIN CHAT AREA */}
+      <div className={`${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-[#0b141a] relative w-full h-full`}>
+        {!selectedConversation && !selectedLead ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[#00a884] bg-[#222e35]">
+            <div className="max-w-[560px]">
+
+              <h2 className="text-3xl font-light text-[#e9edef] mb-5">
+                Gerencie suas conversas
+              </h2>
+              <p className="text-[#8696a0] text-sm leading-6">
+                Selecione uma conversa para ver as mensagens.
+              </p>
+            </div>
+            <div className="absolute bottom-10 flex items-center gap-2 text-[#8696a0] text-xs">
+              <span className="opacity-80">Protegido com criptografia de ponta a ponta</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* CHAT HEADER */}
+            <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shadow-sm shrink-0 z-10 w-full">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <Button variant="ghost" size="icon" className="md:hidden text-[#aebac1] mr-1" onClick={() => {
+                  setShowSidebar(true);
+                  setSelectedConversation(null);
+                  setSelectedLead(null);
+                }}>
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <div className="w-10 h-10 rounded-full bg-slate-600 flex-shrink-0 cursor-pointer overflow-hidden">
+                  <Avatar className="h-full w-full">
+                    <AvatarFallback>{(currentConversation?.displayName?.charAt(0) || selectedLead?.name?.charAt(0) || '?').toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                </div>
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-[#e9edef] font-normal text-base truncate cursor-pointer hover:underline">
+                    {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
+                  </span>
+                  <p className="text-xs text-[#8696a0] truncate">
+                    {currentConversation?.leadPhone || selectedLead?.phone}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-4 text-[#aebac1]">
+                <Search className="h-5 w-5 cursor-pointer" />
+                {currentConversation && (
+                  <ConversationActionsMenu conversation={currentConversation} onGenerateSummary={handleGenerateSummary} onFollowUp={handleFollowUp} />
+                )}
+              </div>
+            </div>
+
+            {/* MESSAGES */}
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-[#0b141a] bg-opacity-95"
+              style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay' }}>
+              <div className="space-y-2 pb-2">
+                {/* LEAD MESSAGES */}
+                {selectedLead && leadMessages.map((msg: any) => {
+                  // Adapt lead msg to row format if needed, assuming match
+                  return (
+                    <motion.div key={msg.id} variants={bubble} layout initial="hidden" animate="visible">
+                      <MessageBubble row={msg} />
+                    </motion.div>
+                  );
+                })}
+
+                {/* CONVERSATION MESSAGES */}
+                {!selectedLead && messages.map((row: any) => {
+                  // Ajuste de Lógica de Alinhamento:
+                  // row é ConversaMessage { message: { type: 'human' | 'ai' ... } }
+                  // 'ai' -> Agent/System -> Right (isMe=true)
+                  // 'human' -> Lead -> Left (isMe=false)
+                  const msgType = row.message?.type;
+                  const isMe = msgType === 'ai' || msgType === 'assistant';
+
+                  return (
+                    <motion.div
+                      key={row.id}
+                      variants={bubble}
+                      layout
+                      initial="hidden"
+                      animate="visible"
+                      // Se for AI/Agent (isMe), justify-end (Direita). Se for Lead (User), justify-start (Esquerda).
+                      className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}
+                    >
+                      {/* Passar isMe/isAI explicitamente se MessageBubble precisar, mas o flex container já posiciona */}
+                      <MessageBubble row={row} />
+                    </motion.div>
+                  );
+                })}
+                <div ref={endOfMessagesRef} />
+              </div>
+            </div>
+
+            {/* INPUT AREA */}
+            <div className="min-h-[62px] bg-[#202c33] px-4 py-2 flex items-end gap-2 shrink-0 z-10 w-full">
+              <Button variant="ghost" size="icon" className="text-[#8696a0] hover:bg-transparent rounded-full mb-1">
+                <span className="text-xl">😊</span>
+              </Button>
+              <Button variant="ghost" size="icon" className="text-[#8696a0] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()}>
+                <Paperclip className="h-5 w-5" />
+              </Button>
+              <input
+                ref={imgInputRef}
+                type="file"
+                className="hidden"
+                onChange={onPickFile}
+                multiple={false}
+              />
+
+              <div className="flex-1 bg-[#2a3942] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1">
+                <textarea
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={onTextareaKeyDown}
+                  placeholder="Mensagem"
+                  className="w-full bg-transparent border-none outline-none text-[#d1d7db] placeholder-[#8696a0] text-sm resize-none custom-scrollbar max-h-[100px]"
+                  rows={1}
+                  style={{ minHeight: '24px' }}
+                />
+              </div>
+
+              {messageInput.trim() ? (
+                <Button
+                  onClick={sendText}
+                  className="bg-[#00a884] hover:bg-[#008f6f] text-[#111b21] rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-transform active:scale-95"
+                >
+                  <Send className="h-5 w-5 ml-0.5" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={recording ? stopRecord : startRecord}
+                  className={`rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-all ${recording ? "bg-red-500 animate-pulse text-white" : "bg-[#202c33] hover:bg-[#37404a] text-[#8696a0]"}`}
+                >
+                  <Mic className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* MEDIA PREVIEW OVERLAY */}
+      <AnimatePresence>
+        {previewData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[#0b141a] bg-opacity-95 flex flex-col"
+          >
+            {/* Header Preview */}
+            <div className="h-16 flex items-center justify-between px-4 w-full text-[#aebac1]">
+              <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[#3b4a54] rounded-full">
+                <ArrowLeft className="w-6 h-6" />
+              </Button>
+              <h2 className="font-medium text-white">Visualizar {previewData.type === 'arquivo' ? 'Arquivo' : previewData.type === 'imagem' ? 'Imagem' : 'Mídia'}</h2>
+              <div className="w-10"></div> {/* Spacer */}
+            </div>
+
+            {/* Content Preview */}
+            <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
+              {previewData.type === 'imagem' ? (
+                <img src={previewData.base64} alt="Preview" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
+              ) : previewData.type === 'arquivo' ? (
+                <div className="flex flex-col items-center gap-4 text-zinc-300 p-10 bg-[#202c33] rounded-xl border border-zinc-700">
+                  <div className="w-20 h-20 bg-zinc-600 rounded-full flex items-center justify-center">
+                    <Paperclip className="w-10 h-10 text-white" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold text-lg max-w-xs truncate" title={previewData.file.name}>{previewData.file.name}</p>
+                    <p className="text-sm text-zinc-400">{(previewData.file.size / 1024).toFixed(1)} KB • {previewData.file.type || 'Desconhecido'}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4 text-zinc-300">
+                  <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center animate-pulse">
+                    <Mic className="w-8 h-8 text-white" />
+                  </div>
+                  <p>Áudio gravado</p>
+                </div>
+              )}
+            </div>
+
+            {/* Caption Input */}
+            <div className="bg-[#202c33] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg">
+              <input
+                autoFocus
+                value={previewData.caption}
+                onChange={(e) => setPreviewData({ ...previewData, caption: e.target.value })}
+                placeholder="Adicione uma legenda..."
+                className="bg-transparent text-[#d1d7db] placeholder-[#8696a0] w-full outline-none px-4"
+                onKeyDown={(e) => e.key === 'Enter' && sendPreview()}
+              />
+            </div>
+
+            {/* Send Button FAB */}
+            <div className="flex justify-end px-6 pb-6 w-full max-w-5xl mx-auto">
+              <button
+                onClick={sendPreview}
+                className="bg-[#00a884] hover:bg-[#008f6f] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
+              >
+                {busy ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-6 h-6 ml-0.5" />}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <SummaryModalAnimated
         isOpen={summaryModal.isOpen}
         onClose={() => setSummaryModal({ isOpen: false, data: null })}
         summaryData={summaryModal.data}
       />
-    </div>
+
+      <LeadDetailsModal
+        isOpen={showLeadModal}
+        onClose={() => setShowLeadModal(false)}
+        leadId={selectedLead ? selectedLead.id : selectedConversation}
+      />
+    </div >
   );
 }

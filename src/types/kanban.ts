@@ -1,6 +1,17 @@
 // Tipos para o sistema Kanban de Leads
 import { Tables } from '@/integrations/supabase/types';
 
+// Função auxiliar para normalizar estágios (hífens -> espaços, trim)
+const normalizeStageForDisplay = (stage: string): string => {
+  return (stage || 'Novo Lead')
+    .trim()
+    .replace(/-/g, ' ') // Converte hífens em espaços
+    .replace(/\s+/g, ' ') // Remove múltiplos espaços
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' '); // Capitaliza primeira letra de cada palavra
+};
+
 export type LeadStage = 
   | 'Novo Lead'
   | 'Qualificado'
@@ -91,7 +102,7 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     interesse: dbLead.interest || 'Não especificado',
     valor: dbLead.estimated_value || 0,
     valorEstimado: dbLead.estimated_value || 0,
-    stage: dbLead.stage || 'Novo Lead',
+    stage: normalizeStageForDisplay(dbLead.stage || 'Novo Lead'), // Normalizar: hífens -> espaços, trim, capitalizar
     dataContato: dbLead.created_at ? new Date(dbLead.created_at).toISOString().split('T')[0] : '',
     observacoes: dbLead.notes || '',
     property_id: dbLead.property_id || undefined,
