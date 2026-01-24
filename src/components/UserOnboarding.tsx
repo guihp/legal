@@ -90,7 +90,7 @@ export function UserOnboarding({ onComplete }: UserOnboardingProps) {
             </motion.div>
             
             <CardTitle className="text-2xl font-bold text-white">
-              Bem-vindo ao ImobiPro!
+              Bem-vindo ao IAFÉ IMOBI!
             </CardTitle>
             <CardDescription className="text-gray-400">
               Configure suas informações pessoais para começar

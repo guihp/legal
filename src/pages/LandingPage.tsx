@@ -300,7 +300,7 @@ export default function LandingPage() {
                                         <Bot className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <div className="font-semibold text-white">ImobiPro Assistant</div>
+                                        <div className="font-semibold text-white">IAFÉ IMOBI Assistant</div>
                                         <div className="text-xs text-green-400">Online agora</div>
                                     </div>
                                 </div>

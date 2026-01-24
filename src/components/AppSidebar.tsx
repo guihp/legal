@@ -280,11 +280,9 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           ) : (
             <div
               style={{
-                height: `${logoSize || 40}px`,
-                width: `${logoSize || 40}px`,
-                background: settings?.primary_color
-                  ? `linear-gradient(45deg, ${settings.primary_color}, ${settings.primary_color}dd)`
-                  : 'transparent'
+                height: `${logoSize || 80}px`,
+                width: `${logoSize || 80}px`,
+                background: 'transparent'
               }}
               className="flex items-center justify-center rounded-xl shadow-lg text-white"
             >
@@ -300,7 +298,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 fontWeight: nameBold ? 'bold' : 'normal'
               }}
             >
-              {companyDisplayName || 'IAFÉ IMOBI'}
+              IAFÉ IMOBI
             </span>
             <span
               style={{

@@ -9,7 +9,7 @@ export function ConfigurationsViewMinimal() {
   console.log('🔧 ConfigurationsViewMinimal renderizado');
   
   // Estado local apenas para teste
-  const [companyName, setCompanyName] = useState('ImobiPro');
+  const [companyName, setCompanyName] = useState('IAFÉ IMOBI');
   const [companySubtitle, setCompanySubtitle] = useState('Gestão Imobiliária');
   const [primaryColor, setPrimaryColor] = useState('#3B82F6');
   
