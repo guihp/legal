@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
+import { extractMessageContent } from './useConversaMessages';
 
 export interface Conversa {
   sessionId: string;
@@ -26,7 +27,7 @@ export function useConversasList(selectedInstance?: string | null) {
     return String(selectedInstance).trim().toLowerCase();
   }, [selectedInstance]);
 
-  // Buscar whatsapp_ai_phone da empresa
+  // Buscar phone da empresa para tabela dinâmica
   useEffect(() => {
     const fetchCompanyPhone = async () => {
       if (!profile?.company_id) {
@@ -37,17 +38,21 @@ export function useConversasList(selectedInstance?: string | null) {
       try {
         const { data, error: fetchError } = await supabase
           .from('companies')
-          .select('whatsapp_ai_phone')
+          .select('phone') // Alterado de whatsapp_ai_phone para phone
           .eq('id', profile.company_id)
           .single();
-        
+
         if (fetchError) throw fetchError;
-        
-        if (data) {
-          setCompanyPhone(data.whatsapp_ai_phone || null);
+
+        if (data && data.phone) {
+          // Remover tudo que não for número
+          const cleanPhone = data.phone.replace(/\D/g, '');
+          setCompanyPhone(cleanPhone);
+        } else {
+          setCompanyPhone(null);
         }
       } catch (err) {
-        console.error('Erro ao buscar whatsapp_ai_phone da empresa:', err);
+        console.error('Erro ao buscar phone da empresa:', err);
         setCompanyPhone(null);
       }
     };
@@ -79,22 +84,24 @@ export function useConversasList(selectedInstance?: string | null) {
         effectiveInstance = inst ? String(inst).trim().toLowerCase() : null;
       }
 
-      if (!effectiveInstance) {
+      // Se temos companyPhone (tabela dinâmica), permitimos effectiveInstance ser null (busca tudo)
+      // Se NÃO temos companyPhone (legacy), precisamos de instância
+      if (!companyPhone && !effectiveInstance) {
         setConversas([]);
         setLoading(false);
         return;
       }
 
       // 2) Buscar mensagens da tabela dinâmica usando função RPC
-      const { data: rows, error: fetchError } = await supabase.rpc('list_conversations_by_phone', {
+      const { data: rows, error: fetchError } = await (supabase.rpc as any)('list_conversations_by_phone', {
         p_phone: companyPhone,
-        p_instancia: effectiveInstance,
+        p_instancia: effectiveInstance || null, // Passar null explicitamente se não tiver instância selecionada
       });
 
       if (fetchError) throw fetchError;
 
       // 3) Processar resultados (já vem agrupado pela função RPC - última mensagem por session_id)
-      const list: Conversa[] = (rows || []).map((r: any) => {
+      const list: Conversa[] = ((rows as any[]) || []).map((r: any) => {
         const sid = String(r.session_id);
 
         // preview/mídia
@@ -103,10 +110,13 @@ export function useConversasList(selectedInstance?: string | null) {
         if (typeof parsedMessage === 'string') {
           try { parsedMessage = JSON.parse(parsedMessage); } catch { parsedMessage = { content: parsedMessage, type: 'human' }; }
         }
+        // Extrair conteúdo limpo (remove prefixos como "[MENSAGEM DE TEXTO ENVIADA]: ()")
+        const rawContent = String(parsedMessage?.content || '');
+        const cleanContent = extractMessageContent(rawContent);
         // Quando houver mídia (imagem/áudio), exibir o content com ícone correspondente
         const isImageMedia = hasMedia && (String(r.media).startsWith('/9j/') || String(r.media).startsWith('iVBORw0'));
         const mediaPrefix = hasMedia ? (isImageMedia ? '🖼️ ' : '🎧 ') : '';
-        const lastContent = `${mediaPrefix}${String(parsedMessage?.content || '')}`;
+        const lastContent = `${mediaPrefix}${cleanContent}`;
         const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
 
         return {
@@ -158,19 +168,44 @@ export function useConversasList(selectedInstance?: string | null) {
     setConversas(prev => {
       const updated = [...prev];
       const index = updated.findIndex(c => c.sessionId === sessionId);
-      
+
       if (index > 0) {
         // Mover para o topo
         const conversation = updated.splice(index, 1)[0];
         updated.unshift(conversation);
       }
-      
+
       return updated;
     });
-    
+
     // Refetch para obter dados atualizados
     fetchConversas();
   };
+
+  // Polling a cada 2 segundos para atualização automática da lista
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  useEffect(() => {
+    // Limpar polling anterior
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    
+    // Iniciar polling se tiver telefone da empresa configurado
+    if (companyPhone) {
+      pollingRef.current = setInterval(() => {
+        fetchConversas();
+      }, 2000); // 2 segundos
+    }
+    
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [companyPhone]); // Re-executar quando o telefone mudar
 
   return {
     conversas,

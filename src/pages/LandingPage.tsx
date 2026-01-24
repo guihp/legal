@@ -48,7 +48,7 @@ export default function LandingPage() {
                             <Bot className="w-5 h-5 text-white" />
                         </div>
                         <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-                            ImobiPro
+                            IAFÉ IMOBI
                         </span>
                     </motion.div>
 
@@ -376,7 +376,7 @@ export default function LandingPage() {
                             <div className="w-8 h-8 flex items-center justify-center bg-gray-800 rounded-lg">
                                 <Bot className="w-5 h-5 text-gray-400" />
                             </div>
-                            <span className="text-xl font-bold text-gray-300">ImobiPro</span>
+                            <span className="text-xl font-bold text-gray-300">IAFÉ IMOBI</span>
                         </div>
 
                         <div className="flex gap-8 text-gray-500 text-sm">
@@ -387,7 +387,7 @@ export default function LandingPage() {
                         </div>
 
                         <div className="text-gray-600 text-sm">
-                            © 2024 ImobiPro. Todos os direitos reservados.
+                            © 2024 IAFÉ IMOBI. Todos os direitos reservados.
                         </div>
                     </div>
                 </div>

@@ -6,12 +6,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
-import { 
-  Building2, 
-  Mail, 
-  Lock, 
-  Loader2, 
-  CheckCircle, 
+import {
+  Building2,
+  Mail,
+  Lock,
+  Loader2,
+  CheckCircle,
   Home,
   Building,
   MapPin,
@@ -40,9 +40,9 @@ const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
   };
 
   return (
-      <motion.div
+    <motion.div
       className={`absolute ${particleVariants[type]}`}
-      initial={{ 
+      initial={{
         x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
         y: (typeof window !== 'undefined' ? window.innerHeight : 800) + 20,
         opacity: 0,
@@ -144,7 +144,7 @@ const FloatingIcon = ({ Icon, delay = 0, x = 0, y = 0, color = "blue" }) => {
       className={`absolute ${colorVariants[color]}`}
       style={{ left: `${x}%`, top: `${y}%` }}
       initial={{ opacity: 0, scale: 0, rotate: -180 }}
-      animate={{ 
+      animate={{
         opacity: [0, 0.4, 0],
         scale: [0, 1.2, 0],
         rotate: [0, 360, 720],
@@ -176,7 +176,7 @@ const ArchitecturalGrid = () => (
             stroke="rgba(59, 130, 246, 0.08)"
             strokeWidth="1"
             initial={{ pathLength: 0, opacity: 0 }}
-            animate={{ 
+            animate={{
               pathLength: [0, 1, 0],
               opacity: [0, 0.3, 0]
             }}
@@ -194,7 +194,7 @@ const ArchitecturalGrid = () => (
             transition={{ duration: 3, repeat: Infinity }}
           />
         </pattern>
-        
+
         <pattern id="hexGrid" width="100" height="87" patternUnits="userSpaceOnUse">
           <motion.polygon
             points="50,0 93.3,25 93.3,62 50,87 6.7,62 6.7,25"
@@ -218,7 +218,7 @@ const ArchitecturalGrid = () => (
       className="absolute top-20 left-10 border border-blue-400/20"
       style={{ width: "120px", height: "120px" }}
       initial={{ opacity: 0, scale: 0, rotate: 0 }}
-      animate={{ 
+      animate={{
         opacity: [0, 0.4, 0],
         scale: [0, 1.1, 0],
         rotate: [0, 180, 360],
@@ -226,12 +226,12 @@ const ArchitecturalGrid = () => (
       }}
       transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
     />
-    
+
     <motion.div
       className="absolute bottom-20 right-10 border-2 border-emerald-400/20"
       style={{ width: "80px", height: "140px" }}
       initial={{ opacity: 0, y: 50, skewY: 0 }}
-      animate={{ 
+      animate={{
         opacity: [0, 0.5, 0],
         y: [50, -20, 50],
         skewY: [-5, 5, -5],
@@ -253,7 +253,7 @@ const ArchitecturalGrid = () => (
         borderRight: "40px solid transparent",
         borderBottom: "60px solid rgba(147, 51, 234, 0.1)"
       }}
-      animate={{ 
+      animate={{
         rotate: [0, 120, 240, 360],
         scale: [0.8, 1.3, 0.8],
         opacity: [0.1, 0.4, 0.1]
@@ -265,7 +265,7 @@ const ArchitecturalGrid = () => (
     <motion.div
       className="absolute top-1/3 right-1/4 rounded-full border-2"
       style={{ width: "60px", height: "60px" }}
-      animate={{ 
+      animate={{
         scale: [1, 1.4, 1],
         opacity: [0.2, 0.6, 0.2],
         borderColor: [
@@ -288,7 +288,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [particles, setParticles] = useState<number[]>([]);
-  
+
   // Estados para "Esqueci minha senha"
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
@@ -351,7 +351,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         // Verificar resultado da verificação
         if (accessData && accessData.length > 0) {
           const accessStatus = accessData[0];
-          
+
           if (!accessStatus.can_access) {
             await supabase.auth.signOut();
             setError(accessStatus.message || 'Acesso bloqueado. Entre em contato com o suporte.');
@@ -409,18 +409,18 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950">
       {/* Background arquitetônico animado */}
       <ArchitecturalGrid />
-      
+
       {/* Luzes pulsantes */}
       <PulsingLights />
-      
+
       {/* Efeito de vidro */}
       <GlassShards />
-      
+
       {/* Partículas flutuantes variadas */}
       {particles.map((particle, index) => (
-        <FloatingParticle 
-          key={particle} 
-          delay={index * 1.5} 
+        <FloatingParticle
+          key={particle}
+          delay={index * 1.5}
           duration={12 + Math.random() * 8}
           type={particleTypes[index % particleTypes.length]}
         />
@@ -445,8 +445,8 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         <motion.div
           initial={{ opacity: 0, y: 60, scale: 0.85, rotateX: 15 }}
           animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
-          transition={{ 
-            duration: 1.2, 
+          transition={{
+            duration: 1.2,
             ease: "easeOut",
             type: "spring",
             stiffness: 80
@@ -461,7 +461,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             }}
             transition={{ duration: 4, repeat: Infinity }}
           />
-          
+
           <Card className="relative bg-gray-900/85 backdrop-blur-2xl border border-gray-700/60 shadow-2xl rounded-3xl overflow-hidden">
             {/* Borda animada */}
             <motion.div
@@ -475,49 +475,21 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               }}
               transition={{ duration: 6, repeat: Infinity }}
             />
-            
+
             <div className="relative bg-gray-900/90 backdrop-blur-2xl m-0.5 rounded-3xl">
               <CardHeader className="text-center relative pt-8">
-                <motion.div 
+                <motion.div
                   className="flex justify-center items-center mb-6"
-                  whileHover={{ scale: 1.15, rotate: 10 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  <motion.div 
-                    className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-emerald-600 shadow-2xl overflow-hidden"
-                    animate={{ 
-                      boxShadow: [
-                        "0 0 30px rgba(59, 130, 246, 0.4), 0 0 60px rgba(147, 51, 234, 0.2)",
-                        "0 0 60px rgba(147, 51, 234, 0.4), 0 0 90px rgba(59, 130, 246, 0.2)",
-                        "0 0 30px rgba(59, 130, 246, 0.4), 0 0 60px rgba(147, 51, 234, 0.2)"
-                      ]
-                    }}
-                    transition={{ duration: 3, repeat: Infinity }}
-                  >
-                    {/* Efeito de brilho interno */}
-                    <motion.div
-                      className="absolute inset-0 bg-gradient-to-tr from-white/20 via-transparent to-transparent"
-                      animate={{
-                        opacity: [0.2, 0.5, 0.2],
-                        rotate: [0, 180, 360]
-                      }}
-                      transition={{ duration: 4, repeat: Infinity }}
-                    />
-                    
-                    <motion.div
-                      className="relative flex items-center justify-center z-10"
-                      animate={{ 
-                        rotate: 360,
-                        scale: [1, 1.1, 1]
-                      }}
-                      transition={{ 
-                        rotate: { duration: 25, repeat: Infinity, ease: "linear" },
-                        scale: { duration: 2, repeat: Infinity }
-                      }}
-                    >
-                      <Building2 className="h-10 w-10 text-white drop-shadow-lg" />
-                    </motion.div>
-                  </motion.div>
+                  <img
+                    src="/Documento_1.png"
+                    alt="Logo IAFÉ IMOBI"
+                    className="h-40 w-auto object-contain drop-shadow-2xl"
+                    style={{ marginTop: '-26px', marginBottom: '-26px' }}
+                  />
                 </motion.div>
 
                 <motion.div
@@ -525,21 +497,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4, duration: 0.8 }}
                 >
-                  <CardTitle className="text-4xl font-bold bg-gradient-to-r from-white via-blue-200 via-purple-200 to-white bg-clip-text text-transparent mb-2">
-                    <motion.span
-                      animate={{
-                        backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"]
-                      }}
-                      transition={{ duration: 5, repeat: Infinity }}
-                      className="bg-gradient-to-r from-white via-blue-200 via-purple-200 to-emerald-200 bg-clip-text text-transparent"
-                      style={{ backgroundSize: "200% 200%" }}
-                    >
-                      ImobiPro Elite
-                    </motion.span>
-                  </CardTitle>
+
                   <CardDescription className="text-gray-300 text-lg">
                     <motion.span
-                      animate={{ 
+                      animate={{
                         opacity: [0.6, 1, 0.6],
                         textShadow: [
                           "0 0 5px rgba(59, 130, 246, 0.3)",
@@ -561,14 +522,14 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.6 }}
                 >
-                  <motion.form 
-                    onSubmit={handleEmailPassword} 
+                  <motion.form
+                    onSubmit={handleEmailPassword}
                     className="space-y-8"
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, delay: 0.3 }}
                   >
-                    <motion.div 
+                    <motion.div
                       className="space-y-3"
                       whileHover={{ scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 300 }}
@@ -597,7 +558,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                       </div>
                     </motion.div>
 
-                    <motion.div 
+                    <motion.div
                       className="space-y-3"
                       whileHover={{ scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 300 }}
@@ -697,7 +658,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                             repeatDelay: 3
                           }}
                         />
-                        
+
                         {loading ? (
                           <motion.div
                             className="flex items-center justify-center"

@@ -15,6 +15,7 @@ import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { supabase } from '@/integrations/supabase/client';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
@@ -51,6 +52,7 @@ interface Message {
 // Tipos mantidos para compatibilidade, mas dados agora vêm do banco
 
 export function ConversasView() {
+  const { settings } = useCompanySettings();
   const { instances, loading: loadingInstances, error: errorInstances, refetch: refetchInstances } = useConversasInstances();
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
@@ -63,10 +65,37 @@ export function ConversasView() {
   const { conversas, loading: loadingConversas, error: errorConversas, updateConversation } = useConversasList(selectedInstance);
   const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch, setMyInstance } = useConversaMessages();
   const endOfMessagesRef = React.useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = React.useRef<boolean>(true);
+  const prevConversationRef = React.useRef<string | null>(null);
 
+  // Auto scroll apenas quando:
+  // 1. Conversa é selecionada/mudada
+  // 2. Usuário já estava no final da conversa (não scrollou para cima)
   React.useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, selectedConversation, loadingMessages]);
+    // Se mudou de conversa, fazer scroll e resetar flag
+    if (selectedConversation !== prevConversationRef.current) {
+      prevConversationRef.current = selectedConversation;
+      shouldAutoScrollRef.current = true;
+      setTimeout(() => {
+        endOfMessagesRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      }, 100);
+      return;
+    }
+    
+    // Só fazer scroll automático se o usuário estava no final
+    if (shouldAutoScrollRef.current) {
+      endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages.length, selectedConversation]);
+
+  // Detectar quando o usuário scrolla manualmente
+  const handleMessagesScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    // Se o usuário está a menos de 100px do final, permitir auto-scroll
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    shouldAutoScrollRef.current = isNearBottom;
+  }, []);
 
   // Definir instância ativa para computar o handoff (SDR → Instância atual)
   React.useEffect(() => {
@@ -208,6 +237,44 @@ export function ConversasView() {
     }
   });
 
+  const isOfficialApi = profile?.email === 'jastelo@iafeoficial.com';
+
+  // Se for oficial, e não tiver instância selecionada, selecionar a primeira ou 'default'
+  React.useEffect(() => {
+    if (isOfficialApi && !selectedInstance && instances.length > 0) {
+      // Se for API oficial, não precisamos forçar seleção de instância pois a busca é global
+      // Mas podemos limpar qualquer seleção 'teste' que venha
+      setSelectedInstance(null);
+    }
+  }, [isOfficialApi, selectedInstance, instances]);
+
+  // Sincronização de mensagens para API Oficial ao entrar na tela
+  React.useEffect(() => {
+    const syncMessages = async () => {
+      if (isOfficialApi && profile?.company_id && settings?.display_name) {
+        try {
+          console.log('🔄 Iniciando sincronização de mensagens...');
+          await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/coletar-mensagens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              company_id: profile.company_id,
+              company_name: settings.display_name
+            })
+          });
+          console.log('✅ Solicitação de sincronização enviada.');
+        } catch (error) {
+          console.error('❌ Erro ao solicitar sincronização:', error);
+        }
+      }
+    };
+
+    // Delay pequeno para garantir que settings carregou
+    if (isOfficialApi && settings?.display_name) {
+      syncMessages();
+    }
+  }, [isOfficialApi, profile?.company_id, settings?.display_name]);
+
   const getStatusColor = (status: WhatsAppInstance['status']) => {
     switch (status) {
       case 'connected': return 'bg-green-500';
@@ -228,88 +295,92 @@ export function ConversasView() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-4">
-      {/* Coluna Esquerda - Lista de Instâncias */}
-      <Card className="w-80 bg-gray-900 border-gray-700">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-white flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Instâncias WhatsApp
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="space-y-2 p-4">
-              {loadingInstances ? (
-                <div className="flex items-center justify-center p-8">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-                    <div className="text-gray-300">Carregando instâncias...</div>
-                  </div>
-                </div>
-              ) : errorInstances ? (
-                <div className="text-center p-4">
-                  <div className="text-red-400 mb-2">Erro ao carregar</div>
-                  <div className="text-gray-400 text-sm">{errorInstances}</div>
-                </div>
-              ) : instances.length === 0 ? (
-                <div className="text-center p-4">
-                  <WifiOff className="h-12 w-12 mx-auto mb-4 text-gray-500" />
-                  <div className="text-gray-400 mb-2">Nenhuma instância encontrada</div>
-                  <div className="text-gray-500 text-sm">
-                    Não há instâncias WhatsApp disponíveis para você.
-                  </div>
-                </div>
-              ) : (
-                instances.map((instance) => (
-                  <div
-                    key={instance.instancia || 'empty'}
-                    onClick={() => setSelectedInstance(instance.instancia)}
-                    className={`
-                      p-3 rounded-lg cursor-pointer transition-all duration-200
-                      ${selectedInstance === instance.instancia
-                        ? 'bg-blue-600/20 border border-blue-500/30'
-                        : 'bg-gray-800/50 hover:bg-gray-800'
-                      }
-                    `}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="bg-gray-700 text-white">
-                            {instance.displayName.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-gray-900 bg-green-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">
-                          {instance.displayName}
-                        </p>
-                        <p className="text-gray-400 text-sm">
-                          {instance.conversationCount} conversas
-                        </p>
-                        <Badge
-                          variant="outline"
-                          className="text-xs mt-1 border-green-500/30 text-green-300"
-                        >
-                          <Wifi className="h-3 w-3 mr-1" />
-                          Ativa
-                        </Badge>
-                      </div>
+      {/* Coluna Esquerda - Lista de Instâncias (Esconder se for Oficial) */}
+      {!isOfficialApi && (
+        <Card className="w-80 bg-gray-900 border-gray-700">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-white flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Instâncias WhatsApp
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ScrollArea className="h-[calc(100vh-12rem)]">
+              <div className="space-y-2 p-4">
+                {loadingInstances ? (
+                  <div className="flex items-center justify-center p-8">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
+                      <div className="text-gray-300">Carregando instâncias...</div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+                ) : errorInstances ? (
+                  <div className="text-center p-4">
+                    <div className="text-red-400 mb-2">Erro ao carregar</div>
+                    <div className="text-gray-400 text-sm">{errorInstances}</div>
+                  </div>
+                ) : instances.length === 0 ? (
+                  <div className="text-center p-4">
+                    <WifiOff className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+                    <div className="text-gray-400 mb-2">Nenhuma instância encontrada</div>
+                    <div className="text-gray-500 text-sm">
+                      Não há instâncias WhatsApp disponíveis para você.
+                    </div>
+                  </div>
+                ) : (
+                  instances.map((instance) => (
+                    <div
+                      key={instance.instancia || 'empty'}
+                      onClick={() => setSelectedInstance(instance.instancia)}
+                      className={`
+                      p-3 rounded-lg cursor-pointer transition-all duration-200
+                      ${selectedInstance === instance.instancia
+                          ? 'bg-blue-600/20 border border-blue-500/30'
+                          : 'bg-gray-800/50 hover:bg-gray-800'
+                        }
+                    `}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <Avatar className="h-10 w-10">
+                            <AvatarFallback className="bg-gray-700 text-white">
+                              {instance.displayName.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-gray-900 bg-green-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium truncate">
+                            {instance.displayName}
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            {instance.conversationCount} conversas
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className="text-xs mt-1 border-green-500/30 text-green-300"
+                          >
+                            <Wifi className="h-3 w-3 mr-1" />
+                            Ativa
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Coluna Central - Lista de Conversas */}
       <Card className="w-96 bg-gray-900 border-gray-700">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-white">Conversas</CardTitle>
+            <CardTitle className="text-white">
+              {isOfficialApi ? (settings?.display_name || 'Conversas') : 'Conversas'}
+            </CardTitle>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -334,7 +405,7 @@ export function ConversasView() {
                   <div className="text-red-400 mb-2">Erro ao carregar conversas</div>
                   <div className="text-gray-400 text-sm">{errorConversas}</div>
                 </div>
-              ) : !selectedInstance ? (
+              ) : !selectedInstance && !isOfficialApi ? (
                 <div className="text-center p-8">
                   <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-500" />
                   <div className="text-gray-400 mb-2">Selecione uma instância</div>
@@ -486,7 +557,7 @@ export function ConversasView() {
 
             {/* Área de Mensagens */}
             <CardContent className="flex-1 p-4 overflow-hidden">
-              <ScrollArea className="h-[calc(100vh-24rem)] pr-4">
+              <ScrollArea className="h-[calc(100vh-24rem)] pr-4" onScrollCapture={handleMessagesScroll as any}>
                 {loadingMessages ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
@@ -569,8 +640,8 @@ export function ConversasView() {
                                 <Badge
                                   variant="outline"
                                   className={`text-xs ${message.message.type === 'ai'
-                                      ? 'border-blue-200/30 text-blue-100'
-                                      : 'border-gray-400/30 text-gray-300'
+                                    ? 'border-blue-200/30 text-blue-100'
+                                    : 'border-gray-400/30 text-gray-300'
                                     }`}
                                 >
                                   {message.message.type === 'ai' ? 'IA' : 'Cliente'}
@@ -580,6 +651,39 @@ export function ConversasView() {
                                   {message.instancia}
                                 </span>
                               </div>
+                              {/* Exibir imagens antes do texto (estilo WhatsApp) */}
+                              {message.mediaImages && message.mediaImages.length > 0 && (
+                                <div className={`grid gap-1 mb-2 ${
+                                  message.mediaImages.length === 1 ? 'grid-cols-1' :
+                                  message.mediaImages.length === 2 ? 'grid-cols-2' :
+                                  message.mediaImages.length === 3 ? 'grid-cols-2' :
+                                  'grid-cols-2'
+                                }`}>
+                                  {message.mediaImages.slice(0, 4).map((imgUrl, imgIdx) => (
+                                    <div 
+                                      key={imgIdx} 
+                                      className={`relative overflow-hidden rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${
+                                        message.mediaImages!.length === 3 && imgIdx === 0 ? 'col-span-2' : ''
+                                      }`}
+                                      onClick={() => window.open(imgUrl, '_blank')}
+                                    >
+                                      <img 
+                                        src={imgUrl} 
+                                        alt={`Imagem ${imgIdx + 1}`}
+                                        className="w-full h-auto max-h-48 object-cover rounded-lg"
+                                        loading="lazy"
+                                      />
+                                      {message.mediaImages!.length > 4 && imgIdx === 3 && (
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
+                                          <span className="text-white text-lg font-semibold">
+                                            +{message.mediaImages!.length - 4}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               <p className="text-sm leading-relaxed whitespace-pre-wrap">
                                 {message.message.content}
                               </p>

@@ -24,23 +24,12 @@ export function useProperties() {
       console.log('🔍 Iniciando busca de propriedades...');
       setLoading(true);
       
-      const { data, error } = await supabase
-        .from('properties')
-        .select(`
-          *,
-          property_images!property_images_property_id_fkey (*)
-        `)
-        .order('created_at', { ascending: false });
-
-      console.log('📊 Resposta do Supabase:', { data, error });
+      // A tabela 'properties' não existe mais, retornar array vazio
+      // As propriedades agora vêm de 'imoveisvivareal' via useImoveisVivaReal
+      console.log('⚠️ Tabela properties não existe. Retornando array vazio.');
+      console.log('💡 Use useImoveisVivaReal() para buscar imóveis da tabela imoveisvivareal');
       
-      if (error) {
-        console.error('❌ Erro ao buscar propriedades:', error);
-        throw error;
-      }
-      
-      console.log('✅ Propriedades carregadas:', data?.length || 0);
-      setProperties(data || []);
+      setProperties([]);
       setError(null);
     } catch (err) {
       console.error('💥 Erro na função fetchProperties:', err);

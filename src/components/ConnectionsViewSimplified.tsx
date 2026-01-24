@@ -7,14 +7,14 @@ import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { 
-  Smartphone, 
-  Plus, 
-  Trash2, 
-  RefreshCw, 
-  QrCode, 
-  MessageCircle, 
-  Users, 
+import {
+  Smartphone,
+  Plus,
+  Trash2,
+  RefreshCw,
+  QrCode,
+  MessageCircle,
+  Users,
   Signal,
   Phone,
   CheckCircle,
@@ -45,11 +45,13 @@ import { Separator } from "./ui/separator";
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useWhatsAppInstances, WhatsAppInstance } from '@/hooks/useWhatsAppInstances';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 
 export function ConnectionsViewSimplified() {
   const { profile, isManager } = useUserProfile();
+  const { settings } = useCompanySettings();
   const { createConnectionRequest } = useNotifications();
   const {
     instances,
@@ -72,7 +74,9 @@ export function ConnectionsViewSimplified() {
   } = useWhatsAppInstances();
 
   // Tornar tolerante a diferenças de carregamento entre hooks: habilita criação se qualquer fonte indicar gestor/admin
-  const canCreate = isManager || canCreateInstances;
+  // Mas desabilita se for API Oficial
+  const isOfficialApi = profile?.email === 'jastelo@iafeoficial.com';
+  const canCreate = (isManager || canCreateInstances) && !isOfficialApi;
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -87,7 +91,7 @@ export function ConnectionsViewSimplified() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [showSystemAlert, setShowSystemAlert] = useState(false);
-  
+
   // Estados para solicitação ao gestor
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
@@ -95,7 +99,7 @@ export function ConnectionsViewSimplified() {
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [pendingRequestData, setPendingRequestData] = useState<any | null>(null);
   const [resending, setResending] = useState(false);
-  
+
   // Novos estados para funcionalidades completas
   const [qrTimer, setQrTimer] = useState(15);
 
@@ -103,20 +107,20 @@ export function ConnectionsViewSimplified() {
   const formatPhoneInput = (value: string): string => {
     // Remove tudo que não é número
     const numbers = value.replace(/\D/g, '');
-    
+
     // Limita a 11 dígitos (DDD + 9 dígitos do número)
     const limitedNumbers = numbers.slice(0, 11);
-    
+
     if (limitedNumbers.length === 0) return '';
-    
+
     const ddd = limitedNumbers.slice(0, 2);
     let numero = limitedNumbers.slice(2);
-    
+
     // Garante que sempre começa com 9 após o DDD
     if (numero.length > 0 && !numero.startsWith('9')) {
       numero = '9' + numero.slice(0, 8);
     }
-    
+
     // Aplica a máscara progressivamente
     if (limitedNumbers.length <= 2) {
       return `(${ddd}`;
@@ -138,7 +142,7 @@ export function ConnectionsViewSimplified() {
   const [qrExpired, setQrExpired] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [connectedInstanceName, setConnectedInstanceName] = useState("");
-  
+
   // Estados para gestão de solicitações pendentes (apenas gestores)
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
@@ -146,7 +150,7 @@ export function ConnectionsViewSimplified() {
   // Carregar solicitações pendentes (apenas para gestores)
   const loadPendingRequests = async () => {
     if (!isManager || !profile?.company_id) return;
-    
+
     try {
       setLoadingRequests(true);
       const { data, error } = await supabase
@@ -224,7 +228,7 @@ export function ConnectionsViewSimplified() {
       // 4. Remover da lista de pendentes e atualizar instâncias
       setPendingRequests(prev => prev.filter(req => req.id !== requestId));
       refreshInstances();
-      
+
       alert('Solicitação aprovada com sucesso! Instância criada.');
     } catch (error) {
       console.error('Erro ao aprovar solicitação:', error);
@@ -269,7 +273,7 @@ export function ConnectionsViewSimplified() {
 
       // Remover da lista de pendentes
       setPendingRequests(prev => prev.filter(req => req.id !== requestId));
-      
+
       alert('Solicitação rejeitada.');
     } catch (error) {
       console.error('Erro ao rejeitar solicitação:', error);
@@ -293,8 +297,8 @@ export function ConnectionsViewSimplified() {
   // Filtrar instâncias
   const filteredInstances = instances.filter(instance => {
     const matchesSearch = instance.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         instance.phone_number?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+      instance.phone_number?.toLowerCase().includes(searchTerm.toLowerCase());
+
     const matchesStatus = statusFilter === "all" || instance.status === statusFilter;
 
     return matchesSearch && matchesStatus;
@@ -314,10 +318,10 @@ export function ConnectionsViewSimplified() {
 
   // Carregar solicitações pendentes quando for gestor
   useEffect(() => {
-    if (isManager && profile?.company_id) {
+    if (isManager && profile?.company_id && !isOfficialApi) {
       loadPendingRequests();
     }
-  }, [isManager, profile?.company_id]);
+  }, [isManager, profile?.company_id, isOfficialApi]);
 
   // Timer do QR Code (15 segundos)
   useEffect(() => {
@@ -352,10 +356,18 @@ export function ConnectionsViewSimplified() {
       intervalId = setInterval(async () => {
         try {
           console.log('🔍 Verificando status da instância:', selectedInstance.name);
-          
+
           // Chamar endpoint para verificar status da instância específica
           const whatsappApiBase = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook';
-          const response = await fetch(`${whatsappApiBase}/whatsapp-instances`, {
+          const url = new URL(`${whatsappApiBase}/whatsapp-instances`);
+          if (profile?.company_id) {
+            url.searchParams.append('company_id', profile.company_id);
+          }
+          if (settings?.display_name) {
+            url.searchParams.append('company_name', settings.display_name);
+          }
+
+          const response = await fetch(url.toString(), {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -370,17 +382,17 @@ export function ConnectionsViewSimplified() {
           }
 
           const data = await response.json();
-          
+
           if (data.success && data.data) {
             // Procurar a instância específica na resposta
-            const updatedInstance = data.data.find((inst: any) => 
-              inst.name === selectedInstance.name || 
+            const updatedInstance = data.data.find((inst: any) =>
+              inst.name === selectedInstance.name ||
               inst.instanceName === selectedInstance.name
             );
-            
+
             if (updatedInstance && updatedInstance.connectionStatus === 'open') {
               console.log('✅ Instância conectada com sucesso via endpoint:', selectedInstance.name);
-              
+
               // Fechar modal QR e mostrar sucesso
               setShowQrModal(false);
               setQrCode(null);
@@ -388,13 +400,13 @@ export function ConnectionsViewSimplified() {
               setQrExpired(false);
               setConnectedInstanceName(updatedInstance.profileName || selectedInstance.name);
               setShowSuccessModal(true);
-              
+
               // Atualizar status local
               await updateInstanceStatus(selectedInstance.id, 'connected');
-              
+
               // Atualizar lista de instâncias
               await refreshInstances();
-              
+
               // Fechar modal de sucesso após 3 segundos
               setTimeout(() => {
                 setShowSuccessModal(false);
@@ -418,7 +430,7 @@ export function ConnectionsViewSimplified() {
   const handleCreateInstance = async () => {
     try {
       setCreating(true);
-      
+
       if (!newInstanceName.trim()) {
         throw new Error('Nome da instância é obrigatório');
       }
@@ -430,10 +442,10 @@ export function ConnectionsViewSimplified() {
       // Remove formatação do telefone antes de enviar (apenas números)
       const phoneNumbersOnly = newInstancePhone.replace(/\D/g, '');
       // Adiciona código do país +55 se não tiver
-      const formattedPhone = phoneNumbersOnly.length === 11 
-        ? `55${phoneNumbersOnly}` 
-        : phoneNumbersOnly.startsWith('55') 
-          ? phoneNumbersOnly 
+      const formattedPhone = phoneNumbersOnly.length === 11
+        ? `55${phoneNumbersOnly}`
+        : phoneNumbersOnly.startsWith('55')
+          ? phoneNumbersOnly
           : `55${phoneNumbersOnly}`;
 
       const result = await createInstance({
@@ -496,9 +508,9 @@ export function ConnectionsViewSimplified() {
     try {
       setGeneratingQr(true);
       setSelectedInstance(instance);
-      
+
       const qrCodeData = await generateQrCode(instance.id);
-      
+
       if (qrCodeData) {
         setQrCode(qrCodeData);
         setQrTimer(15); // Reset timer
@@ -537,11 +549,11 @@ export function ConnectionsViewSimplified() {
       });
 
       if (result && result.success && result.data) {
-        const configData = Array.isArray(result.data) && result.data[0]?.Setting ? 
+        const configData = Array.isArray(result.data) && result.data[0]?.Setting ?
           result.data[0].Setting : result.data;
-        
+
         setInstanceConfig(configData);
-        
+
         // Atualizar campos com os dados recebidos
         if (configData) {
           setConfigFields({
@@ -568,13 +580,13 @@ export function ConnectionsViewSimplified() {
 
     try {
       setSavingConfig(true);
-      
+
       await editInstanceConfig(selectedConfigInstance.name, {
         instanceName: selectedConfigInstance.name,
         instanceId: selectedConfigInstance.id,
         config: configFields
       });
-      
+
       setShowConfigModal(false);
       alert('Configurações salvas com sucesso!');
     } catch (error: any) {
@@ -589,25 +601,25 @@ export function ConnectionsViewSimplified() {
   const handleRequestConnection = async () => {
     try {
       setRequestingConnection(true);
-      
+
       // Validar nome da instância
       if (!newInstanceName.trim()) {
         alert('Por favor, informe o nome da instância');
         return;
       }
-      
+
       // Usar o novo método integrado que cria a instância + notifica automaticamente
       await requestConnection({
         instance_name: newInstanceName.trim(),
         phone_number: newInstancePhone.trim() || undefined,
         message: requestMessage || undefined
       });
-      
+
       setShowRequestModal(false);
       setNewInstanceName("");
       setNewInstancePhone("");
       setRequestMessage("");
-      
+
       alert('Solicitação criada com sucesso! Os gestores foram notificados automaticamente.');
     } catch (error: any) {
       console.error('Erro ao solicitar conexão:', error);
@@ -658,7 +670,7 @@ export function ConnectionsViewSimplified() {
             </p>
           </div>
         )}
-        
+
         {/* Header com foto, nome e status */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -666,8 +678,8 @@ export function ConnectionsViewSimplified() {
             <div className="relative">
               {instance.profile_pic_url ? (
                 <>
-                  <img 
-                    src={instance.profile_pic_url} 
+                  <img
+                    src={instance.profile_pic_url}
                     alt={instance.profile_name || instance.instance_name}
                     className="h-12 w-12 rounded-full object-cover"
                     onError={(e) => {
@@ -685,10 +697,9 @@ export function ConnectionsViewSimplified() {
                 </div>
               )}
               {/* Status indicator */}
-              <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ${
-                isPendingRequest ? 'bg-yellow-500' : 
-                isConnected ? 'bg-green-500' : 'bg-gray-500'
-              } border-2 border-gray-800`} />
+              <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ${isPendingRequest ? 'bg-yellow-500' :
+                  isConnected ? 'bg-green-500' : 'bg-gray-500'
+                } border-2 border-gray-800`} />
             </div>
 
             {/* Nome e status */}
@@ -764,21 +775,21 @@ export function ConnectionsViewSimplified() {
               <div className="text-2xl font-bold text-blue-400">
                 {instance.message_count.toLocaleString('pt-BR')}
               </div>
-            <div className="text-xs text-gray-400">Mensagens</div>
-          </div>
-          <div className="bg-green-900/30 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-green-400">
-              {instance.contact_count.toLocaleString('pt-BR')}
+              <div className="text-xs text-gray-400">Mensagens</div>
             </div>
-            <div className="text-xs text-gray-400">Contatos</div>
-          </div>
-          <div className="bg-purple-900/30 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-purple-400">
-              {instance.chat_count.toLocaleString('pt-BR')}
+            <div className="bg-green-900/30 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-green-400">
+                {instance.contact_count.toLocaleString('pt-BR')}
+              </div>
+              <div className="text-xs text-gray-400">Contatos</div>
             </div>
-            <div className="text-xs text-gray-400">Chats</div>
+            <div className="bg-purple-900/30 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-purple-400">
+                {instance.chat_count.toLocaleString('pt-BR')}
+              </div>
+              <div className="text-xs text-gray-400">Chats</div>
+            </div>
           </div>
-        </div>
         )}
 
         {/* Botões de ação principais */}
@@ -840,15 +851,15 @@ export function ConnectionsViewSimplified() {
             {isManager && <span className="text-sm text-gray-400 ml-2">(Visão Gestor)</span>}
           </h1>
           <p className="text-gray-400">
-            {isManager ? 
-              'Gerencie todas as conexões WhatsApp da equipe' : 
+            {isManager ?
+              'Gerencie todas as conexões WhatsApp da equipe' :
               'Gerencie suas conexões WhatsApp pessoais'
             }
           </p>
         </div>
-        
+
         <div className="flex gap-3">
-          <Button 
+          <Button
             variant="outline"
             onClick={refreshInstances}
             className="border-blue-600/50 text-blue-400 hover:bg-blue-600/20 backdrop-blur-sm bg-gray-900/50"
@@ -857,7 +868,7 @@ export function ConnectionsViewSimplified() {
             Atualizar
           </Button>
           {canCreate ? (
-            <Button 
+            <Button
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
               onClick={() => setShowAddModal(true)}
             >
@@ -865,7 +876,7 @@ export function ConnectionsViewSimplified() {
               Nova Conexão
             </Button>
           ) : (
-            <Button 
+            <Button
               variant="outline"
               disabled
               className="border-gray-600 text-gray-400 cursor-not-allowed"
@@ -890,12 +901,12 @@ export function ConnectionsViewSimplified() {
         <Alert className="border-orange-500/50 bg-orange-500/10">
           <AlertTriangle className="h-4 w-4 text-orange-500" />
           <AlertDescription className="text-orange-200">
-            <strong>Sistema Híbrido:</strong> A instância foi criada localmente com sucesso! 
-            O sistema externo WhatsApp pode estar temporariamente indisponível, mas você pode 
+            <strong>Sistema Híbrido:</strong> A instância foi criada localmente com sucesso!
+            O sistema externo WhatsApp pode estar temporariamente indisponível, mas você pode
             tentar gerar o QR code quando precisar conectar.
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="ml-2 h-6 px-2 text-orange-200 hover:bg-orange-500/20"
               onClick={() => setShowSystemAlert(false)}
             >
@@ -956,7 +967,7 @@ export function ConnectionsViewSimplified() {
               {pendingRequests.length}
             </span>
           </div>
-          
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {pendingRequests.map((request) => (
               <Card key={request.id} className="bg-yellow-900/20 border-yellow-500/50">
@@ -977,7 +988,7 @@ export function ConnectionsViewSimplified() {
                       <Clock className="h-4 w-4 text-yellow-400" />
                     </div>
                   </div>
-                  
+
                   {request.message && (
                     <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2 mb-3">
                       <p className="text-xs text-yellow-200">
@@ -985,7 +996,7 @@ export function ConnectionsViewSimplified() {
                       </p>
                     </div>
                   )}
-                  
+
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -1020,15 +1031,15 @@ export function ConnectionsViewSimplified() {
             <h2 className="text-xl font-semibold text-white">Instâncias Ativas</h2>
           </div>
         )}
-        
+
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredInstances.map((instance, index) => (
-          <div
-            key={instance.id}
-          >
-            <InstanceCard instance={instance} />
-          </div>
-        ))}
+          {filteredInstances.map((instance, index) => (
+            <div
+              key={instance.id}
+            >
+              <InstanceCard instance={instance} />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1040,12 +1051,12 @@ export function ConnectionsViewSimplified() {
               <Smartphone className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-white mb-2">Nenhuma conexão encontrada</h3>
               <p className="text-gray-400 mb-4">
-                 {searchTerm ? 'Não encontramos conexões com os critérios de busca.' : 
+                {searchTerm ? 'Não encontramos conexões com os critérios de busca.' :
                   canCreate ? 'Nenhuma conexão foi criada ainda.' :
-                 'Você ainda não possui conexões WhatsApp atribuídas.'}
+                    'Você ainda não possui conexões WhatsApp atribuídas.'}
               </p>
               {canCreate ? (
-                <Button 
+                <Button
                   className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
                   onClick={() => setShowAddModal(true)}
                 >
@@ -1055,7 +1066,7 @@ export function ConnectionsViewSimplified() {
               ) : (
                 <div className="text-center">
                   <p className="text-gray-500 mb-2">Apenas gestores podem criar conexões</p>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => setShowRequestModal(true)}
                     className="border-blue-600 text-blue-400 hover:bg-blue-600/10"
@@ -1078,13 +1089,13 @@ export function ConnectionsViewSimplified() {
               {canCreate ? 'Nova Conexão WhatsApp' : 'Conexão WhatsApp'}
             </DialogTitle>
             <DialogDescription className="text-gray-400">
-              {canCreate 
+              {canCreate
                 ? 'Crie uma nova instância e atribua para um corretor'
                 : 'Solicite ao seu gestor para criar uma nova conexão'
               }
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="instanceName" className="text-gray-300">Nome da Instância *</Label>
@@ -1097,7 +1108,7 @@ export function ConnectionsViewSimplified() {
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="instancePhone" className="text-gray-300">Número de Telefone *</Label>
               <Input
@@ -1114,7 +1125,7 @@ export function ConnectionsViewSimplified() {
                 Número que será usado para conectar ao WhatsApp
               </p>
             </div>
-            
+
             {canCreate && (
               <div className="space-y-2">
                 <Label htmlFor="assignedUser" className="text-gray-300">Atribuir Para *</Label>
@@ -1194,7 +1205,7 @@ export function ConnectionsViewSimplified() {
               Escaneie o QR code com seu WhatsApp para conectar
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-4 max-h-[70vh] overflow-y-auto">
             {qrExpired ? (
               <div className="text-center py-8">
@@ -1203,7 +1214,7 @@ export function ConnectionsViewSimplified() {
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-2">QR Code Expirado</h3>
                 <p className="text-gray-400 mb-6">O tempo limite foi excedido. Gere um novo QR Code.</p>
-                <Button 
+                <Button
                   onClick={handleRetryQrCode}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -1223,9 +1234,9 @@ export function ConnectionsViewSimplified() {
 
                 {/* QR Code */}
                 <div className="bg-white p-4 rounded-lg mx-auto w-fit">
-                  <img 
-                    src={qrCode} 
-                    alt="QR Code" 
+                  <img
+                    src={qrCode}
+                    alt="QR Code"
                     className="max-w-[300px] max-h-[300px] w-full h-auto"
                   />
                 </div>
@@ -1342,7 +1353,7 @@ export function ConnectionsViewSimplified() {
                 <Switch
                   id="rejectCall"
                   checked={configFields.rejectCall}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setConfigFields(prev => ({ ...prev, rejectCall: checked }))
                   }
                 />
@@ -1357,7 +1368,7 @@ export function ConnectionsViewSimplified() {
                   <Textarea
                     id="msgCall"
                     value={configFields.msgCall}
-                    onChange={(e) => 
+                    onChange={(e) =>
                       setConfigFields(prev => ({ ...prev, msgCall: e.target.value }))
                     }
                     placeholder="Ex: Estou ocupado no momento..."
@@ -1380,7 +1391,7 @@ export function ConnectionsViewSimplified() {
                 <Switch
                   id="groupsIgnore"
                   checked={configFields.groupsIgnore}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setConfigFields(prev => ({ ...prev, groupsIgnore: checked }))
                   }
                 />
@@ -1399,7 +1410,7 @@ export function ConnectionsViewSimplified() {
                 <Switch
                   id="alwaysOnline"
                   checked={configFields.alwaysOnline}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setConfigFields(prev => ({ ...prev, alwaysOnline: checked }))
                   }
                 />
@@ -1418,7 +1429,7 @@ export function ConnectionsViewSimplified() {
                 <Switch
                   id="readMessages"
                   checked={configFields.readMessages}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setConfigFields(prev => ({ ...prev, readMessages: checked }))
                   }
                 />
@@ -1437,7 +1448,7 @@ export function ConnectionsViewSimplified() {
                 <Switch
                   id="readStatus"
                   checked={configFields.readStatus}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setConfigFields(prev => ({ ...prev, readStatus: checked }))
                   }
                 />
@@ -1476,7 +1487,7 @@ export function ConnectionsViewSimplified() {
               Sua solicitação será enviada para todos os gestores da empresa.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <Label htmlFor="instance-name" className="text-gray-300">
@@ -1491,7 +1502,7 @@ export function ConnectionsViewSimplified() {
                 required
               />
             </div>
-            
+
             <div>
               <Label htmlFor="instance-phone" className="text-gray-300">
                 Número do WhatsApp (opcional)
@@ -1504,7 +1515,7 @@ export function ConnectionsViewSimplified() {
                 className="bg-gray-800 border-gray-600 text-white placeholder:text-gray-400 mt-2"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="request-message" className="text-gray-300">
                 Mensagem (opcional)

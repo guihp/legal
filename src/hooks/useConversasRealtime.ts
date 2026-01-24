@@ -14,14 +14,14 @@ export function useConversasRealtime(callbacks: RealtimeCallbacks) {
 
   const handleNewMessage = useCallback((payload: any) => {
     const newMessage = payload.new;
-    
+
     if (!newMessage || !profile) return;
 
     // Aplicar filtro por role
     if (profile.role === 'corretor') {
       const userInstance = profile.chat_instance?.toLowerCase().trim();
       const messageInstance = newMessage.instancia?.toLowerCase().trim();
-      
+
       if (userInstance !== messageInstance) {
         return; // Ignorar mensagem que não é da instância do corretor
       }
@@ -54,22 +54,53 @@ export function useConversasRealtime(callbacks: RealtimeCallbacks) {
     if (!profile) return;
 
     // Subscrever inserções na tabela imobipro_messages
-    const subscription = supabase
-      .channel('imobipro_messages_changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'imobipro_messages' },
-        handleNewMessage
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'imobipro_messages' },
-        handleDeleteMessage
-      )
-      .subscribe();
+    // Buscar telefone da empresa para saber qual tabela escutar
+    const setupSubscription = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('companies')
+          .select('phone')
+          .eq('id', profile.company_id)
+          .single();
+
+        if (error || !data?.phone) {
+          console.error('Erro ao buscar telefone para realtime:', error);
+          return;
+        }
+
+        const cleanPhone = data.phone.replace(/\D/g, '');
+        const tableName = `imobipro_messages_${cleanPhone}`;
+        console.log(`[Realtime] Escutando tabela dinâmica: ${tableName}`);
+
+        const subscription = supabase
+          .channel(`${tableName}_changes`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: tableName },
+            handleNewMessage
+          )
+          .on(
+            'postgres_changes',
+            { event: 'DELETE', schema: 'public', table: tableName },
+            handleDeleteMessage
+          )
+          .subscribe();
+
+        return subscription;
+      } catch (err) {
+        console.error('Erro setupSubscription:', err);
+      }
+    };
+
+    let subscription: any = null;
+    setupSubscription().then(sub => { subscription = sub; });
 
     return () => {
-      subscription.unsubscribe();
+      if (subscription) {
+        console.log('[Realtime] Desinscrevendo...');
+        subscription.unsubscribe();
+        supabase.removeChannel(subscription);
+      }
     };
   }, [profile, handleNewMessage, handleDeleteMessage]);
 }

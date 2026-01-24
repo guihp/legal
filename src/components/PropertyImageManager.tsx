@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { DatabasePropertyImage } from "@/hooks/useProperties";
-import { convertMultipleToWebP } from "@/utils/imageUtils";
+import { convertGoogleDriveUrl, handleImageErrorWithFallback, convertMultipleToJPEG } from "@/utils/imageUtils";
 import { useToast } from "@/hooks/use-toast";
 
 interface PropertyImageManagerProps {
@@ -48,10 +48,10 @@ export function PropertyImageManager({
     setConverting(true);
     
     try {
-      console.log('🔄 Convertendo imagens para WebP...', newFiles.length, 'arquivos');
+      console.log('🔄 Convertendo imagens para JPEG (1-5MB)...', newFiles.length, 'arquivos');
       
-      // Converter todas as imagens para WebP
-      const convertedFiles = await convertMultipleToWebP(newFiles, 0.85, 1200, 800);
+      // Converter todas as imagens para JPEG com tamanho entre 1MB e 5MB
+      const convertedFiles = await convertMultipleToJPEG(newFiles, 1024 * 1024, 5 * 1024 * 1024, 1920, 1440);
       
       console.log('✅ Conversão concluída!', convertedFiles.length, 'arquivos convertidos');
       
@@ -73,7 +73,7 @@ export function PropertyImageManager({
               
               toast({
                 title: "Imagens processadas",
-                description: `${convertedFiles.length} imagem(ns) convertida(s) para WebP com sucesso!`,
+                description: `${convertedFiles.length} imagem(ns) convertida(s) para JPEG (1-5MB) com sucesso!`,
               });
             }
           }
@@ -121,9 +121,13 @@ export function PropertyImageManager({
             {existingImages.map((image) => (
               <div key={image.id} className="relative group">
                 <img
-                  src={image.image_url}
+                  src={convertGoogleDriveUrl(image.image_url, 'thumbnail')}
                   alt="Imagem da propriedade"
                   className="w-full h-24 object-cover rounded-lg bg-gray-800"
+                  loading="lazy"
+                  onError={(e) => {
+                    handleImageErrorWithFallback(e, image.image_url, '/placeholder-property.jpg');
+                  }}
                 />
                 <button
                   type="button"
@@ -146,11 +150,11 @@ export function PropertyImageManager({
               <Upload className={`w-8 h-8 mb-2 text-gray-400 ${converting ? 'animate-spin' : ''}`} />
               <p className="mb-2 text-sm text-gray-400">
                 <span className="font-semibold">
-                  {converting ? 'Convertendo para WebP...' : 'Clique para adicionar imagens'}
+                  {converting ? 'Processando imagens...' : 'Clique para adicionar imagens'}
                 </span>
               </p>
               <p className="text-xs text-gray-500">
-                {converting ? 'Aguarde o processamento...' : 'PNG, JPG, JPEG (MAX. 5MB cada) - Convertido automaticamente para WebP'}
+                {converting ? 'Otimizando para tamanho ideal (1-5MB)...' : 'PNG, JPG, JPEG - Convertido para JPEG de alta qualidade (1-5MB)'}
               </p>
             </div>
             <input

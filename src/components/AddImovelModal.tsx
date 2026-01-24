@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useImoveisVivaReal, ImovelVivaReal } from '@/hooks/useImoveisVivaReal';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { convertMultipleToWebP } from '@/utils/imageUtils';
-import { X, ImagePlus } from 'lucide-react';
+import { convertMultipleToJPEG, downloadGoogleDriveImage, extractGoogleDriveFileId } from '@/utils/imageUtils';
+import { X, ImagePlus, Link, Loader2 } from 'lucide-react';
 
 interface AddImovelModalProps {
   isOpen: boolean;
@@ -82,6 +82,8 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
   const [categorias, setCategorias] = useState<Option[]>([]);
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [googleDriveLink, setGoogleDriveLink] = useState('');
+  const [isDownloadingFromDrive, setIsDownloadingFromDrive] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -134,33 +136,237 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
     updateField(field, digits ? Number(digits) : null);
   };
 
+  const MAX_IMAGES = 50; // Limite máximo de imagens por imóvel
+
   const onSelectImages = async (files: FileList | null) => {
     if (!files) return;
     const list = Array.from(files);
-    const total = Math.min(15, list.length + images.length);
-    const chosen = list.slice(0, total - images.length);
+    const currentCount = images.length;
+    const remainingSlots = MAX_IMAGES - currentCount;
+    
+    if (remainingSlots <= 0) {
+      toast.warning(`Você já atingiu o limite de ${MAX_IMAGES} imagens.`);
+      return;
+    }
+    
+    const chosen = list.slice(0, remainingSlots);
+    
+    if (chosen.length < list.length) {
+      toast.warning(`Apenas ${chosen.length} imagem(ns) foram selecionadas. Limite máximo: ${MAX_IMAGES} imagens.`);
+    }
+    
     try {
-      const converted = await convertMultipleToWebP(chosen, 0.8, 1280, 960);
+      console.log(`📸 Processando ${chosen.length} imagem(ns) de ${list.length} selecionadas...`);
+      toast.info('Processando imagens para qualidade ideal (1-5MB)...');
+      // Converter para JPEG com tamanho entre 1MB e 5MB (ideal para WhatsApp)
+      const converted = await convertMultipleToJPEG(chosen, 1024 * 1024, 5 * 1024 * 1024, 1920, 1440);
       setImages(prev => [...prev, ...converted]);
       const newPreviews = converted.map(f => URL.createObjectURL(f));
       setPreviews(prev => [...prev, ...newPreviews]);
+      console.log(`✅ ${converted.length} imagem(ns) processadas com sucesso. Total: ${currentCount + converted.length}/${MAX_IMAGES}`);
+      toast.success(`${converted.length} imagem(ns) processadas com sucesso!`);
     } catch (e) {
-      toast.error('Falha ao processar imagens');
+      console.error('Erro ao processar imagens:', e);
+      toast.error('Falha ao processar imagens. Verifique se os arquivos são imagens válidas.');
     }
+  };
+
+  const onAddGoogleDriveImage = async () => {
+    if (!googleDriveLink.trim()) {
+      toast.warning('Cole um link do Google Drive válido.');
+      return;
+    }
+
+    // Verificar se é um link válido do Google Drive
+    const fileId = extractGoogleDriveFileId(googleDriveLink);
+    if (!fileId) {
+      toast.error('Link inválido. Use um link de compartilhamento do Google Drive (ex: https://drive.google.com/file/d/ID/view)');
+      return;
+    }
+
+    const currentCount = images.length;
+    if (currentCount >= MAX_IMAGES) {
+      toast.warning(`Você já atingiu o limite de ${MAX_IMAGES} imagens.`);
+      return;
+    }
+
+    setIsDownloadingFromDrive(true);
+    
+    try {
+      console.log(`📥 Baixando imagem do Google Drive: ${fileId}`);
+      toast.info('Baixando imagem do Google Drive...');
+      
+      const file = await downloadGoogleDriveImage(googleDriveLink, 1024 * 1024, 5 * 1024 * 1024);
+      
+      setImages(prev => [...prev, file]);
+      setPreviews(prev => [...prev, URL.createObjectURL(file)]);
+      setGoogleDriveLink(''); // Limpar o campo
+      
+      console.log(`✅ Imagem baixada e processada: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      toast.success(`Imagem baixada com sucesso! (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+    } catch (e: any) {
+      console.error('Erro ao baixar imagem do Google Drive:', e);
+      toast.error(e.message || 'Falha ao baixar imagem. Verifique se o link está correto e público.');
+    } finally {
+      setIsDownloadingFromDrive(false);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => {
+      const newPreviews = [...prev];
+      URL.revokeObjectURL(newPreviews[index]);
+      return newPreviews.filter((_, i) => i !== index);
+    });
   };
 
   const uploadImagesAndCollectUrls = async (imovelId: number): Promise<string[]> => {
     // Usar bucket existente do projeto para imagens (mesmo do Properties)
     const BUCKET = 'property-images';
-    const urls: string[] = [];
-    for (let i = 0; i < images.length; i++) {
-      const file = images[i];
-      const path = `imoveisvivareal/${imovelId}/${Date.now()}_${i}.webp`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: 'image/webp', upsert: false });
-      if (error) throw error;
-      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      urls.push(pub.publicUrl);
+    
+    // Verificar se o bucket existe, senão tentar criar via Edge Function
+    console.log('🔍 Verificando bucket property-images...');
+    let bucketExists = false;
+    
+    try {
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      
+      if (bucketsError) {
+        console.warn('⚠️ Não foi possível listar buckets:', bucketsError);
+      } else {
+        const propertyImagesBucket = buckets?.find(bucket => bucket.name === BUCKET);
+        if (propertyImagesBucket) {
+          bucketExists = true;
+          console.log('✅ Bucket property-images encontrado');
+        }
+      }
+      
+      // Se o bucket não existe, tentar criar via Edge Function (com SERVICE_ROLE)
+      if (!bucketExists) {
+        console.log('🪣 Tentando criar bucket property-images via Edge Function...');
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const { data: functionResult, error: functionError } = await supabase.functions.invoke('ensure-storage-bucket', {
+              body: { bucketName: BUCKET }
+            });
+            
+            if (functionError) {
+              console.warn('⚠️ Erro ao chamar função de criação de bucket:', functionError);
+            } else if (functionResult?.success) {
+              console.log('✅ Bucket criado via Edge Function');
+              bucketExists = true;
+            }
+          }
+        } catch (funcErr) {
+          console.warn('⚠️ Erro ao chamar Edge Function, tentando criar diretamente...', funcErr);
+          
+          // Fallback: tentar criar diretamente (pode não ter permissão)
+          const { error: createBucketError } = await supabase.storage.createBucket(BUCKET, {
+            public: true,
+            allowedMimeTypes: ['image/webp', 'image/jpeg', 'image/png', 'image/jpg'],
+            fileSizeLimit: 5242880 // 5MB
+          });
+          
+          if (!createBucketError) {
+            console.log('✅ Bucket criado diretamente');
+            bucketExists = true;
+          } else {
+            console.warn('⚠️ Não foi possível criar bucket. Continuando com upload...', createBucketError);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Erro ao verificar/criar bucket, continuando mesmo assim:', err);
     }
+    
+    // Upload em paralelo para melhor performance
+    // Usar Promise.allSettled para não parar se uma imagem falhar
+    const baseTimestamp = Date.now();
+    const uploadPromises = images.map(async (file, i) => {
+      // Usar timestamp único para cada imagem (adicionar índice e pequeno delay)
+      const timestamp = baseTimestamp + i;
+      const path = `imoveisvivareal/${imovelId}/${timestamp}_${i}.jpg`;
+      
+      try {
+        console.log(`📤 Fazendo upload da imagem ${i + 1}/${images.length}: ${path} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { 
+            contentType: 'image/jpeg', 
+            upsert: false 
+          });
+        
+        if (error) {
+          console.error(`❌ Erro ao fazer upload da imagem ${i + 1}:`, error);
+          
+          // Se o erro for "Bucket not found", fornecer mensagem mais clara
+          if (error.message?.includes('Bucket not found') || error.error === 'Bucket not found') {
+            return { 
+              success: false, 
+              index: i, 
+              error: { 
+                ...error, 
+                userMessage: 'Bucket property-images não encontrado. Entre em contato com o administrador para criar o bucket no Supabase Storage.' 
+              } 
+            };
+          }
+          
+          return { success: false, index: i, error };
+        }
+        
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        console.log(`✅ Imagem ${i + 1} enviada com sucesso:`, pub.publicUrl);
+        return { success: true, index: i, url: pub.publicUrl };
+      } catch (err: any) {
+        console.error(`❌ Falha no upload da imagem ${i + 1}:`, err);
+        return { success: false, index: i, error: err };
+      }
+    });
+    
+    // Aguardar todos os uploads (mesmo os que falharam)
+    const results = await Promise.allSettled(uploadPromises);
+    
+    // Processar resultados
+    const urls: string[] = [];
+    const errors: string[] = [];
+    let bucketNotFound = false;
+    
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const data = result.value;
+        if (data.success && data.url) {
+          urls.push(data.url);
+        } else {
+          const errorMsg = data.error?.userMessage || data.error?.message || 'Erro desconhecido';
+          errors.push(`Imagem ${index + 1}: ${errorMsg}`);
+          
+          // Verificar se é erro de bucket não encontrado
+          if (errorMsg.includes('Bucket not found') || errorMsg.includes('bucket')) {
+            bucketNotFound = true;
+          }
+        }
+      } else {
+        errors.push(`Imagem ${index + 1}: ${result.reason?.message || 'Erro desconhecido'}`);
+      }
+    });
+    
+    // Mostrar avisos sobre imagens que falharam
+    if (errors.length > 0) {
+      console.warn('⚠️ Algumas imagens falharam no upload:', errors);
+      
+      if (bucketNotFound && urls.length === 0) {
+        // Se todas falharam por causa do bucket, mostrar mensagem específica
+        toast.error('Bucket property-images não encontrado. O bucket precisa ser criado no Supabase Storage. Entre em contato com o administrador.');
+      } else if (urls.length > 0) {
+        toast.warning(`${errors.length} imagem(ns) falharam no upload. ${urls.length} imagem(ns) foram enviadas com sucesso.`);
+      } else {
+        toast.error(`Todas as ${errors.length} imagem(ns) falharam no upload. Verifique se o bucket property-images existe no Supabase Storage.`);
+      }
+    }
+    
     return urls;
   };
 
@@ -199,14 +405,29 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
       if (images.length > 0) {
         try {
           const urls = await uploadImagesAndCollectUrls(created.id as number);
-          await supabase.from('imoveisvivareal').update({ imagens: urls }).eq('id', created.id);
+          
+          if (urls.length > 0) {
+            await supabase.from('imoveisvivareal').update({ imagens: urls }).eq('id', created.id);
+            
+            if (urls.length < images.length) {
+              toast.warning(`Imóvel criado! ${urls.length} de ${images.length} imagens foram salvas com sucesso.`);
+            } else {
+              toast.success(`Imóvel criado com ${urls.length} imagem(ns)!`);
+            }
+          } else {
+            toast.warning('Imóvel criado, mas nenhuma imagem foi salva. Tente adicionar as imagens novamente editando o imóvel.');
+          }
         } catch (imgErr: any) {
-          // Não bloquear o sucesso da criação do imóvel; apenas avisar sobre imagens
-          toast.error('Imóvel criado, mas houve erro ao salvar imagens.');
+          console.error('Erro ao processar imagens:', imgErr);
+          toast.error('Imóvel criado, mas houve erro ao salvar imagens. Tente adicionar as imagens novamente editando o imóvel.');
         }
+      } else {
+        toast.success('Imóvel criado com sucesso');
       }
 
-      toast.success('Imóvel criado com sucesso');
+      if (images.length === 0) {
+        toast.success('Imóvel criado com sucesso');
+      }
       onClose();
       setImages([]); setPreviews([]);
     } catch (e: any) {
@@ -441,29 +662,82 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <Label className="m-0 text-white">Imagens (até 15)</Label>
-                      <small className="text-gray-400">{images.length}/15</small>
+                      <Label className="m-0 text-white">Imagens (até {MAX_IMAGES})</Label>
+                      <small className="text-gray-400">{images.length}/{MAX_IMAGES}</small>
                     </div>
-                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 cursor-pointer w-fit">
-                      <ImagePlus className="w-4 h-4" />
-                      <span>Adicionar fotos</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        className="hidden" 
-                        onChange={(e) => onSelectImages(e.target.files)} 
-                      />
-                    </label>
+                    
+                    {/* Opções de upload */}
+                    <div className="flex flex-wrap gap-2">
+                      <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 cursor-pointer">
+                        <ImagePlus className="w-4 h-4" />
+                        <span>Do computador</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          multiple 
+                          className="hidden" 
+                          onChange={(e) => onSelectImages(e.target.files)} 
+                        />
+                      </label>
+                    </div>
+
+                    {/* Upload via Google Drive Link */}
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                          placeholder="Cole o link do Google Drive aqui..."
+                          value={googleDriveLink}
+                          onChange={(e) => setGoogleDriveLink(e.target.value)}
+                          className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              onAddGoogleDriveImage();
+                            }
+                          }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={onAddGoogleDriveImage}
+                        disabled={isDownloadingFromDrive || !googleDriveLink.trim()}
+                        className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {isDownloadingFromDrive ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Baixando...
+                          </>
+                        ) : (
+                          'Adicionar'
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Suporta links do formato: https://drive.google.com/file/d/ID/view
+                    </p>
+
+                    {/* Preview das imagens */}
                     {previews.length > 0 && (
                       <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                         {previews.map((src, idx) => (
-                          <div key={idx} className="relative">
+                          <div key={idx} className="relative group">
                             <img 
                               src={src} 
                               className="w-full h-24 object-cover rounded-md border border-gray-700" 
                               alt={`Preview ${idx + 1}`}
                             />
+                            <button
+                              type="button"
+                              onClick={() => removeImage(idx)}
+                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                            <span className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1 rounded">
+                              {idx + 1}
+                            </span>
                           </div>
                         ))}
                       </div>

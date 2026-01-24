@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { 
-  LayoutDashboard, Building2, History, Settings, LogOut, 
-  Shield, ChevronDown, Menu, X, Users 
+import {
+  LayoutDashboard, Building2, History, Settings, LogOut,
+  Shield, ChevronDown, Menu, X, Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -42,7 +42,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         return <AdminDashboard />;
       case 'companies':
         return (
-          <AdminCompanyList 
+          <AdminCompanyList
             onCreateCompany={() => setCurrentView('create-company')}
             onViewDetails={(company: AdminCompany) => {
               setSelectedCompanyId(company.id);
@@ -52,7 +52,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         );
       case 'create-company':
         return (
-          <AdminCompanyCreate 
+          <AdminCompanyCreate
             onBack={() => setCurrentView('companies')}
             onSuccess={(companyId) => {
               setSelectedCompanyId(companyId);
@@ -62,7 +62,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         );
       case 'company-details':
         return selectedCompanyId ? (
-          <AdminCompanyDetailsView 
+          <AdminCompanyDetailsView
             companyId={selectedCompanyId}
             onBack={() => {
               setSelectedCompanyId(null);
@@ -82,7 +82,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex">
       {/* Sidebar */}
-      <aside 
+      <aside
         className={`
           ${sidebarOpen ? 'w-64' : 'w-0 -ml-64'} 
           transition-all duration-300 ease-in-out
@@ -97,7 +97,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
               <Shield className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">ImobiPro</h1>
+              <h1 className="text-lg font-bold text-white">IAFÉ IMOBI</h1>
               <p className="text-xs text-red-400">Super Admin</p>
             </div>
           </div>
@@ -111,8 +111,8 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
               onClick={() => setCurrentView(item.id)}
               className={`
                 w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all
-                ${currentView === item.id 
-                  ? 'bg-red-500/20 text-red-400 border-l-2 border-red-500' 
+                ${currentView === item.id
+                  ? 'bg-red-500/20 text-red-400 border-l-2 border-red-500'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
                 }
               `}
@@ -140,7 +140,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
               </div>
             </div>
           </div>
-          <Button 
+          <Button
             variant="outline"
             onClick={handleLogout}
             className="w-full border-gray-700 text-red-400 hover:text-red-300 hover:bg-gray-800"
@@ -181,7 +181,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
 
       {/* Overlay for mobile */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
+import { useCompanySettings } from './useCompanySettings';
 
 export interface WhatsAppInstance {
   id: string;
@@ -80,6 +81,7 @@ const WHATSAPP_API_BASE = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n
 
 export function useWhatsAppInstances() {
   const { profile, isManager } = useUserProfile();
+  const { settings } = useCompanySettings();
   const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +99,11 @@ export function useWhatsAppInstances() {
       // Buscar instâncias do endpoint externo
       console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
       
-      const response = await fetch(`${WHATSAPP_API_BASE}/whatsapp-instances`, {
+      const url = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+      url.searchParams.append('company_id', profile.company_id);
+      url.searchParams.append('company_name', settings?.display_name || '');
+
+      const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { MapPin, Bed, Bath, Square, Calendar, X, Shield } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useState } from "react";
+import { convertGoogleDriveUrl, handleImageErrorWithFallback } from "@/utils/imageUtils";
 
 interface PropertyDetailsPopupProps {
   property: PropertyWithImages | null;
@@ -120,9 +121,13 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
                 {property.property_images.map((image, index) => (
                   <div key={image.id} className="aspect-video bg-gray-700 rounded-lg overflow-hidden">
                     <img 
-                      src={image.image_url} 
+                      src={convertGoogleDriveUrl(image.image_url, 'medium')} 
                       alt={`${property.title} - Imagem ${index + 1}`}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        handleImageErrorWithFallback(e, image.image_url, '/placeholder-property.jpg');
+                      }}
                     />
                   </div>
                 ))}

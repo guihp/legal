@@ -3,6 +3,105 @@ import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useUserProfile } from './useUserProfile';
 
+/**
+ * Extrai o conteúdo limpo da mensagem.
+ * Se a mensagem vier no formato "[MENSAGEM DE TEXTO ENVIADA]: (conteúdo)", 
+ * extrai apenas o conteúdo entre parênteses.
+ */
+export function extractMessageContent(content: string): string {
+  if (!content) return '';
+  
+  // Padrão: [QUALQUER COISA]: (conteúdo)
+  // Exemplos:
+  // [MENSAGEM DE TEXTO ENVIADA]: (Guilherme e queria saber o valor da casa)
+  // [MENSAGEM DE ÁUDIO ENVIADA]: (transcrição do áudio)
+  // O \s* permite zero ou mais espaços entre : e (
+  const match = content.match(/^\[.*?\]:\s*\(([\s\S]*)\)$/);
+  
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  
+  // Se não encontrar o padrão, retorna o conteúdo original
+  return content;
+}
+
+/**
+ * Extrai URLs de imagens do campo media.
+ * O campo media pode conter um JSON com várias imagens no formato:
+ * "{"json":{"imagem":"https://..."},"pairedItem":{"item":0}}"
+ * ou um PostgreSQL array de strings JSON
+ */
+export function extractMediaImages(media: string | null | undefined): string[] {
+  if (!media || media === 'null' || media.trim() === '') return [];
+  
+  const images: string[] = [];
+  
+  try {
+    // Estratégia 1: Extrair URLs diretamente com regex (mais robusto para formatos complexos)
+    // Padrão para URLs de imagem do Supabase Storage e outros
+    const urlPattern = /https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]+\.(?:jpg|jpeg|png|gif|webp)/gi;
+    const urlMatches = media.match(urlPattern);
+    
+    if (urlMatches) {
+      // Remover duplicatas e URLs com caracteres de escape
+      const cleanUrls = urlMatches.map(url => 
+        url.replace(/\\+/g, '').replace(/"+$/, '')
+      );
+      const uniqueUrls = [...new Set(cleanUrls)];
+      images.push(...uniqueUrls);
+    }
+    
+    // Estratégia 2: Se não encontrou URLs, tentar parsear como JSON
+    if (images.length === 0) {
+      let parsed: any;
+      
+      // Tentar parsear diretamente
+      if (media.startsWith('{') || media.startsWith('[')) {
+        try {
+          parsed = JSON.parse(media);
+        } catch {
+          // Se falhar, tentar limpar aspas escapadas
+          const cleaned = media.replace(/\\"/g, '"').replace(/^"|"$/g, '');
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch {
+            parsed = null;
+          }
+        }
+      }
+      
+      // Processar objeto/array parseado
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.json?.imagem) {
+          images.push(parsed.json.imagem);
+        } else if (parsed.imagem) {
+          images.push(parsed.imagem);
+        } else if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (typeof item === 'string') {
+              try {
+                const itemParsed = JSON.parse(item);
+                if (itemParsed?.json?.imagem) {
+                  images.push(itemParsed.json.imagem);
+                }
+              } catch {
+                // Ignorar
+              }
+            } else if (item?.json?.imagem) {
+              images.push(item.json.imagem);
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Erro ao extrair imagens do media:', error);
+  }
+  
+  return images;
+}
+
 export interface ConversaMessage {
   id: string;
   sessionId: string;
@@ -17,6 +116,7 @@ export interface ConversaMessage {
   };
   data: string;
   media?: string | null;
+  mediaImages?: string[]; // URLs das imagens extraídas do campo media
   before_handoff?: boolean;
   handoff_ts?: string | null;
 }
@@ -53,13 +153,21 @@ export function useConversaMessages() {
       } else {
         parsedMessage = row.message;
       }
+      
+      // Extrair conteúdo limpo (remove prefixos como "[MENSAGEM DE TEXTO ENVIADA]: ()")
+      const rawContent = parsedMessage?.content || '';
+      const cleanContent = extractMessageContent(rawContent);
+      
+      // Extrair imagens do campo media
+      const mediaImages = extractMediaImages(row.media);
+      
       return {
         id: row.id,
         sessionId: row.session_id,
         instancia: row.instancia || '(sem instância)',
         message: {
           type: parsedMessage?.type || 'human',
-          content: parsedMessage?.content || '',
+          content: cleanContent,
           additional_kwargs: parsedMessage?.additional_kwargs,
           response_metadata: parsedMessage?.response_metadata,
           tool_calls: parsedMessage?.tool_calls,
@@ -67,6 +175,7 @@ export function useConversaMessages() {
         },
         data: row.data,
         media: row.media ?? null,
+        mediaImages,
         before_handoff: (row as any).before_handoff ?? false,
         handoff_ts: (row as any).handoff_ts ?? null,
       } as ConversaMessage;
@@ -110,14 +219,14 @@ export function useConversaMessages() {
       try {
         const { data, error: fetchError } = await supabase
           .from('companies')
-          .select('whatsapp_ai_phone')
+          .select('phone')
           .eq('id', profile.company_id)
           .single();
-        
+
         if (fetchError) throw fetchError;
-        
-        if (data) {
-          companyPhoneRef.current = data.whatsapp_ai_phone || null;
+
+        if (data && data.phone) {
+          companyPhoneRef.current = data.phone.replace(/\D/g, '');
         }
       } catch (err) {
         console.error('Erro ao buscar whatsapp_ai_phone da empresa:', err);
@@ -132,34 +241,32 @@ export function useConversaMessages() {
     try {
       setLoading(true);
       setError(null);
-      
-      const phone = companyPhoneRef.current;
-      if (!phone) {
-        console.error('[useConversaMessages] Telefone da empresa não encontrado. Tentando buscar novamente...');
-        // Tentar buscar novamente se não tiver
-        if (profile?.company_id) {
-          try {
-            const { data: fetchData, error: fetchError } = await supabase
-              .from('companies')
-              .select('whatsapp_ai_phone')
-              .eq('id', profile.company_id)
-              .single();
-            
-            if (fetchError) throw fetchError;
-            
-            if (fetchData) {
-              companyPhoneRef.current = fetchData.whatsapp_ai_phone || null;
-            }
-          } catch (err) {
-            console.error('[useConversaMessages] Erro ao buscar whatsapp_ai_phone:', err);
+
+      // Buscar telefone se não tiver
+      if (!companyPhoneRef.current && profile?.company_id) {
+        try {
+          const { data: fetchData, error: fetchError } = await supabase
+            .from('companies')
+            .select('phone')
+            .eq('id', profile.company_id)
+            .single();
+
+          if (fetchError) throw fetchError;
+
+          if (fetchData && fetchData.phone) {
+            companyPhoneRef.current = fetchData.phone.replace(/\+/g, '');
           }
+        } catch (err) {
+          console.error('[useConversaMessages] Erro ao buscar phone:', err);
         }
-        
-        if (!companyPhoneRef.current) {
-          setError('Telefone da empresa não encontrado');
-          setLoading(false);
-          return;
-        }
+      }
+
+      if (!companyPhoneRef.current) {
+        // Se ainda não tiver telefone, não tem como saber a tabela
+        console.warn('[useConversaMessages] Telefone da empresa não encontrado. Impossível determinar tabela.');
+        setError('Telefone da empresa não configurado');
+        setLoading(false);
+        return;
       }
 
       const phoneToUse = companyPhoneRef.current;
@@ -171,14 +278,14 @@ export function useConversaMessages() {
         p_limit: 500,
         p_offset: 0,
       });
-      
+
       if (error) {
         console.error('[useConversaMessages] Erro na função RPC:', error);
         throw error;
       }
-      
+
       console.log('[useConversaMessages] Mensagens recebidas:', data?.length || 0);
-      
+
       const mapped = mapRows(data ?? []);
       const hts = computeHandoffTs(mapped);
       handoffTsRef.current = hts;
@@ -206,7 +313,7 @@ export function useConversaMessages() {
   }, [fetchConversation]);
 
   const scheduleRefetch = useCallback((sessionId: string, delay = 75) => {
-    try { if (debounceRef.current) clearTimeout(debounceRef.current); } catch {}
+    try { if (debounceRef.current) clearTimeout(debounceRef.current); } catch { }
     debounceRef.current = setTimeout(() => {
       fetchConversation(sessionId);
       debounceRef.current = null;
@@ -218,7 +325,7 @@ export function useConversaMessages() {
     const mi = myInstanceRef.current;
     setMessages(prev => {
       let next = prev;
-      const evt = payload.eventType as 'INSERT'|'UPDATE'|'DELETE';
+      const evt = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
       const rowNew = payload.new;
       const rowOld = payload.old;
 
@@ -280,7 +387,7 @@ export function useConversaMessages() {
       const ch = rtChannelRef.current;
       rtChannelRef.current = null;
       if (ch) { (ch as any).unsubscribe?.(); (supabase as any).removeChannel?.(ch); }
-    } catch {}
+    } catch { }
 
     // nova assinatura filtrada
     const channel = supabase
@@ -288,7 +395,7 @@ export function useConversaMessages() {
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'imobipro_messages',
+        table: `imobipro_messages_${companyPhoneRef.current}`,
         filter: `session_id=eq.${sessionId}`
       } as any, (payload: any) => {
         if ((import.meta as any).env?.DEV) console.info('[chat RT]', payload.eventType, payload.new?.id || payload.old?.id);
@@ -321,7 +428,7 @@ export function useConversaMessages() {
           (bcastRef.current as any).unsubscribe?.();
           (supabase as any).removeChannel?.(bcastRef.current);
         }
-      } catch {}
+      } catch { }
     };
   }, []);
 
@@ -357,6 +464,35 @@ export function useConversaMessages() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [scheduleRefetch]);
+
+  // Polling a cada 2 segundos para atualização automática
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  useEffect(() => {
+    // Limpar polling anterior
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    
+    // Iniciar novo polling se tiver sessão ativa
+    const sid = currentSessionRef.current;
+    if (sid && hydratedRef.current) {
+      pollingRef.current = setInterval(() => {
+        const currentSid = currentSessionRef.current;
+        if (currentSid) {
+          fetchConversation(currentSid);
+        }
+      }, 2000); // 2 segundos
+    }
+    
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [fetchConversation, messages.length]); // Re-executar quando mensagens mudarem para manter polling ativo
 
   const refetch = useCallback(() => {
     const sid = currentSessionRef.current;

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
+import { convertGoogleDriveUrl, handleImageErrorWithFallback, getGoogleDriveFullImage } from "@/utils/imageUtils";
 
 interface PropertyImageGalleryProps {
   property: PropertyWithImages | null;
@@ -20,6 +21,7 @@ export function PropertyImageGallery({
   const [currentImageIndex, setCurrentImageIndex] = useState(initialImageIndex);
   const [fitMode, setFitMode] = useState<'cover' | 'contain'>('cover');
   const [zoom, setZoom] = useState<number>(1);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string>('');
   const increaseZoom = () => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)));
   const decreaseZoom = () => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)));
   const resetZoom = () => setZoom(1);
@@ -40,6 +42,18 @@ export function PropertyImageGallery({
       setZoom(1);
     }
   }, [property?.id, open, initialImageIndex]);
+  
+  // Atualizar URL da imagem quando o índice mudar
+  // Usa 'medium' para galeria (boa qualidade, ainda rápido)
+  useEffect(() => {
+    if (property?.property_images && property.property_images.length > 0) {
+      const safeIndex = Math.min(Math.max(currentImageIndex, 0), property.property_images.length - 1);
+      const image = property.property_images[safeIndex];
+      if (image) {
+        setCurrentImageUrl(convertGoogleDriveUrl(image.image_url, 'medium'));
+      }
+    }
+  }, [currentImageIndex, property?.property_images, property?.id]);
 
   // Early return if no property or images
   if (!property || !property.property_images || property.property_images.length === 0) {
@@ -124,12 +138,27 @@ export function PropertyImageGallery({
                     aria-label={`${property.title} - Imagem ${safeImageIndex + 1}`}
                     className="w-full h-full"
                     style={{
-                      backgroundImage: `url(${currentImage.image_url})`,
+                      backgroundImage: `url(${currentImageUrl || convertGoogleDriveUrl(currentImage.image_url, 'medium')})`,
                       backgroundRepeat: 'no-repeat',
                       backgroundPosition: 'center',
                       backgroundSize: fitMode === 'cover' ? 'cover' : 'contain'
                     }}
-                  />
+                  >
+                    {/* Imagem oculta para detectar erros e fazer fallback */}
+                    <img
+                      src={currentImageUrl || convertGoogleDriveUrl(currentImage.image_url, 'medium')}
+                      alt=""
+                      className="hidden"
+                      onError={(e) => {
+                        const originalUrl = currentImage.image_url;
+                        handleImageErrorWithFallback(e, originalUrl, '/placeholder-property.jpg');
+                        // Atualizar URL do background quando o fallback for aplicado
+                        if (e.target instanceof HTMLImageElement) {
+                          setCurrentImageUrl(e.target.src);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -173,9 +202,12 @@ export function PropertyImageGallery({
                     }`}
                   >
                     <img
-                      src={image.image_url}
+                      src={convertGoogleDriveUrl(image.image_url, 'thumbnail')}
                       alt={`Thumbnail ${index + 1}`}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        handleImageErrorWithFallback(e, image.image_url, '/placeholder-property.jpg');
+                      }}
                     />
                   </button>
                 ))}

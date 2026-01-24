@@ -1,1 +1,6 @@
 project_id = "ibmyytoyqjoycrgutzef"
+
+# Desabilita verificação de JWT para o proxy de imagens do Google Drive
+# Esta função serve apenas imagens públicas do Google Drive e precisa ser acessível por tags <img>
+[functions.google-drive-proxy]
+verify_jwt = false

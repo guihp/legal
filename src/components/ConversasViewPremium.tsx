@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   MessageSquare,
+  MessageCircle,
   Search,
   Send,
   Paperclip,
@@ -298,24 +299,99 @@ function previewFromLast(last_media: any, last_message: any): string {
   return txt.length > 80 ? txt.slice(0, 80) + '…' : txt;
 }
 
-// Renderer da mensagem (prioridade absoluta para media)
+// Função para processar texto com markdown básico (**texto** → negrito)
+function processTextWithBold(text: string): React.ReactNode {
+  if (!text) return text;
+  
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  const regex = /\*\*(.*?)\*\*/g;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    // Adicionar texto antes do match
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    // Adicionar texto em negrito
+    parts.push(
+      <strong key={match.index} className="font-bold">
+        {match[1]}
+      </strong>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  
+  // Adicionar texto restante
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
+// Renderer da mensagem (prioridade: URLs de imagem > base64 > texto)
 function MessageBubble({ row }: { row: any }) {
   // Parse da mensagem para determinar tipo (AI/human)
   const raw = row?.message;
   const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const isAI = String(m?.type || '').toLowerCase() === 'ai';
+  const content = m?.content ?? '';
+  const mediaImages = row?.mediaImages as string[] | undefined;
 
-  // --- LOG DIAGNÓSTICO COMPLETO ---
-  console.log('🔍 MessageBubble Debug:', {
-    id: row?.id,
-    mediaType: typeof row?.media,
-    mediaLength: (row?.media || '').length,
-    mediaPreview: row?.media ? row.media.substring(0, 20) + '...' : 'null',
-    messageType: typeof row?.message,
-    isAI
-  });
+  // 1) PRIORIDADE MÁXIMA: Se há mediaImages (URLs de imagens do Supabase), renderizar imagens + texto
+  if (mediaImages && mediaImages.length > 0) {
+    return (
+      <div className={isAI ? 'self-end' : 'self-start'}>
+        <div className={isAI
+          ? 'max-w-[72ch] rounded-lg bg-[#005c4b] px-3 py-2 text-white shadow-sm rounded-tr-none'
+          : 'max-w-[72ch] rounded-lg bg-[#202c33] px-3 py-2 text-zinc-100 shadow-sm rounded-tl-none'}>
+          {/* Grid de imagens estilo WhatsApp */}
+          <div className={`grid gap-1 mb-2 ${
+            mediaImages.length === 1 ? 'grid-cols-1' :
+            mediaImages.length === 2 ? 'grid-cols-2' :
+            mediaImages.length === 3 ? 'grid-cols-2' :
+            'grid-cols-2'
+          }`}>
+            {mediaImages.slice(0, 4).map((imgUrl, imgIdx) => (
+              <div 
+                key={imgIdx} 
+                className={`relative overflow-hidden rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${
+                  mediaImages.length === 3 && imgIdx === 0 ? 'col-span-2' : ''
+                }`}
+                onClick={() => window.open(imgUrl, '_blank')}
+              >
+                <img 
+                  src={imgUrl} 
+                  alt={`Imagem ${imgIdx + 1}`}
+                  className="w-full h-auto max-h-48 object-cover rounded-lg"
+                  loading="lazy"
+                />
+                {mediaImages.length > 4 && imgIdx === 3 && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
+                    <span className="text-white text-lg font-semibold">
+                      +{mediaImages.length - 4}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+           {/* Texto da mensagem */}
+           {content && (
+             <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+               {processTextWithBold(content)}
+             </div>
+           )}
+          <div className="text-[10px] text-white/60 text-right mt-1 -mb-1">
+            {row.data ? formatHour(row.data) : ''}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  // 1) PRIORIDADE ABSOLUTA: se existe `media`, renderiza a mídia e NÃO renderiza message.content
+  // 2) Se não há mediaImages, verificar se há media base64
   const dataUrl = buildDataUrlFromMedia(row.media);
   if (dataUrl) {
     const isImage = dataUrl.includes('image/');
@@ -433,8 +509,13 @@ function MessageBubble({ row }: { row: any }) {
     );
   }
 
-  // Verificar se há tentativa de mídia mas base64 inválido
-  if (row.media && typeof row.media === 'string' && row.media.trim() && row.media.toLowerCase() !== 'null') {
+  // Verificar se há tentativa de mídia base64 mas inválido (ignorar se já processou mediaImages)
+  // Só mostrar placeholder se NÃO contiver URLs de imagens (indica que é realmente base64 corrompido)
+  const hasImageUrls = row.media && typeof row.media === 'string' && 
+    (row.media.includes('https://') || row.media.includes('http://'));
+  
+  if (row.media && typeof row.media === 'string' && row.media.trim() && 
+      row.media.toLowerCase() !== 'null' && !hasImageUrls) {
     console.log('⚠️ Mídia detectada mas base64 inválido, mostrando placeholder');
     return (
       <div className={isAI ? 'self-end' : 'self-start'}>
@@ -451,19 +532,16 @@ function MessageBubble({ row }: { row: any }) {
     );
   }
 
-  // 2) SEM mídia → renderiza texto (message.content) normalmente
-  const content = m?.content ?? '';
-
-  console.log('📝 Renderizando texto:', { content: content.substring(0, 50) + '...', isAI });
-
+  // 3) SEM mídia → renderiza apenas texto
   return (
     <div className={isAI ? 'self-end' : 'self-start'}>
       <div className={isAI
         ? 'max-w-[72ch] rounded-lg bg-[#005c4b] px-3 py-2 text-white shadow-sm rounded-tr-none'
         : 'max-w-[72ch] rounded-lg bg-[#202c33] px-3 py-2 text-zinc-100 shadow-sm rounded-tl-none'}>
-        <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{content}</div>
+        <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+          {processTextWithBold(content)}
+        </div>
         <div className="text-[10px] text-white/60 text-right mt-1 -mb-1">
-          {/* Placeholder for time if available in row */}
           {row.data ? formatHour(row.data) : ''}
         </div>
       </div>
@@ -521,6 +599,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const endOfMessagesRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef<boolean>(true);
+  const prevConversationRef = useRef<string | null>(null);
 
   // Estado para Preview de Mídia
   const [previewData, setPreviewData] = useState<{
@@ -561,10 +642,35 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     }
   });
 
-  // Auto scroll para o final quando novas mensagens chegam ou conversa muda
+  // Auto scroll apenas quando:
+  // 1. Conversa é selecionada/mudada
+  // 2. Usuário já estava no final da conversa (não scrollou para cima)
   useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, selectedConversation, loadingMessages, leadMessages.length]);
+    // Se mudou de conversa, fazer scroll e resetar flag
+    if (selectedConversation !== prevConversationRef.current) {
+      prevConversationRef.current = selectedConversation;
+      shouldAutoScrollRef.current = true;
+      setTimeout(() => {
+        endOfMessagesRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      }, 100);
+      return;
+    }
+    
+    // Só fazer scroll automático se o usuário estava no final
+    if (shouldAutoScrollRef.current) {
+      endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages.length, selectedConversation, leadMessages.length]);
+
+  // Detectar quando o usuário scrolla manualmente
+  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    // Se o usuário está a menos de 100px do final, permitir auto-scroll
+    // Se scrollou para cima, desabilitar auto-scroll
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    shouldAutoScrollRef.current = isNearBottom;
+  }, []);
 
   // Informar instância atual ao hook de mensagens para calcular handoff
   useEffect(() => {
@@ -1031,9 +1137,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden">
-              <Avatar className="h-full w-full">
-                <AvatarFallback>U</AvatarFallback>
-              </Avatar>
+              <MessageCircle className="w-6 h-6 text-white" />
             </div>
             <h1 className="font-semibold text-[#e9edef] text-sm md:text-base">Conversas</h1>
           </div>
@@ -1167,7 +1271,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </div>
 
             {/* MESSAGES */}
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-[#0b141a] bg-opacity-95"
+            <div 
+              ref={messagesContainerRef}
+              onScroll={handleMessagesScroll}
+              className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-[#0b141a] bg-opacity-95"
               style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay' }}>
               <div className="space-y-2 pb-2">
                 {/* LEAD MESSAGES */}

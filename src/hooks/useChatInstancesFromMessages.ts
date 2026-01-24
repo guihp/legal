@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
+import { useCompanySettings } from './useCompanySettings';
 
 export interface ChatInstanceRow {
   name: string;
@@ -15,6 +16,7 @@ const WHATSAPP_API_BASE = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n
 
 export function useChatInstancesFromMessages() {
   const { profile, isManager, loading: profileLoading } = useUserProfile();
+  const { settings } = useCompanySettings();
   const [instances, setInstances] = useState<ChatInstanceRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +47,22 @@ export function useChatInstancesFromMessages() {
         return;
       }
 
+      // Otimização: Se for API Oficial, NÃO buscar instâncias via webhook
+      if (profile?.email === 'jastelo@iafeoficial.com') {
+        console.log('⚡ API Oficial detectada: pulando busca de instâncias via webhook');
+        setInstances([]); // Ou retornar instâncias mockadas se necessário no futuro
+        setLoading(false);
+        return;
+      }
+
       // Buscar instâncias do webhook N8N (mesmo padrão usado em ConnectionsView)
       console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
-      
-      const response = await fetch(`${WHATSAPP_API_BASE}/whatsapp-instances`, {
+
+      const url = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+      url.searchParams.append('company_id', profile.company_id);
+      url.searchParams.append('company_name', settings?.display_name || '');
+
+      const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -63,17 +77,17 @@ export function useChatInstancesFromMessages() {
 
       const responseData = await response.json();
       console.log('✅ Resposta recebida do webhook:', responseData);
-      
+
       if (!responseData.success || !Array.isArray(responseData.data)) {
         throw new Error('Formato de resposta inválido do endpoint');
       }
 
       const externalInstances = responseData.data || [];
-      
+
       // Filtrar instâncias se for corretor (apenas a instância atribuída)
       let filteredInstances = externalInstances;
       if (scopedInstance) {
-        filteredInstances = externalInstances.filter((inst: any) => 
+        filteredInstances = externalInstances.filter((inst: any) =>
           String(inst.name || '').trim().toLowerCase() === scopedInstance
         );
       }

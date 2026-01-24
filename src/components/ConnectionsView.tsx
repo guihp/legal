@@ -29,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useWhatsAppInstances } from "@/hooks/useWhatsAppInstances";
+import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { supabase } from "@/integrations/supabase/client";
 
 interface WhatsAppInstance {
@@ -58,6 +59,7 @@ export function ConnectionsView() {
   // URLs dos webhooks através do proxy
   const WEBHOOK_BASE_URL = '/api/webhook';
   const { profile, isManager } = useUserProfile();
+  const { settings } = useCompanySettings();
   const { 
     instances, 
     loading, 
@@ -109,7 +111,19 @@ export function ConnectionsView() {
     try {
       console.log('🔄 Verificando status das instâncias...');
       
-      const response = await fetch(`${WEBHOOK_BASE_URL}/whatsapp-instances`, {
+      let urlString = `${WEBHOOK_BASE_URL}/whatsapp-instances`;
+      const params = new URLSearchParams();
+      if (profile?.company_id) {
+        params.append('company_id', profile.company_id);
+      }
+      if (settings?.display_name) {
+        params.append('company_name', settings.display_name);
+      }
+      if (params.toString()) {
+        urlString += `?${params.toString()}`;
+      }
+
+      const response = await fetch(urlString, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -163,7 +177,19 @@ export function ConnectionsView() {
       console.log('🔄 Buscando instâncias WhatsApp...');
       console.log('🌐 URL da requisição:', `${WEBHOOK_BASE_URL}/whatsapp-instances`);
       
-      const response = await fetch(`${WEBHOOK_BASE_URL}/whatsapp-instances`, {
+      let urlString = `${WEBHOOK_BASE_URL}/whatsapp-instances`;
+      const params = new URLSearchParams();
+      if (profile?.company_id) {
+        params.append('company_id', profile.company_id);
+      }
+      if (settings?.display_name) {
+        params.append('company_name', settings.display_name);
+      }
+      if (params.toString()) {
+        urlString += `?${params.toString()}`;
+      }
+
+      const response = await fetch(urlString, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

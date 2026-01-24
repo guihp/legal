@@ -284,11 +284,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 width: `${logoSize || 40}px`,
                 background: settings?.primary_color
                   ? `linear-gradient(45deg, ${settings.primary_color}, ${settings.primary_color}dd)`
-                  : 'linear-gradient(45deg, #3b82f6, #2563eb)'
+                  : 'transparent'
               }}
               className="flex items-center justify-center rounded-xl shadow-lg text-white"
             >
-              <Home className="h-5 w-5" />
+              <img src="/Documento_1.png" alt="IAFÉ IMOBI" className="h-full w-full object-contain" />
             </div>
           )}
           <div className="flex flex-col">
@@ -300,7 +300,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 fontWeight: nameBold ? 'bold' : 'normal'
               }}
             >
-              {companyDisplayName || 'ImobiPro'}
+              {companyDisplayName || 'IAFÉ IMOBI'}
             </span>
             <span
               style={{
@@ -337,7 +337,24 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     `}
                   >
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        // Se for Conversas, chamar o webhook coletar-mensagens
+                        if (item.view === 'conversas' && profile?.company_id && settings?.display_name) {
+                          try {
+                            console.log('🔄 Chamando webhook coletar-mensagens ao clicar em Conversas...');
+                            await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/coletar-mensagens', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                company_id: profile.company_id,
+                                company_name: settings.display_name
+                              })
+                            });
+                            console.log('✅ Webhook coletar-mensagens chamado com sucesso.');
+                          } catch (error) {
+                            console.error('❌ Erro ao chamar webhook coletar-mensagens:', error);
+                          }
+                        }
                         onViewChange(item.view);
                         navigate(`/${item.view}`);
                       }}

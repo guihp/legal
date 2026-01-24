@@ -27,7 +27,7 @@ export interface CompanySettings {
 }
 
 const DEFAULT_SETTINGS: Partial<CompanySettings> = {
-  display_name: 'ImobiPro',
+  display_name: 'IAFÉ IMOBI',
   display_subtitle: 'Gestão Imobiliária',
   theme: 'dark',
   primary_color: '#3B82F6',
@@ -60,7 +60,7 @@ export function useCompanySettings() {
       }
 
       setError(null);
-      
+
       const { data, error } = await supabase
         .from('company_settings')
         .select('*')
@@ -115,7 +115,7 @@ export function useCompanySettings() {
 
   // Atualizar uma configuração específica
   const updateSetting = useCallback(async (
-    field: keyof CompanySettings, 
+    field: keyof CompanySettings,
     value: any
   ): Promise<boolean> => {
     try {
@@ -128,7 +128,7 @@ export function useCompanySettings() {
 
       // Verificar se a sessão está válida e renovar se necessário
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError || !session) {
         // Tentar renovar a sessão
         const { error: refreshError } = await supabase.auth.refreshSession();
@@ -152,7 +152,7 @@ export function useCompanySettings() {
           if (refreshError) {
             throw new Error('Sessão expirada. Faça login novamente.');
           }
-          
+
           // Tentar novamente com sessão renovada
           const { data: retryData, error: retryError } = await supabase
             .from('company_settings')
@@ -160,7 +160,7 @@ export function useCompanySettings() {
             .eq('company_id', profile.company_id)
             .select()
             .single();
-            
+
           if (retryError) throw retryError;
           setSettings(retryData);
         } else {
@@ -169,7 +169,7 @@ export function useCompanySettings() {
       } else {
         setSettings(data);
       }
-      
+
       // Toast específico por tipo de configuração
       const messages = {
         display_name: 'Nome da empresa atualizado',
@@ -218,7 +218,7 @@ export function useCompanySettings() {
 
       // Verificar se a sessão está válida e renovar se necessário
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError || !session) {
         // Tentar renovar a sessão
         const { error: refreshError } = await supabase.auth.refreshSession();
@@ -248,7 +248,7 @@ export function useCompanySettings() {
           if (refreshError) {
             throw new Error('Sessão expirada. Faça login novamente.');
           }
-          
+
           // Tentar upload novamente com sessão renovada
           const { error: retryError } = await supabase.storage
             .from('company-assets')
@@ -256,7 +256,7 @@ export function useCompanySettings() {
               cacheControl: '3600',
               upsert: false
             });
-            
+
           if (retryError) throw retryError;
         } else {
           throw uploadError;
@@ -375,10 +375,10 @@ export function useCompanySettings() {
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const subscription = supabase
       .channel(`company_settings_changes-${profile.company_id}-${uniqueSuffix}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
           table: 'company_settings',
           filter: `company_id=eq.${profile.company_id}`
         },

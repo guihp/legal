@@ -33,7 +33,11 @@ import {
   Clock,
   AlertCircle,
   XCircle,
-  Upload
+  Upload,
+  ImagePlus,
+  X,
+  Link,
+  Loader2
 } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
@@ -48,6 +52,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId } from "@/utils/imageUtils";
+import { toast as sonnerToast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 
 // Componente para as partículas flutuantes
@@ -381,6 +387,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editQuartos, setEditQuartos] = useState<string>("");
   const [editBanheiros, setEditBanheiros] = useState<string>("");
   const [editDescricao, setEditDescricao] = useState<string>("");
+  const [editImages, setEditImages] = useState<File[]>([]);
+  const [editPreviews, setEditPreviews] = useState<string[]>([]);
+  const [editExistingImages, setEditExistingImages] = useState<string[]>([]);
+  const [editGoogleDriveLink, setEditGoogleDriveLink] = useState('');
+  const [isEditDownloadingFromDrive, setIsEditDownloadingFromDrive] = useState(false);
+  const MAX_IMAGES = 50; // Limite máximo de imagens por imóvel
 
   // Função para mapear JSON do VivaReal para schema do banco
   const mapVivaRealJsonToDatabase = (jsonData: any) => {
@@ -529,6 +541,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       property_purpose: 'Venda' as any,
       created_at: i.created_at || null,
       updated_at: i.updated_at || null,
+      // Manter URLs originais - conversão acontece na renderização para otimizar tamanho
       property_images: (i.imagens || []).map((url: string) => ({ image_url: url })) as any,
       // Campos extras (fora do tipo PropertyWithImages) para integração de disponibilidade
       ...(i.disponibilidade ? { disponibilidade: i.disponibilidade } : {}),
@@ -585,7 +598,176 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setEditQuartos(String(property.bedrooms || 0));
     setEditBanheiros(String(property.bathrooms || 0));
     setEditDescricao(property.description || "");
+    
+    // Carregar imagens existentes do imóvel
+    // Os dados vêm como property_images (array de objetos {image_url: string})
+    // ou como imagens (array de strings) do VivaReal original
+    const vivaRealProperty = property as any;
+    let existingUrls: string[] = [];
+    
+    if (property.property_images && Array.isArray(property.property_images) && property.property_images.length > 0) {
+      // Formato property_images: [{image_url: "..."}, ...]
+      existingUrls = property.property_images
+        .map((img: any) => img.image_url || img)
+        .filter((url: any) => typeof url === 'string' && url.length > 0);
+    } else if (vivaRealProperty.imagens && Array.isArray(vivaRealProperty.imagens)) {
+      // Formato original do VivaReal: ["url1", "url2", ...]
+      existingUrls = vivaRealProperty.imagens.filter((url: any) => typeof url === 'string' && url.length > 0);
+    }
+    
+    console.log(`📸 Carregando ${existingUrls.length} imagem(ns) existente(s) para edição`);
+    setEditExistingImages(existingUrls);
+    
+    // Limpar novas imagens e campos auxiliares
+    setEditImages([]);
+    setEditPreviews([]);
+    setEditGoogleDriveLink('');
+    
     setIsVivaRealEditOpen(true);
+  };
+
+  const onSelectEditImages = async (files: FileList | null) => {
+    if (!files) return;
+    const list = Array.from(files);
+    const currentCount = editImages.length + editExistingImages.length;
+    const remainingSlots = MAX_IMAGES - currentCount;
+    
+    if (remainingSlots <= 0) {
+      sonnerToast.warning(`Você já atingiu o limite de ${MAX_IMAGES} imagens.`);
+      return;
+    }
+    
+    const chosen = list.slice(0, remainingSlots);
+    
+    if (chosen.length < list.length) {
+      sonnerToast.warning(`Apenas ${chosen.length} imagem(ns) foram selecionadas. Limite máximo: ${MAX_IMAGES} imagens.`);
+    }
+    
+    try {
+      console.log(`📸 Processando ${chosen.length} imagem(ns) de ${list.length} selecionadas...`);
+      sonnerToast.info('Processando imagens para qualidade ideal (1-5MB)...');
+      // Converter para JPEG com tamanho entre 1MB e 5MB (ideal para WhatsApp)
+      const converted = await convertMultipleToJPEG(chosen, 1024 * 1024, 5 * 1024 * 1024, 1920, 1440);
+      setEditImages(prev => [...prev, ...converted]);
+      const newPreviews = converted.map(f => URL.createObjectURL(f));
+      setEditPreviews(prev => [...prev, ...newPreviews]);
+      console.log(`✅ ${converted.length} imagem(ns) processadas com sucesso.`);
+      sonnerToast.success(`${converted.length} imagem(ns) processadas com sucesso!`);
+    } catch (e) {
+      console.error('Erro ao processar imagens:', e);
+      sonnerToast.error('Falha ao processar imagens. Verifique se os arquivos são imagens válidas.');
+    }
+  };
+
+  const onAddEditGoogleDriveImage = async () => {
+    if (!editGoogleDriveLink.trim()) {
+      sonnerToast.warning('Cole um link do Google Drive válido.');
+      return;
+    }
+
+    // Verificar se é um link válido do Google Drive
+    const fileId = extractGoogleDriveFileId(editGoogleDriveLink);
+    if (!fileId) {
+      sonnerToast.error('Link inválido. Use um link de compartilhamento do Google Drive (ex: https://drive.google.com/file/d/ID/view)');
+      return;
+    }
+
+    const currentCount = editImages.length + editExistingImages.length;
+    if (currentCount >= MAX_IMAGES) {
+      sonnerToast.warning(`Você já atingiu o limite de ${MAX_IMAGES} imagens.`);
+      return;
+    }
+
+    setIsEditDownloadingFromDrive(true);
+    
+    try {
+      console.log(`📥 Baixando imagem do Google Drive: ${fileId}`);
+      sonnerToast.info('Baixando imagem do Google Drive...');
+      
+      const file = await downloadGoogleDriveImage(editGoogleDriveLink, 1024 * 1024, 5 * 1024 * 1024);
+      
+      setEditImages(prev => [...prev, file]);
+      setEditPreviews(prev => [...prev, URL.createObjectURL(file)]);
+      setEditGoogleDriveLink(''); // Limpar o campo
+      
+      console.log(`✅ Imagem baixada e processada: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      sonnerToast.success(`Imagem baixada com sucesso! (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+    } catch (e: any) {
+      console.error('Erro ao baixar imagem do Google Drive:', e);
+      sonnerToast.error(e.message || 'Falha ao baixar imagem. Verifique se o link está correto e público.');
+    } finally {
+      setIsEditDownloadingFromDrive(false);
+    }
+  };
+
+  const removeEditImage = (index: number) => {
+    setEditImages(prev => prev.filter((_, i) => i !== index));
+    setEditPreviews(prev => {
+      const newPreviews = [...prev];
+      URL.revokeObjectURL(newPreviews[index]);
+      return newPreviews.filter((_, i) => i !== index);
+    });
+  };
+
+  const removeExistingImage = (index: number) => {
+    setEditExistingImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadEditImages = async (imovelId: number): Promise<string[]> => {
+    const BUCKET = 'property-images';
+    const newUploadedUrls: string[] = [];
+    
+    // Se não há novas imagens para fazer upload, retornar apenas as existentes
+    if (editImages.length === 0) {
+      console.log(`📸 Sem novas imagens. Mantendo ${editExistingImages.length} imagens existentes.`);
+      return editExistingImages;
+    }
+    
+    // Upload em paralelo das novas imagens
+    const baseTimestamp = Date.now();
+    const uploadPromises = editImages.map(async (file, i) => {
+      const timestamp = baseTimestamp + i;
+      const path = `imoveisvivareal/${imovelId}/${timestamp}_${i}.jpg`;
+      
+      try {
+        console.log(`📤 Fazendo upload da imagem ${i + 1}/${editImages.length}: ${path} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { 
+            contentType: 'image/jpeg', 
+            upsert: false 
+          });
+        
+        if (error) {
+          console.error(`❌ Erro ao fazer upload da imagem ${i + 1}:`, error);
+          return { success: false, index: i, error };
+        }
+        
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        console.log(`✅ Imagem ${i + 1} enviada com sucesso:`, pub.publicUrl);
+        return { success: true, index: i, url: pub.publicUrl };
+      } catch (err: any) {
+        console.error(`❌ Falha no upload da imagem ${i + 1}:`, err);
+        return { success: false, index: i, error: err };
+      }
+    });
+    
+    const results = await Promise.allSettled(uploadPromises);
+    
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        const data = result.value;
+        if (data.success && data.url) {
+          newUploadedUrls.push(data.url);
+        }
+      }
+    });
+    
+    // Combinar imagens existentes (que não foram removidas) com novas
+    const finalUrls = [...editExistingImages, ...newUploadedUrls];
+    console.log(`📸 Total de imagens: ${finalUrls.length} (${editExistingImages.length} existentes + ${newUploadedUrls.length} novas)`);
+    return finalUrls;
   };
 
 
@@ -594,18 +776,55 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     try {
       if (!editId) return;
       const idNum = Number(editId);
+      
+      // Processar imagens: upload das novas + manter as existentes
+      let imageUrls: string[] = [];
+      try {
+        // Se há novas imagens OU imagens existentes, processar
+        if (editImages.length > 0) {
+          imageUrls = await uploadEditImages(idNum);
+          if (imageUrls.length === 0 && editImages.length > 0) {
+            sonnerToast.warning('Imóvel atualizado, mas nenhuma imagem nova foi salva.');
+          } else if (imageUrls.length < editImages.length + editExistingImages.length) {
+            sonnerToast.warning(`Imóvel atualizado! ${imageUrls.length} de ${editImages.length + editExistingImages.length} imagens foram salvas.`);
+          }
+        } else {
+          // Sem novas imagens - apenas manter as existentes (ou vazio se todas foram removidas)
+          imageUrls = editExistingImages;
+        }
+      } catch (imgErr: any) {
+        console.error('Erro ao processar imagens:', imgErr);
+        sonnerToast.warning('Imóvel atualizado, mas houve erro ao salvar algumas imagens.');
+        // Manter as imagens existentes em caso de erro
+        imageUrls = editExistingImages;
+      }
+      
       const updates: any = {
         preco: editPreco === "" ? null : Number(editPreco),
         tamanho_m2: editArea === "" ? null : Number(editArea),
         quartos: editQuartos === "" ? null : Number(editQuartos),
         banheiros: editBanheiros === "" ? null : Number(editBanheiros),
         descricao: editDescricao,
+        // SEMPRE atualizar imagens (pode ser array vazio se todas foram removidas)
+        imagens: imageUrls,
       };
+      
+      console.log(`💾 Salvando imóvel com ${imageUrls.length} imagem(ns)`);
+      
       const res = await updateImovel(idNum, updates);
       if (!res) throw new Error('Falha ao atualizar imóvel');
-      toast({ title: 'Imóvel atualizado com sucesso' });
+      
+      const msg = imageUrls.length === 0 
+        ? 'Imóvel atualizado (todas as imagens foram removidas)'
+        : `Imóvel atualizado com ${imageUrls.length} imagem(ns)`;
+      toast({ title: msg });
+      
       setIsVivaRealEditOpen(false);
       setEditId(null);
+      setEditImages([]);
+      setEditPreviews([]);
+      setEditExistingImages([]);
+      setEditGoogleDriveLink('');
       refetchImoveisList();
     } catch (err) {
       toast({ title: 'Erro ao atualizar', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
@@ -821,29 +1040,40 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     try {
       console.log('🗑️ Iniciando deleção da propriedade:', property.id);
 
-      // Primeiro, deletar todas as imagens associadas
-      if (property.property_images && property.property_images.length > 0) {
-        const { error: imagesError } = await supabase
-          .from('property_images')
-          .delete()
-          .eq('property_id', property.id);
-
-        if (imagesError) {
-          console.error('❌ Erro ao deletar imagens:', imagesError);
-          throw imagesError;
+      // Verificar se é um imóvel VivaReal (tem listing_id)
+      const isVivaReal = (property as any).listing_id !== undefined;
+      
+      if (isVivaReal) {
+        // Deletar da tabela imoveisvivareal
+        const idNum = Number(property.id);
+        if (isNaN(idNum)) {
+          throw new Error('ID inválido para deletar imóvel VivaReal');
         }
-        console.log('✅ Imagens deletadas com sucesso');
-      }
+        
+        const ok = await deleteImovel(idNum);
+        if (!ok) {
+          throw new Error('Falha ao deletar imóvel VivaReal');
+        }
+        
+        console.log('✅ Imóvel VivaReal deletado com sucesso');
+      } else {
+        // Para propriedades legadas (se existirem), tentar deletar de property_images
+        // Nota: A tabela properties não existe mais, então apenas logamos
+        console.warn('⚠️ Tentativa de deletar propriedade legada. Tabela properties não existe mais.');
+        
+        if (property.property_images && property.property_images.length > 0) {
+          const { error: imagesError } = await supabase
+            .from('property_images')
+            .delete()
+            .eq('property_id', property.id);
 
-      // Depois, deletar a propriedade
-      const { error: propertyError } = await supabase
-        .from('properties')
-        .delete()
-        .eq('id', property.id);
-
-      if (propertyError) {
-        console.error('❌ Erro ao deletar propriedade:', propertyError);
-        throw propertyError;
+          if (imagesError) {
+            console.error('❌ Erro ao deletar imagens:', imagesError);
+            // Não lançar erro, apenas logar
+          } else {
+            console.log('✅ Imagens deletadas com sucesso');
+          }
+        }
       }
 
       console.log('✅ Propriedade deletada com sucesso');
@@ -1400,12 +1630,16 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               }}
                             >
                               <img 
-                                src={property.property_images[getCurrentImageIndex(property.id)].image_url} 
+                                src={convertGoogleDriveUrl(property.property_images[getCurrentImageIndex(property.id)].image_url, 'thumbnail')} 
                                 alt={property.title}
                                 loading="lazy"
                                 decoding="async"
                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                                 draggable={false}
+                                onError={(e) => {
+                                  const originalUrl = property.property_images[getCurrentImageIndex(property.id)].image_url;
+                                  handleImageErrorWithFallback(e, originalUrl, '/placeholder-property.jpg');
+                                }}
                               />
                             </div>
                             
@@ -1887,19 +2121,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                         throw new Error('Erro ao atualizar disponibilidade do imóvel');
                       }
                     } else {
-                      // Atualizar tabela properties diretamente para propriedades legadas
-                      const { error } = await supabase
-                        .from('properties')
-                        .update({
-                          disponibilidade: availabilityValue,
-                          disponibilidade_observacao: availabilityNote || null
-                        })
-                        .eq('id', availabilityTarget.id);
-                      
-                      if (error) throw error;
-                      
-                      // Atualizar lista de propriedades legadas se necessário
-                      if (refetch) refetch();
+                      // Propriedades legadas não são mais suportadas (tabela properties não existe)
+                      // Apenas logar e informar que não é possível atualizar
+                      console.warn('⚠️ Tentativa de atualizar propriedade legada. Tabela properties não existe mais.');
+                      throw new Error('Propriedades legadas não são mais suportadas. Use imóveis VivaReal.');
                     }
 
                     toast({ title: 'Disponibilidade atualizada com sucesso' });
@@ -1986,14 +2211,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
       {/* Modal de Edição VivaReal (campos básicos) */}
       <Dialog open={isVivaRealEditOpen} onOpenChange={setIsVivaRealEditOpen}>
-        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl">Editar Imóvel (VivaReal)</DialogTitle>
             <DialogDescription className="text-gray-300">
-              Atualize os campos básicos. Para alterar imagens e outros campos do feed, reimporte o XML.
+              Atualize os campos básicos e adicione/remova imagens.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
               <label className="text-sm text-gray-300">Preço (R$)</label>
               <Input value={editPreco} onChange={(e) => setEditPreco(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
@@ -2018,8 +2243,131 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <label className="text-sm text-gray-300">Descrição</label>
               <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md p-2 text-gray-200 min-h-[100px]"></textarea>
             </div>
+            
+            {/* Seção de Imagens */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm text-gray-300 font-medium">Imagens (até {MAX_IMAGES})</label>
+                <small className="text-gray-400">{(editExistingImages.length + editImages.length)}/{MAX_IMAGES}</small>
+              </div>
+              
+              {/* Imagens existentes */}
+              {editExistingImages.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Imagens existentes ({editExistingImages.length})</p>
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    {editExistingImages.map((url, idx) => (
+                      <div key={`existing-${idx}`} className="relative group">
+                        <img 
+                          src={convertGoogleDriveUrl(url, 'thumbnail')} 
+                          alt={`Imagem ${idx + 1}`}
+                          className="w-full h-24 object-cover rounded-md border border-gray-700"
+                          onError={(e) => {
+                            handleImageErrorWithFallback(e, url, '/placeholder-property.jpg', 'thumbnail');
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeExistingImage(idx)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                        <span className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1 rounded">
+                          {idx + 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Novas imagens */}
+              {editPreviews.length > 0 && (
+                <div>
+                  <p className="text-xs text-green-400 mb-2">Novas imagens ({editPreviews.length})</p>
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    {editPreviews.map((preview, idx) => (
+                      <div key={`new-${idx}`} className="relative group">
+                        <img 
+                          src={preview} 
+                          alt={`Nova imagem ${idx + 1}`}
+                          className="w-full h-24 object-cover rounded-md border border-green-600"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeEditImage(idx)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                        <span className="absolute bottom-1 left-1 bg-green-600/90 text-white text-xs px-1 rounded">
+                          Novo
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Botão para adicionar imagens do computador */}
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 cursor-pointer w-fit">
+                <ImagePlus className="w-4 h-4" />
+                <span>Do computador</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  multiple 
+                  className="hidden" 
+                  onChange={(e) => onSelectEditImages(e.target.files)} 
+                />
+              </label>
+
+              {/* Upload via Google Drive Link */}
+              <div className="flex gap-2">
+                <div className="flex-1 relative">
+                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Cole o link do Google Drive aqui..."
+                    value={editGoogleDriveLink}
+                    onChange={(e) => setEditGoogleDriveLink(e.target.value)}
+                    className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onAddEditGoogleDriveImage();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  onClick={onAddEditGoogleDriveImage}
+                  disabled={isEditDownloadingFromDrive || !editGoogleDriveLink.trim()}
+                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  {isEditDownloadingFromDrive ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Baixando...
+                    </>
+                  ) : (
+                    'Adicionar'
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Suporta links do formato: https://drive.google.com/file/d/ID/view
+              </p>
+            </div>
+            
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300" onClick={() => setIsVivaRealEditOpen(false)}>Cancelar</Button>
+              <Button variant="outline" className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300" onClick={() => {
+                setIsVivaRealEditOpen(false);
+                setEditImages([]);
+                setEditPreviews([]);
+                setEditGoogleDriveLink('');
+              }}>Cancelar</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={submitVivaRealEdit}>Salvar</Button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
+import { useUserProfile } from './useUserProfile';
 
 export interface ImovelVivaReal {
   id: number;
@@ -61,6 +62,7 @@ export function useImoveisVivaReal(initial?: {
   orderBy?: ImoveisOrderBy;
   filters?: ImoveisFilters;
 }) {
+  const { profile } = useUserProfile();
   const [imoveis, setImoveis] = useState<ImovelVivaReal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,9 +159,13 @@ export function useImoveisVivaReal(initial?: {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
+      if (!profile?.company_id) {
+        throw new Error('Company ID não encontrado. Verifique seu perfil de usuário.');
+      }
+
       const { data, error: insertError } = await supabase
         .from('imoveisvivareal')
-        .insert([{ ...novo, user_id: user.id }])
+        .insert([{ ...novo, user_id: user.id, company_id: profile.company_id }])
         .select()
         .single();
 
