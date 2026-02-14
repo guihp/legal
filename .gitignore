@@ -28,3 +28,6 @@ dist-ssr
 .env.example
 .env
 .env.production
+
+# Separate git repositories
+landing-static/
