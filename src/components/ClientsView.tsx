@@ -367,7 +367,7 @@ const LeadCard = ({ lead, isDragging = false, availableBrokers = [] }: LeadCardP
       whileHover={{ scale: 1.02, y: -2 }}
       className={`group ${isDragging ? 'z-50 rotate-3' : ''}`}
     >
-      <Card className="bg-gray-800/90 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800 transition-all duration-200 cursor-pointer relative">
+      <Card className="bg-card border-border hover:bg-muted/50 transition-all duration-200 cursor-pointer relative">
         {/* Ações no canto superior direito */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
@@ -476,14 +476,14 @@ const KanbanColumn = ({ stage, leads, leadCount, availableBrokers = [] }: Kanban
   return (
     <div 
       ref={setDropRef}
-      className="flex flex-col h-full w-[280px] flex-shrink-0 kanban-column"
+      className="flex flex-col w-[280px] flex-shrink-0 kanban-column min-h-[360px] max-h-[min(72vh,760px)]"
       style={{ contain: 'layout style' }}
     >
       {/* Header da coluna */}
       <Card className={`${stage.bgColor} ${stage.borderColor} backdrop-blur-sm border mb-3 flex-shrink-0 ${isOver ? 'ring-2 ring-blue-400/50' : ''}`}>
         <CardHeader className="pb-2 pt-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm text-white flex items-center gap-2">
+            <CardTitle className="text-sm text-white flex items-center gap-2 [&_svg]:text-white">
               <StageIcon className={`h-4 w-4 ${stage.iconColor}`} />
               {stage.title}
             </CardTitle>
@@ -494,11 +494,10 @@ const KanbanColumn = ({ stage, leads, leadCount, availableBrokers = [] }: Kanban
         </CardHeader>
       </Card>
 
-      {/* Lista de leads com scroll interno completamente isolado */}
-      <div className={`flex-1 min-h-0 relative ${isOver ? 'bg-blue-500/5 rounded-lg' : ''}`}>
+      {/* Lista de leads — altura explícita (evita colapso quando ancestrais não têm height %) */}
+      <div className={`flex-1 flex flex-col min-h-0 ${isOver ? 'bg-blue-500/5 rounded-lg' : ''}`}>
         <div 
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-gray-800/30 scrollbar-thumb-gray-600/50 hover:scrollbar-thumb-gray-500/70 kanban-scroll"
-          style={{ contain: 'strict' }}
+          className="min-h-[220px] flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-muted/40 scrollbar-thumb-muted-foreground/30 hover:scrollbar-thumb-muted-foreground/50 kanban-scroll rounded-md border border-border/40"
         >
           <SortableContext items={leads.map(lead => lead.id.toString())} strategy={verticalListSortingStrategy}>
             <div className="space-y-3 p-2">
@@ -767,10 +766,10 @@ export function ClientsView() {
   // Mostrar loading enquanto carrega
   if (loading) {
     return (
-      <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950 relative flex items-center justify-center">
+      <div className="min-h-[calc(100vh-8rem)] w-full bg-background text-foreground relative flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-400 mx-auto mb-4" />
-          <p className="text-gray-400">Carregando leads...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+          <p className="text-muted-foreground">Carregando leads...</p>
         </div>
       </div>
     );
@@ -779,9 +778,9 @@ export function ClientsView() {
   // Mostrar erro se houver
   if (error) {
     return (
-      <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950 relative flex items-center justify-center">
+      <div className="min-h-[calc(100vh-8rem)] w-full bg-background text-foreground relative flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400 mb-4">Erro ao carregar leads: {error}</p>
+          <p className="text-red-500 mb-4">Erro ao carregar leads: {error}</p>
           <Button onClick={() => { /* evitar reload global */ }}>
             Tentar novamente
           </Button>
@@ -791,21 +790,21 @@ export function ClientsView() {
   }
 
   return (
-    <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950 relative flex flex-col">
+    <div className="min-h-[calc(100vh-8rem)] w-full bg-background text-foreground relative flex flex-col rounded-xl border border-border/60 overflow-x-hidden">
       {/* Partículas de fundo otimizadas */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-40 dark:opacity-100">
         {particles.map((particle, index) => (
           <FloatingParticle key={particle} delay={index * 2} />
         ))}
       </div>
 
-      {/* Overlay gradiente */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 pointer-events-none" />
+      {/* Overlay suave — quase invisível no modo claro */}
+      <div className="absolute inset-0 bg-gradient-to-t from-muted/25 via-transparent to-transparent pointer-events-none dark:from-black/30" />
 
       {/* Layout principal - Container principal com flex column e sem overflow */}
-      <div className="relative z-10 flex flex-col h-full w-full">
+      <div className="relative z-10 flex flex-col w-full flex-1 min-h-0">
         {/* Header Section - Flexível mas não ocupa todo o espaço */}
-        <div className="bg-gradient-to-r from-slate-950/95 via-blue-950/95 to-purple-950/95 backdrop-blur-sm border-b border-gray-700/30 flex-shrink-0">
+        <div className="bg-card/95 backdrop-blur-sm border-b border-border flex-shrink-0">
           <div className="px-6 py-4 space-y-4">
             {/* Header */}
             <motion.div 
@@ -816,7 +815,7 @@ export function ClientsView() {
             >
               <div>
                 <motion.h1 
-                  className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent mb-2"
+                  className="text-2xl lg:text-3xl font-bold mb-2 text-slate-900 dark:text-transparent dark:bg-gradient-to-r dark:from-blue-400 dark:via-purple-400 dark:to-emerald-400 dark:bg-clip-text"
                   animate={{
                     backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"]
                   }}
@@ -825,7 +824,7 @@ export function ClientsView() {
                 >
                   Pipeline de Vendas
                 </motion.h1>
-                <p className="text-gray-400">Gerencie seus leads através do funil de vendas</p>
+                <p className="text-muted-foreground">Gerencie seus leads através do funil de vendas</p>
               </div>
               
               <div className="flex items-center gap-3">
@@ -834,7 +833,7 @@ export function ClientsView() {
                   <div className="relative" data-broker-filter>
                     <Button
                       variant="outline"
-                      className="bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50 min-w-[180px] justify-between"
+                      className="bg-card border-border text-foreground hover:bg-muted/80 min-w-[180px] justify-between"
                       onClick={() => setShowBrokerFilter(!showBrokerFilter)}
                     >
                       <div className="flex items-center gap-2">
@@ -852,15 +851,15 @@ export function ClientsView() {
                     </Button>
                     
                     {showBrokerFilter && (
-                      <div className="absolute top-full mt-2 right-0 z-50 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                      <div className="absolute top-full mt-2 right-0 z-50 w-64 bg-popover border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto">
                         <div className="p-3 space-y-2">
-                          <div className="flex items-center justify-between pb-2 border-b border-gray-700">
-                            <span className="text-sm font-medium text-white">Filtrar por Corretor</span>
+                          <div className="flex items-center justify-between pb-2 border-b border-border">
+                            <span className="text-sm font-medium text-foreground">Filtrar por Corretor</span>
                             {selectedBrokers.size > 0 && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-xs text-gray-400 hover:text-white h-6 px-2"
+                                className="text-xs text-muted-foreground hover:text-foreground h-6 px-2"
                                 onClick={() => setSelectedBrokers(new Set())}
                               >
                                 Limpar
@@ -878,15 +877,15 @@ export function ClientsView() {
                             />
                             <label
                               htmlFor="unassigned"
-                              className="text-sm text-gray-300 hover:text-white cursor-pointer flex-1"
+                              className="text-sm text-muted-foreground hover:text-foreground cursor-pointer flex-1"
                             >
                               🚫 Sem corretor atribuído
                             </label>
                           </div>
                           
                           {availableBrokers.length > 0 && (
-                            <div className="border-t border-gray-700 pt-2 mt-2">
-                              <span className="text-xs text-gray-500 uppercase tracking-wide">Corretores</span>
+                            <div className="border-t border-border pt-2 mt-2">
+                              <span className="text-xs text-muted-foreground uppercase tracking-wide">Corretores</span>
                             </div>
                           )}
                           
@@ -900,7 +899,7 @@ export function ClientsView() {
                               />
                               <label
                                 htmlFor={`broker-${broker.id}`}
-                                className="text-sm text-gray-300 hover:text-white cursor-pointer flex-1"
+                                className="text-sm text-muted-foreground hover:text-foreground cursor-pointer flex-1"
                               >
                                 {broker.full_name}
                               </label>
@@ -950,12 +949,12 @@ export function ClientsView() {
                   transition={{ delay: 0.3 + index * 0.1, duration: 0.4 }}
                   whileHover={{ scale: 1.05, y: -2 }}
                 >
-                  <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/50 hover:bg-gray-800/70 transition-all duration-300">
+                  <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300">
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className={`text-xs ${stat.iconColor}`}>{stat.title}</p>
-                          <p className="text-lg font-bold text-white">{stat.value}</p>
+                          <p className="text-lg font-bold text-foreground">{stat.value}</p>
                         </div>
                         <stat.icon className={`h-5 w-5 ${stat.iconColor}`} />
                       </div>
@@ -971,15 +970,15 @@ export function ClientsView() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6, duration: 0.6 }}
             >
-              <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/50">
+              <Card className="bg-card border-border">
                 <CardContent className="p-3">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
                       placeholder="Buscar por nome, email ou interesse..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 bg-gray-700/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500"
+                      className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
                     />
                   </div>
                 </CardContent>
@@ -988,13 +987,13 @@ export function ClientsView() {
           </div>
         </div>
 
-        {/* Container do Kanban - Ocupa o restante do espaço disponível com contenção total */}
-        <div className="flex-1 p-6 min-h-0">
+        {/* Kanban: altura explícita — evita h-full em cadeia sem height definido (colunas sumiam) */}
+        <div className="flex-1 p-6 min-h-0 overflow-x-hidden overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8, duration: 0.6 }}
-            className="h-full w-full"
+            className="w-full min-h-[min(68vh,720px)]"
           >
             <DndContext
               sensors={sensors}
@@ -1002,19 +1001,10 @@ export function ClientsView() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
-              {/* Container ISOLADO do Kanban - Contenção completa */}
-              <div className="relative bg-gray-900/20 backdrop-blur-sm rounded-lg border border-gray-700/30 h-full w-full kanban-container">
-                {/* Máscara para garantir que nada escape do container */}
-                <div className="absolute inset-0 rounded-lg overflow-hidden">
-                  <div className="h-full w-full p-4">
-                    {/* Área de scroll horizontal TOTALMENTE isolada */}
+              <div className="relative bg-muted/30 rounded-lg border border-border w-full min-h-[min(64vh,680px)] p-4 kanban-container">
                     <div 
                       ref={hScrollRef}
-                      className="h-full w-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-track-gray-800/50 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500 kanban-scroll"
-                      style={{
-                        contain: 'layout style paint',
-                        isolation: 'isolate'
-                      }}
+                      className="w-full min-h-[min(60vh,640px)] overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-track-muted/50 scrollbar-thumb-muted-foreground/40 kanban-scroll pb-1"
                       onMouseMove={(e) => {
                         if (!isDragging || !hScrollRef.current) return;
                         const container = hScrollRef.current;
@@ -1034,10 +1024,11 @@ export function ClientsView() {
                       }}
                     >
                       <div 
-                        className="flex gap-4 h-full"
+                        className="flex gap-4 items-stretch"
                         style={{ 
                           minWidth: `${kanbanStages.length * 300}px`,
-                          width: 'max-content'
+                          width: 'max-content',
+                          minHeight: 'min(58vh, 600px)',
                         }}
                       >
                         {kanbanStages.map((stage, index) => {
@@ -1062,8 +1053,6 @@ export function ClientsView() {
                         })}
                       </div>
                     </div>
-                  </div>
-                </div>
               </div>
 
               {/* Drag Overlay */}

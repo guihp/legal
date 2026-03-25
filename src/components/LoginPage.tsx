@@ -25,6 +25,8 @@ import {
   X
 } from "lucide-react";
 import { supabase } from '../integrations/supabase/client';
+import { useTheme } from '@/contexts/ThemeContext';
+import { cn } from '@/lib/utils';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -282,6 +284,8 @@ const ArchitecturalGrid = () => (
 );
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -296,11 +300,15 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [forgotPasswordError, setForgotPasswordError] = useState<string | null>(null);
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
 
-  // Gerar partículas variadas
+  // Gerar partículas variadas (só tema escuro — no claro o fundo é limpo)
   useEffect(() => {
-    const particleArray = Array.from({ length: 25 }, (_, i) => i);
-    setParticles(particleArray);
-  }, []);
+    if (!isLight) {
+      const particleArray = Array.from({ length: 25 }, (_, i) => i);
+      setParticles(particleArray);
+    } else {
+      setParticles([]);
+    }
+  }, [isLight]);
 
   const handleEmailPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -406,39 +414,52 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const particleTypes = ['default', 'star', 'spark', 'glow'];
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950">
-      {/* Background arquitetônico animado */}
-      <ArchitecturalGrid />
+    <div
+      className={cn(
+        'min-h-screen relative overflow-hidden',
+        isLight
+          ? 'bg-gradient-to-br from-slate-100 via-white to-blue-50/90 text-slate-900'
+          : 'bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950'
+      )}
+    >
+      {!isLight && (
+        <>
+          <ArchitecturalGrid />
+          <PulsingLights />
+          <GlassShards />
+          {particles.map((particle, index) => (
+            <FloatingParticle
+              key={particle}
+              delay={index * 1.5}
+              duration={12 + Math.random() * 8}
+              type={particleTypes[index % particleTypes.length]}
+            />
+          ))}
+          <FloatingIcon Icon={Building2} delay={0} x={8} y={15} color="blue" />
+          <FloatingIcon Icon={Home} delay={2} x={88} y={12} color="emerald" />
+          <FloatingIcon Icon={Building} delay={4} x={12} y={75} color="purple" />
+          <FloatingIcon Icon={MapPin} delay={6} x={85} y={78} color="yellow" />
+          <FloatingIcon Icon={Key} delay={8} x={50} y={8} color="pink" />
+          <FloatingIcon Icon={Star} delay={3} x={25} y={45} color="blue" />
+          <FloatingIcon Icon={Sparkles} delay={7} x={75} y={40} color="purple" />
+          <FloatingIcon Icon={Zap} delay={5} x={60} y={85} color="emerald" />
+        </>
+      )}
 
-      {/* Luzes pulsantes */}
-      <PulsingLights />
-
-      {/* Efeito de vidro */}
-      <GlassShards />
-
-      {/* Partículas flutuantes variadas */}
-      {particles.map((particle, index) => (
-        <FloatingParticle
-          key={particle}
-          delay={index * 1.5}
-          duration={12 + Math.random() * 8}
-          type={particleTypes[index % particleTypes.length]}
-        />
-      ))}
-
-      {/* Ícones flutuantes com cores variadas */}
-      <FloatingIcon Icon={Building2} delay={0} x={8} y={15} color="blue" />
-      <FloatingIcon Icon={Home} delay={2} x={88} y={12} color="emerald" />
-      <FloatingIcon Icon={Building} delay={4} x={12} y={75} color="purple" />
-      <FloatingIcon Icon={MapPin} delay={6} x={85} y={78} color="yellow" />
-      <FloatingIcon Icon={Key} delay={8} x={50} y={8} color="pink" />
-      <FloatingIcon Icon={Star} delay={3} x={25} y={45} color="blue" />
-      <FloatingIcon Icon={Sparkles} delay={7} x={75} y={40} color="purple" />
-      <FloatingIcon Icon={Zap} delay={5} x={60} y={85} color="emerald" />
-
-      {/* Overlay gradiente melhorado */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent via-purple-900/10 to-black/40" />
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-900/5 to-transparent" />
+      {isLight ? (
+        <div
+          className="absolute inset-0 pointer-events-none opacity-50"
+          aria-hidden
+        >
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#cbd5e1_1px,transparent_1px),linear-gradient(to_bottom,#cbd5e1_1px,transparent_1px)] bg-[size:56px_56px]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-blue-100/40 via-transparent to-slate-50/80" />
+        </div>
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent via-purple-900/10 to-black/40 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-900/5 to-transparent pointer-events-none" />
+        </>
+      )}
 
       {/* Conteúdo principal */}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
@@ -454,7 +475,12 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           className="w-full max-w-md"
         >
           <motion.div
-            className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-emerald-500/10 rounded-3xl blur-xl"
+            className={cn(
+              'absolute inset-0 rounded-3xl blur-xl',
+              isLight
+                ? 'bg-gradient-to-r from-blue-200/30 via-purple-200/25 to-emerald-200/30'
+                : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-emerald-500/10'
+            )}
             animate={{
               opacity: [0.3, 0.6, 0.3],
               scale: [0.95, 1.05, 0.95]
@@ -462,7 +488,14 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             transition={{ duration: 4, repeat: Infinity }}
           />
 
-          <Card className="relative bg-gray-900/85 backdrop-blur-2xl border border-gray-700/60 shadow-2xl rounded-3xl overflow-hidden">
+          <Card
+            className={cn(
+              'relative backdrop-blur-2xl shadow-2xl rounded-3xl overflow-hidden border',
+              isLight
+                ? 'bg-white/95 border-slate-200/90 shadow-slate-200/50'
+                : 'bg-gray-900/85 border-gray-700/60'
+            )}
+          >
             {/* Borda animada */}
             <motion.div
               className="absolute inset-0 rounded-3xl"
@@ -476,43 +509,28 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               transition={{ duration: 6, repeat: Infinity }}
             />
 
-            <div className="relative bg-gray-900/90 backdrop-blur-2xl m-0.5 rounded-3xl">
+            <div
+              className={cn(
+                'relative backdrop-blur-2xl m-0.5 rounded-3xl',
+                isLight ? 'bg-white' : 'bg-gray-900/90'
+              )}
+            >
               <CardHeader className="text-center relative pt-8">
                 <motion.div
-                  className="flex justify-center items-center mb-6"
+                  className="flex justify-center items-center mb-4"
                   initial={{ opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
                   <img
-                    src="/Documento_1.png"
+                    src={isLight ? '/IMOBI-LOGO-2.png' : '/IMOBI-LOGO-(1).png'}
                     alt="Logo IAFÉ IMOBI"
-                    className="h-40 w-auto object-contain drop-shadow-2xl"
-                    style={{ marginTop: '-26px', marginBottom: '-26px' }}
+                    className={cn(
+                      'h-24 w-auto object-contain',
+                      isLight ? 'drop-shadow-md' : 'drop-shadow-2xl'
+                    )}
+                    style={{ marginTop: '-16px', marginBottom: '-16px' }}
                   />
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4, duration: 0.8 }}
-                >
-
-                  <CardDescription className="text-gray-300 text-lg">
-                    <motion.span
-                      animate={{
-                        opacity: [0.6, 1, 0.6],
-                        textShadow: [
-                          "0 0 5px rgba(59, 130, 246, 0.3)",
-                          "0 0 10px rgba(147, 51, 234, 0.3)",
-                          "0 0 5px rgba(59, 130, 246, 0.3)"
-                        ]
-                      }}
-                      transition={{ duration: 3, repeat: Infinity }}
-                    >
-                      ✨ Plataforma Premium de Gestão Imobiliária ✨
-                    </motion.span>
-                  </CardDescription>
                 </motion.div>
               </CardHeader>
 
@@ -534,8 +552,14 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                       whileHover={{ scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 300 }}
                     >
-                      <Label htmlFor="email" className="text-gray-200 flex items-center gap-2 text-sm font-medium">
-                        <Mail className="w-4 h-4 text-blue-400" />
+                      <Label
+                        htmlFor="email"
+                        className={cn(
+                          'flex items-center gap-2 text-sm font-medium',
+                          isLight ? 'text-slate-700' : 'text-gray-200'
+                        )}
+                      >
+                        <Mail className={cn('w-4 h-4', isLight ? 'text-blue-600' : 'text-blue-400')} />
                         Email Corporativo
                       </Label>
                       <div className="relative group">
@@ -552,7 +576,12 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                           placeholder="seu.email@empresa.com"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="relative bg-gray-800/60 backdrop-blur-sm border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-all duration-500 rounded-xl h-12 text-lg"
+                          className={cn(
+                            'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg',
+                            isLight
+                              ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25'
+                              : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30'
+                          )}
                           required
                         />
                       </div>
@@ -563,8 +592,14 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                       whileHover={{ scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 300 }}
                     >
-                      <Label htmlFor="password" className="text-gray-200 flex items-center gap-2 text-sm font-medium">
-                        <Shield className="w-4 h-4 text-purple-400" />
+                      <Label
+                        htmlFor="password"
+                        className={cn(
+                          'flex items-center gap-2 text-sm font-medium',
+                          isLight ? 'text-slate-700' : 'text-gray-200'
+                        )}
+                      >
+                        <Shield className={cn('w-4 h-4', isLight ? 'text-purple-600' : 'text-purple-400')} />
                         Senha Segura
                       </Label>
                       <div className="relative group">
@@ -581,7 +616,12 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                           placeholder="••••••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="relative bg-gray-800/60 backdrop-blur-sm border-gray-600/60 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all duration-500 rounded-xl h-12 text-lg"
+                          className={cn(
+                            'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg',
+                            isLight
+                              ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/25'
+                              : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30'
+                          )}
                           required
                         />
                       </div>
@@ -600,7 +640,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                           setShowForgotPassword(true);
                           setForgotPasswordEmail(email); // Preencher com email do formulário
                         }}
-                        className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-300 flex items-center gap-1 group"
+                        className={cn(
+                          'text-sm transition-colors duration-300 flex items-center gap-1 group',
+                          isLight ? 'text-blue-600 hover:text-blue-800' : 'text-blue-400 hover:text-blue-300'
+                        )}
                       >
                         <HelpCircle className="w-4 h-4 group-hover:scale-110 transition-transform" />
                         <span>Esqueci minha senha</span>
@@ -615,8 +658,18 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                           exit={{ opacity: 0, y: -20, scale: 0.9 }}
                           transition={{ duration: 0.4, type: "spring" }}
                         >
-                          <Alert variant="destructive" className="bg-red-900/30 border-red-500/60 backdrop-blur-sm rounded-xl">
-                            <AlertDescription className="text-red-200">{error}</AlertDescription>
+                          <Alert
+                            variant="destructive"
+                            className={cn(
+                              'backdrop-blur-sm rounded-xl',
+                              isLight
+                                ? 'bg-red-50 border-red-200'
+                                : 'bg-red-900/30 border-red-500/60'
+                            )}
+                          >
+                            <AlertDescription className={isLight ? 'text-red-800' : 'text-red-200'}>
+                              {error}
+                            </AlertDescription>
                           </Alert>
                         </motion.div>
                       )}
@@ -628,9 +681,20 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                           exit={{ opacity: 0, y: -20, scale: 0.9 }}
                           transition={{ duration: 0.4, type: "spring" }}
                         >
-                          <Alert className="bg-emerald-900/30 border-emerald-500/60 backdrop-blur-sm rounded-xl">
-                            <CheckCircle className="h-4 w-4 text-emerald-400" />
-                            <AlertDescription className="text-emerald-200">{message}</AlertDescription>
+                          <Alert
+                            className={cn(
+                              'backdrop-blur-sm rounded-xl',
+                              isLight
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-emerald-900/30 border-emerald-500/60'
+                            )}
+                          >
+                            <CheckCircle
+                              className={cn('h-4 w-4', isLight ? 'text-emerald-600' : 'text-emerald-400')}
+                            />
+                            <AlertDescription className={isLight ? 'text-emerald-900' : 'text-emerald-200'}>
+                              {message}
+                            </AlertDescription>
                           </Alert>
                         </motion.div>
                       )}
@@ -687,13 +751,27 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
       {/* Modal "Esqueci minha senha" */}
       <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
-        <DialogContent className="bg-gray-900/95 backdrop-blur-xl border-gray-700/60 text-white max-w-md">
+        <DialogContent
+          className={cn(
+            'backdrop-blur-xl max-w-md',
+            isLight
+              ? 'bg-white border-slate-200 text-slate-900'
+              : 'bg-gray-900/95 border-gray-700/60 text-white'
+          )}
+        >
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent flex items-center gap-2">
-              <Key className="w-6 h-6 text-blue-400" />
+            <DialogTitle
+              className={cn(
+                'text-2xl font-bold flex items-center gap-2',
+                isLight
+                  ? 'text-slate-900'
+                  : 'bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent'
+              )}
+            >
+              <Key className={cn('w-6 h-6', isLight ? 'text-blue-600' : 'text-blue-400')} />
               Recuperar Senha
             </DialogTitle>
-            <DialogDescription className="text-gray-300">
+            <DialogDescription className={isLight ? 'text-slate-600' : 'text-gray-300'}>
               Digite seu email e enviaremos um link para redefinir sua senha
             </DialogDescription>
           </DialogHeader>
@@ -704,14 +782,23 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-4"
             >
-              <Alert className="bg-emerald-900/30 border-emerald-500/60">
-                <CheckCircle className="h-5 w-5 text-emerald-400" />
-                <AlertDescription className="text-emerald-200">
+              <Alert
+                className={cn(
+                  isLight ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-900/30 border-emerald-500/60'
+                )}
+              >
+                <CheckCircle className={cn('h-5 w-5', isLight ? 'text-emerald-600' : 'text-emerald-400')} />
+                <AlertDescription className={isLight ? 'text-emerald-900' : 'text-emerald-200'}>
                   <strong>Email enviado com sucesso!</strong>
                   <br />
                   Verifique sua caixa de entrada e siga as instruções para redefinir sua senha.
                   <br />
-                  <span className="text-sm text-emerald-300/80 mt-2 block">
+                  <span
+                    className={cn(
+                      'text-sm mt-2 block',
+                      isLight ? 'text-emerald-800' : 'text-emerald-300/80'
+                    )}
+                  >
                     O link expira em 1 hora.
                   </span>
                 </AlertDescription>
@@ -729,7 +816,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           ) : (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="forgot-email" className="text-gray-200">
+                <Label htmlFor="forgot-email" className={isLight ? 'text-slate-700' : 'text-gray-200'}>
                   Email
                 </Label>
                 <Input
@@ -738,15 +825,24 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   placeholder="seu.email@empresa.com"
                   value={forgotPasswordEmail}
                   onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className="bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500"
+                  className={cn(
+                    isLight
+                      ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
+                      : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500'
+                  )}
                   required
                   disabled={forgotPasswordLoading}
                 />
               </div>
 
               {forgotPasswordError && (
-                <Alert variant="destructive" className="bg-red-900/30 border-red-500/60">
-                  <AlertDescription className="text-red-200">
+                <Alert
+                  variant="destructive"
+                  className={cn(
+                    isLight ? 'bg-red-50 border-red-200' : 'bg-red-900/30 border-red-500/60'
+                  )}
+                >
+                  <AlertDescription className={isLight ? 'text-red-800' : 'text-red-200'}>
                     {forgotPasswordError}
                   </AlertDescription>
                 </Alert>
@@ -761,7 +857,12 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                     setForgotPasswordError(null);
                     setForgotPasswordEmail('');
                   }}
-                  className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800"
+                  className={cn(
+                    'flex-1',
+                    isLight
+                      ? 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                      : 'border-gray-600 text-gray-300 hover:bg-gray-800'
+                  )}
                   disabled={forgotPasswordLoading}
                 >
                   Cancelar

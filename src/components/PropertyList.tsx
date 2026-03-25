@@ -1113,7 +1113,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+    <div className="min-h-0 relative overflow-hidden bg-background text-foreground">
       {/* Background Effects */}
       <ArchitecturalGrid />
       <PulsingLights />
@@ -1148,7 +1148,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         >
           <div className="relative inline-block">
             <motion.h1 
-              className="text-6xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent mb-4"
+              className="text-6xl font-bold mb-4 text-slate-900 dark:text-transparent dark:bg-gradient-to-r dark:from-blue-400 dark:via-purple-400 dark:to-emerald-400 dark:bg-clip-text"
               animate={{ 
                 backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"],
               }}
@@ -1169,12 +1169,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, duration: 0.6 }}
         >
-          <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300 shadow-lg hover:shadow-xl">
+          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Total</p>
-                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.total}</p>
+                  <p className="text-muted-foreground text-sm font-medium">Total</p>
+                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.total}</p>
                 </div>
                 <div className="bg-blue-500/20 p-3 rounded-full">
                   <Building2 className="h-6 w-6 text-blue-400" />
@@ -1183,12 +1183,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300 shadow-lg hover:shadow-xl">
+          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Disponíveis</p>
-                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.disponiveis}</p>
+                  <p className="text-muted-foreground text-sm font-medium">Disponíveis</p>
+                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.disponiveis}</p>
                 </div>
                 <div className="bg-emerald-500/20 p-3 rounded-full">
                   <CheckCircle className="h-6 w-6 text-emerald-400" />
@@ -1197,12 +1197,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300 shadow-lg hover:shadow-xl">
+          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Imóveis para Aluguel</p>
-                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.aluguel}</p>
+                  <p className="text-muted-foreground text-sm font-medium">Imóveis para Aluguel</p>
+                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.aluguel}</p>
                 </div>
                 <div className="bg-yellow-500/20 p-3 rounded-full">
                   <Key className="h-6 w-6 text-yellow-400" />
@@ -1211,12 +1211,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300 shadow-lg hover:shadow-xl">
+          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Imóveis para Venda</p>
-                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.venda}</p>
+                  <p className="text-muted-foreground text-sm font-medium">Imóveis para Venda</p>
+                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.venda}</p>
                 </div>
                 <div className="bg-purple-500/20 p-3 rounded-full">
                   <Shield className="h-6 w-6 text-purple-400" />

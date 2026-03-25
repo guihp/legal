@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -24,6 +24,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { usePreview } from '@/contexts/PreviewContext';
 import { canAccessPermissionsModule } from '@/lib/permissions/rules';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const menuItems = [
   {
@@ -97,6 +98,20 @@ const menuItems = [
     view: "conversas" as const,
     permissionKey: "menu_conversas",
   },
+  {
+    title: "Marketing & LPs",
+    url: "#",
+    icon: Megaphone,
+    view: "marketing" as const,
+    permissionKey: "menu_marketing",
+  },
+  {
+    title: "Rede de Parcerias",
+    url: "#",
+    icon: Share2,
+    view: "partnerships" as const,
+    permissionKey: "menu_partnerships",
+  },
 ];
 
 const analyticsItems = [
@@ -135,7 +150,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile" | "marketing" | "partnerships") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -146,6 +161,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
+  const { theme, toggleTheme } = useTheme();
   const {
     isPreviewMode,
     previewName,
@@ -172,7 +188,12 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const subtitleSize = isPreviewMode ? previewSubtitleSize : settings?.company_subtitle_font_size;
   const subtitleColor = isPreviewMode ? previewSubtitleColor : settings?.company_subtitle_color;
   const subtitleBold = isPreviewMode ? previewSubtitleBold : settings?.company_subtitle_bold;
-  const logoSize = isPreviewMode ? previewLogoSize : settings?.logo_size;
+  /** Tamanho vindo do banco (ex.: 40) não deve encolher a logo após o fetch — mínimo visual estável */
+  const rawLogoSize = isPreviewMode ? previewLogoSize : settings?.logo_size;
+  const sidebarLogoHeightPx =
+    rawLogoSize != null && rawLogoSize > 0
+      ? Math.max(rawLogoSize, 88)
+      : 104;
 
   useEffect(() => {
     // Buscar usuário atual
@@ -265,58 +286,42 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
   return (
     <Sidebar className="border-r border-theme-primary bg-theme-secondary text-theme-primary">
-      <SidebarHeader className="p-6 border-b border-theme-primary bg-theme-secondary">
-        <div className="flex items-center gap-3">
+      <SidebarHeader className="px-4 py-7 border-b border-theme-primary bg-theme-secondary min-h-[132px] flex flex-col justify-center">
+        <div className="flex flex-col items-center gap-3 w-full">
           {settings?.logo_url ? (
             <img
               src={settings.logo_url}
               alt="Logo da empresa"
               style={{
-                height: `${logoSize || 40}px`,
-                width: `${logoSize || 40}px`
+                height: `${sidebarLogoHeightPx}px`,
+                width: 'auto',
+                maxHeight: '140px',
               }}
-              className="rounded-xl object-contain shadow-lg"
+              className="rounded-xl object-contain"
             />
           ) : (
             <div
               style={{
-                height: `${logoSize || 80}px`,
-                width: `${logoSize || 80}px`,
+                height: `${sidebarLogoHeightPx}px`,
+                maxHeight: '140px',
+                width: '100%',
                 background: 'transparent'
               }}
-              className="flex items-center justify-center rounded-xl shadow-lg text-white"
+              className="flex items-center justify-center py-2"
             >
-              <img src="/Documento_1.png" alt="IAFÉ IMOBI" className="h-full w-full object-contain" />
+              <img
+                src={theme === 'dark' ? '/IMOBI-LOGO-(1).png' : '/IMOBI-LOGO-2.png'}
+                alt="IAFÉ IMOBI"
+                className="h-full w-auto object-contain max-w-[min(100%,280px)]"
+              />
             </div>
           )}
-          <div className="flex flex-col">
-            <span
-              style={{
-                fontFamily: nameFont || 'Inter',
-                fontSize: `${nameSize || 20}px`,
-                color: nameColor || '#FFFFFF',
-                fontWeight: nameBold ? 'bold' : 'normal'
-              }}
-            >
-              IAFÉ IMOBI
-            </span>
-            <span
-              style={{
-                fontFamily: subtitleFont || 'Inter',
-                fontSize: `${subtitleSize || 12}px`,
-                color: subtitleColor || '#9CA3AF',
-                fontWeight: subtitleBold ? 'bold' : 'normal'
-              }}
-            >
-              {companyDisplaySubtitle || 'Gestão Imobiliária'}
-            </span>
-          </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent className="px-3 bg-theme-secondary">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-400 text-xs uppercase tracking-wider px-3 py-2">
+          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -327,9 +332,12 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     asChild
                     isActive={currentView === item.view}
                     className={`
-                      text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
+                      text-theme-secondary hover:text-theme-primary transition-all duration-200
+                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
                       ${currentView === item.view
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                        ? theme === 'dark'
+                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
                         : ''
                       }
                     `}
@@ -389,7 +397,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-400 text-xs uppercase tracking-wider px-3 py-2">
+          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
             Analytics
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -400,9 +408,12 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     asChild
                     isActive={currentView === item.view}
                     className={`
-                      text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
+                      text-theme-secondary hover:text-theme-primary transition-all duration-200
+                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
                       ${currentView === item.view
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                        ? theme === 'dark'
+                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
                         : ''
                       }
                     `}
@@ -432,7 +443,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-400 text-xs uppercase tracking-wider px-3 py-2">
+          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
             Outros
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -443,9 +454,12 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     asChild
                     isActive={('view' in item) && currentView === item.view}
                     className={`
-                      text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
+                      text-theme-secondary hover:text-theme-primary transition-all duration-200
+                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
                       ${('view' in item) && currentView === item.view
-                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                        ? theme === 'dark'
+                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
                         : ''
                       }
                     `}
@@ -470,9 +484,9 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t border-gray-800 bg-gray-900">
+      <SidebarFooter className="p-4 border-t border-theme-primary bg-theme-secondary">
         <div className="space-y-3">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/70 hover:bg-gray-800 transition-colors">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-theme-tertiary hover:opacity-90 transition-colors">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center overflow-hidden">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -481,9 +495,9 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              <p className="text-sm font-medium text-theme-primary truncate">{displayName}</p>
               <div className="mt-0.5 flex items-center gap-2">
-                <p className="text-xs text-gray-400 truncate max-w-[12rem]">{user?.email}</p>
+                <p className="text-xs text-theme-muted truncate max-w-[12rem]">{user?.email}</p>
                 {profile?.role && (
                   <span
                     className={`text-[10px] leading-4 px-2 py-0.5 rounded-full whitespace-nowrap ${roleClassMap[profile.role]}`}
@@ -496,16 +510,28 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             </div>
           </div>
           <div className="space-y-2">
-            <div className="px-1 text-[10px] text-gray-500 text-center" title="Versão da aplicação">
+            <div className="px-1 text-[10px] text-theme-muted text-center" title="Versão da aplicação">
               Versão 1.0.0
             </div>
+
+            <Button
+              onClick={toggleTheme}
+              variant="outline"
+              className="w-full border-theme-primary text-theme-secondary hover:bg-theme-tertiary transition-all"
+            >
+              {theme === 'dark' ? (
+                <><Sun className="mr-2 h-4 w-4 text-yellow-400" /> Modo Claro</>
+              ) : (
+                <><Moon className="mr-2 h-4 w-4 text-blue-400" /> Modo Escuro</>
+              )}
+            </Button>
 
             <Button
               onClick={async () => {
                 await supabase.auth.signOut();
               }}
               variant="outline"
-              className="w-full border-gray-700 text-red-400 hover:text-red-300 hover:bg-gray-800"
+              className="w-full border-theme-primary text-red-400 hover:text-red-300 hover:bg-theme-tertiary"
             >
               <LogOut className="mr-2 h-4 w-4" />
               Sair
