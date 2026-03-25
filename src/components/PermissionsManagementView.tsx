@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PermissionConfirmDialog } from '@/components/PermissionConfirmDialog';
@@ -211,7 +211,7 @@ export function PermissionsManagementView() {
           color: 'from-red-500 to-red-600',
           bgColor: 'bg-red-500/10',
           borderColor: 'border-red-500/30',
-          textColor: 'text-red-400'
+          textColor: 'text-red-700 dark:text-red-400'
         };
       case 'gestor': 
         return { 
@@ -220,7 +220,7 @@ export function PermissionsManagementView() {
           color: 'from-blue-500 to-blue-600',
           bgColor: 'bg-blue-500/10',
           borderColor: 'border-blue-500/30',
-          textColor: 'text-blue-400'
+          textColor: 'text-blue-700 dark:text-blue-400'
         };
       case 'corretor': 
         return { 
@@ -229,7 +229,7 @@ export function PermissionsManagementView() {
           color: 'from-green-500 to-green-600',
           bgColor: 'bg-green-500/10',
           borderColor: 'border-green-500/30',
-          textColor: 'text-green-400'
+          textColor: 'text-green-700 dark:text-green-400'
         };
       default: 
         return { 
@@ -238,7 +238,7 @@ export function PermissionsManagementView() {
           color: 'from-gray-500 to-gray-600',
           bgColor: 'bg-gray-500/10',
           borderColor: 'border-gray-500/30',
-          textColor: 'text-gray-400'
+          textColor: 'text-muted-foreground'
         };
     }
   };
@@ -256,22 +256,22 @@ export function PermissionsManagementView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white p-6">
+      <div className="min-h-screen bg-background text-foreground p-6">
         <div className="max-w-7xl mx-auto">
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <div className="h-8 bg-gray-700 rounded animate-pulse w-64 mb-2" />
-                <div className="h-4 bg-gray-700 rounded animate-pulse w-96" />
+                <div className="h-8 bg-muted rounded animate-pulse w-64 mb-2" />
+                <div className="h-4 bg-muted rounded animate-pulse w-96" />
               </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[1, 2, 3].map(i => (
-                <div key={i} className="bg-gray-800/50 rounded-lg p-6 animate-pulse">
-                  <div className="h-4 bg-gray-700 rounded w-20 mb-2" />
-                  <div className="h-8 bg-gray-700 rounded w-16 mb-1" />
-                  <div className="h-3 bg-gray-700 rounded w-24" />
+                <div key={i} className="bg-card border border-border rounded-lg p-6 animate-pulse">
+                  <div className="h-4 bg-muted rounded w-20 mb-2" />
+                  <div className="h-8 bg-muted rounded w-16 mb-1" />
+                  <div className="h-3 bg-muted rounded w-24" />
                 </div>
               ))}
             </div>
@@ -282,9 +282,9 @@ export function PermissionsManagementView() {
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                 className="inline-block"
               >
-                <RefreshCw className="h-8 w-8 text-blue-400 mx-auto mb-4" />
+                <RefreshCw className="h-8 w-8 text-primary mx-auto mb-4" />
               </motion.div>
-              <p className="text-gray-400">Carregando sistema de permissões...</p>
+              <p className="text-muted-foreground">Carregando sistema de permissões...</p>
             </div>
           </div>
         </div>
@@ -294,15 +294,15 @@ export function PermissionsManagementView() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white p-6">
+      <div className="min-h-screen bg-background text-foreground p-6">
         <div className="max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">
-          <Card className="max-w-md bg-gray-800/50 border-red-500/30">
+          <Card className="max-w-md bg-card border-destructive/30">
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
-                <XCircle className="h-6 w-6 text-red-400" />
-                <h3 className="text-lg font-semibold text-white">Erro ao Carregar</h3>
+                <XCircle className="h-6 w-6 text-destructive" />
+                <h3 className="text-lg font-semibold text-foreground">Erro ao Carregar</h3>
               </div>
-              <p className="text-gray-400 mb-4">{error}</p>
+              <p className="text-muted-foreground mb-4">{error}</p>
               <Button onClick={refreshPermissions} className="w-full">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar Novamente
@@ -315,7 +315,7 @@ export function PermissionsManagementView() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-7xl mx-auto p-6 space-y-8">
         
         {/* Header */}
@@ -325,10 +325,10 @@ export function PermissionsManagementView() {
           className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
         >
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
+            <h1 className="text-3xl font-bold text-foreground mb-2">
               Sistema de Permissões
             </h1>
-            <p className="text-gray-400">
+            <p className="text-muted-foreground">
               Configure o acesso às funcionalidades por tipo de usuário
             </p>
           </div>
@@ -337,7 +337,7 @@ export function PermissionsManagementView() {
             <Button 
               onClick={refreshPermissions}
               variant="outline"
-              className="border-gray-600 text-green-400 hover:border-green-500 hover:bg-green-500/10 hover:text-green-300"
+              className="border-border text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-green-400 dark:hover:border-green-500 dark:hover:text-green-300"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
               Atualizar
@@ -378,7 +378,7 @@ export function PermissionsManagementView() {
                           <h3 className={`font-semibold ${roleData.textColor}`}>
                             {roleData.label}
                           </h3>
-                          <p className="text-sm text-gray-400">
+                          <p className="text-sm text-muted-foreground">
                             {enabledCount}/{totalCount} ativas
                           </p>
                         </div>
@@ -403,7 +403,7 @@ export function PermissionsManagementView() {
           transition={{ delay: 0.3 }}
         >
           <Tabs defaultValue="corretor" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 bg-gray-800/50 p-1">
+            <TabsList className="grid w-full grid-cols-3 bg-muted/50 border border-border p-1">
               {roles.map((role) => {
                 const roleData = getRoleData(role);
                 const rolePermissions = getPermissionsByRole(role);
@@ -413,7 +413,7 @@ export function PermissionsManagementView() {
                   <TabsTrigger 
                     key={role}
                     value={role} 
-                    className="data-[state=active]:bg-white data-[state=active]:text-gray-900 flex items-center gap-2 py-3"
+                    className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm flex items-center gap-2 py-3"
                   >
                     <roleData.icon className="h-4 w-4" />
                     <span className="hidden sm:inline">{roleData.label}</span>
@@ -431,7 +431,7 @@ export function PermissionsManagementView() {
               
               return (
                 <TabsContent key={role} value={role} className="space-y-6">
-                  <Card className="bg-gray-800/30 border-gray-700/50">
+                  <Card className="bg-card border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -439,10 +439,10 @@ export function PermissionsManagementView() {
                             <roleData.icon className="h-5 w-5 text-white" />
                           </div>
                           <div>
-                            <CardTitle className="text-white">
+                            <CardTitle className="text-card-foreground">
                               Permissões - {roleData.label}
                             </CardTitle>
-                            <CardDescription>
+                            <CardDescription className="text-muted-foreground">
                               Controle o acesso às funcionalidades do sistema
                             </CardDescription>
                           </div>
@@ -462,10 +462,10 @@ export function PermissionsManagementView() {
                         <div key={category} className="space-y-4">
                           <div className="flex items-center gap-2 mb-4">
                             <Settings className={`h-5 w-5 ${roleData.textColor}`} />
-                            <h4 className="text-lg font-semibold text-white">
+                            <h4 className="text-lg font-semibold text-foreground">
                               {category === 'menu' ? 'Menus de Navegação' : category}
                             </h4>
-                            <Separator className="flex-1 bg-gray-700" />
+                            <Separator className="flex-1 bg-border" />
                             <Badge variant="outline" className={`${roleData.borderColor} ${roleData.textColor}`}>
                               {categoryPerms.filter(p => p.is_enabled).length}/{categoryPerms.length}
                             </Badge>
@@ -480,7 +480,7 @@ export function PermissionsManagementView() {
                                 transition={{ delay: index * 0.05 }}
                                 className="group"
                               >
-                                <div className="flex items-center justify-between p-4 bg-gray-800/40 hover:bg-gray-800/60 rounded-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200">
+                                <div className="flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/50 rounded-lg border border-border transition-all duration-200">
                                   <div className="flex items-center gap-4 flex-1">
                                     <div className="flex items-center gap-3">
                                       {permission.is_enabled ? (
@@ -491,12 +491,12 @@ export function PermissionsManagementView() {
                                       <div>
                                         <Label 
                                           htmlFor={permission.id}
-                                          className="text-white font-medium cursor-pointer group-hover:text-blue-400 transition-colors"
+                                          className="text-foreground font-medium cursor-pointer group-hover:text-primary transition-colors"
                                         >
                                           {permission.permission_name}
                                         </Label>
                                         {permission.description && (
-                                          <p className="text-sm text-gray-400 mt-1">
+                                          <p className="text-sm text-muted-foreground mt-1">
                                             {permission.description}
                                           </p>
                                         )}

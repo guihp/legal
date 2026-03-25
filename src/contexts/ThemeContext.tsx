@@ -1,7 +1,11 @@
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+
+type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
-  theme: 'dark';
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -27,7 +31,7 @@ const FILTERED_PROPS = [
 
 interface ThemeProviderProps {
   children: React.ReactNode;
-  [key: string]: any; // Permitir outras props que podem vir de extensões
+  [key: string]: any;
 }
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
@@ -39,19 +43,42 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
     }
   });
 
-  // Aplicar tema dark fixo no documento
-  useEffect(() => {
+  // Ler tema salvo ou usar 'light' como padrão
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const saved = localStorage.getItem('app-theme');
+    return (saved === 'light' || saved === 'dark') ? saved : 'light';
+  });
+
+  const applyTheme = (t: Theme) => {
     const root = document.documentElement;
-    
-    // Manter apenas tema dark
-    root.classList.remove('light');
-    root.classList.add('dark');
-    root.setAttribute('data-theme', 'dark');
-    
-  }, []);
+    if (t === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+      root.setAttribute('data-theme', 'dark');
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      root.setAttribute('data-theme', 'light');
+    }
+  };
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  const setTheme = (t: Theme) => {
+    localStorage.setItem('app-theme', t);
+    setThemeState(t);
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
 
   const value: ThemeContextType = {
-    theme: 'dark',
+    theme,
+    setTheme,
+    toggleTheme,
   };
 
   return (

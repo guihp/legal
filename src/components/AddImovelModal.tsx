@@ -443,7 +443,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
     <AnimatePresence>
       {isOpen && (
         <Dialog open={isOpen} onOpenChange={onClose}>
-          <DialogContent className="max-w-4xl h-[85vh] p-0 bg-gray-900/95 backdrop-blur-xl border border-gray-700/50 shadow-2xl">
+          <DialogContent className="max-w-4xl h-[85vh] p-0 bg-background backdrop-blur-xl border border-border shadow-2xl text-foreground">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

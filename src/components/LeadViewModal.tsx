@@ -222,7 +222,7 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl bg-gray-900/95 border-gray-700">
+      <DialogContent className="max-w-3xl bg-background border-border text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between text-white">
             <span className="flex items-center gap-2">

@@ -105,6 +105,14 @@ const LandingPage = createLazyComponent(
   () => import("@/pages/LandingPage").then(m => ({ default: m.default })),
   "LandingPage"
 );
+const MarketingView = createLazyComponent(
+  () => import("@/components/MarketingView").then(m => ({ default: m.MarketingView })),
+  "MarketingView"
+);
+const PartnershipsView = createLazyComponent(
+  () => import("@/components/PartnershipsView").then(m => ({ default: m.PartnershipsView })),
+  "PartnershipsView"
+);
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -187,6 +195,10 @@ const Index = () => {
         return <DisparadorView />;
       case "conversas":
         return <ConversasView />;
+      case "marketing":
+        return <MarketingView />;
+      case "partnerships":
+        return <PartnershipsView />;
       case "landing" as any: // Cast para evitar erro de tipo estrito se 'landing' não estiver em basicNavigation
         return <LandingPage />;
       case "configurations":
@@ -228,8 +240,8 @@ const Index = () => {
 
   return (
     <PreviewProvider>
-      <SidebarProvider className="bg-gray-950">
-        <div className="flex min-h-screen bg-gray-950 flex-1 min-w-0">
+      <SidebarProvider className="bg-background">
+        <div className="flex min-h-screen bg-background text-foreground flex-1 min-w-0">
           <AppSidebar
             currentView={currentView}
             onViewChange={(view) => changeView(view, "sidebar-click")}
@@ -241,7 +253,7 @@ const Index = () => {
                 <div className="flex items-center justify-center p-8">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-                    <div className="text-gray-300">Carregando módulo...</div>
+                    <div className="text-muted-foreground">Carregando módulo...</div>
                   </div>
                 </div>
               }>

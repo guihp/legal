@@ -1289,14 +1289,14 @@ export function AgendaView() {
   return (
     <div className="space-y-8">
       {/* Header Modernizado */}
-      <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl p-6 border border-blue-500/20">
+      <div className="bg-gradient-to-r from-blue-600/15 to-emerald-600/25 rounded-xl p-6 border border-emerald-500/25">
         <div className="flex justify-between items-start">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="bg-blue-500/20 p-2 rounded-lg">
-                <Calendar className="h-6 w-6 text-blue-400" />
+              <div className="bg-emerald-500/15 p-2 rounded-lg">
+                <Calendar className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h1 className="text-3xl font-bold text-white">
+              <h1 className="text-3xl font-bold text-foreground">
                 Agenda Inteligente
               </h1>
               {loading && (
@@ -1304,7 +1304,7 @@ export function AgendaView() {
               )}
             </div>
 
-            <p className="text-gray-300 mb-4">
+            <p className="text-muted-foreground mb-4">
               Gerencie seus agendamentos e compromissos de forma inteligente
             </p>
 
@@ -1318,7 +1318,7 @@ export function AgendaView() {
               </div>
 
               {lastUpdate && (
-                <span className="text-gray-400">
+                <span className="text-muted-foreground">
                   Última atualização: {lastUpdate.toLocaleTimeString('pt-BR')}
                 </span>
               )}
@@ -1343,8 +1343,8 @@ export function AgendaView() {
               <span className="text-2xl">📅</span>
             </div>
             <div>
-              <p className="text-blue-300 text-sm font-medium">Hoje</p>
-              <p className="text-2xl font-bold text-white">{stats.today}</p>
+              <p className="text-blue-600 dark:text-blue-400 text-sm font-medium">Hoje</p>
+              <p className="text-2xl font-bold text-foreground">{stats.today}</p>
             </div>
           </div>
         </div>
@@ -1355,8 +1355,8 @@ export function AgendaView() {
               <span className="text-2xl">📊</span>
             </div>
             <div>
-              <p className="text-green-300 text-sm font-medium">Esta Semana</p>
-              <p className="text-2xl font-bold text-white">{stats.thisWeek}</p>
+              <p className="text-green-700 dark:text-green-400 text-sm font-medium">Esta Semana</p>
+              <p className="text-2xl font-bold text-foreground">{stats.thisWeek}</p>
             </div>
           </div>
         </div>
@@ -1367,8 +1367,8 @@ export function AgendaView() {
               <span className="text-2xl">🗓️</span>
             </div>
             <div>
-              <p className="text-purple-300 text-sm font-medium">Este Mês</p>
-              <p className="text-2xl font-bold text-white">{stats.thisMonth}</p>
+              <p className="text-purple-700 dark:text-purple-400 text-sm font-medium">Este Mês</p>
+              <p className="text-2xl font-bold text-foreground">{stats.thisMonth}</p>
             </div>
           </div>
         </div>
@@ -1379,8 +1379,8 @@ export function AgendaView() {
               <span className="text-2xl">✅</span>
             </div>
             <div>
-              <p className="text-emerald-300 text-sm font-medium">Confirmados</p>
-              <p className="text-2xl font-bold text-white">{stats.confirmed}</p>
+              <p className="text-emerald-700 dark:text-emerald-400 text-sm font-medium">Confirmados</p>
+              <p className="text-2xl font-bold text-foreground">{stats.confirmed}</p>
             </div>
           </div>
         </div>
@@ -1391,17 +1391,17 @@ export function AgendaView() {
               <span className="text-2xl">🎯</span>
             </div>
             <div>
-              <p className="text-orange-300 text-sm font-medium">Total</p>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
+              <p className="text-orange-700 dark:text-orange-400 text-sm font-medium">Total</p>
+              <p className="text-2xl font-bold text-foreground">{stats.total}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Filtros Modernizados */}
-      <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+      <div className="bg-card rounded-xl p-6 border border-border">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+          <h3 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <span className="text-2xl">🎛️</span>
             Filtros da Agenda
           </h3>
@@ -1418,7 +1418,7 @@ export function AgendaView() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Seletor de Calendário (desabilitado para corretor) */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Corretor</label>
+            <label className="text-sm font-medium text-muted-foreground">Corretor</label>
             <Select value={selectedAgenda} disabled={profile?.role === 'corretor'} onValueChange={(val) => {
               setSelectedAgenda(val);
               if (val === 'Todos') {
@@ -1428,11 +1428,11 @@ export function AgendaView() {
                 setSelectedAgendaName(found?.full_name || 'Calendário');
               }
             }}>
-              <SelectTrigger className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-colors">
+              <SelectTrigger className="bg-background border-border text-foreground hover:bg-muted/80 transition-colors">
                 <SelectValue placeholder={loadingCorretores ? "Carregando calendários..." : "Selecione o calendário"} />
               </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-600">
-                <SelectItem value="Todos" className="text-white hover:bg-gray-700 focus:bg-gray-700">
+              <SelectContent className="bg-popover border-border">
+                <SelectItem value="Todos" className="focus:bg-muted">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">📋</span>
                     <span>Todos os calendários</span>
@@ -1457,7 +1457,7 @@ export function AgendaView() {
                     <SelectItem
                       key={corretor.id}
                       value={corretor.id}
-                      className="text-white hover:bg-gray-700 focus:bg-gray-700"
+                      className="focus:bg-muted"
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">👤</span>
@@ -1472,11 +1472,11 @@ export function AgendaView() {
 
           {/* Indicador visual */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Status</label>
-            <div className="flex items-center gap-2 p-3 bg-gray-700/50 rounded-lg border border-gray-600">
+            <label className="text-sm font-medium text-muted-foreground">Status</label>
+            <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
               <div className={`w-3 h-3 rounded-full animate-pulse ${selectedAgenda === 'Todos' ? 'bg-blue-500' : 'bg-green-500'
                 }`}></div>
-              <span className="text-sm text-gray-300">
+              <span className="text-sm text-muted-foreground">
                 {selectedAgenda === 'Todos'
                   ? `Visualizando todos os calendários (${events.length} eventos)`
                   : `Calendário: ${selectedAgendaName} (${events.length} eventos)`
@@ -1487,13 +1487,13 @@ export function AgendaView() {
 
           {/* Ações rápidas */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Ações Rápidas</label>
+            <label className="text-sm font-medium text-muted-foreground">Ações Rápidas</label>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedDate(new Date())}
-                className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 flex-1"
+                className="bg-background border-border text-foreground hover:bg-muted flex-1"
               >
                 🌅 Hoje
               </Button>
@@ -1505,7 +1505,7 @@ export function AgendaView() {
                   tomorrow.setDate(tomorrow.getDate() + 1);
                   setSelectedDate(tomorrow);
                 }}
-                className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 flex-1"
+                className="bg-background border-border text-foreground hover:bg-muted flex-1"
               >
                 🌄 Amanhã
               </Button>

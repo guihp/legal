@@ -31,3 +31,6 @@ dist-ssr
 
 # Separate git repositories
 landing-static/
+
+# Supabase CLI cache (local)
+supabase/.temp/

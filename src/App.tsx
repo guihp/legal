@@ -20,6 +20,10 @@ import { BlockedAccessScreen, GracePeriodBanner } from './components/shared/Subs
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { Toaster } from './components/ui/sonner';
 
+// Paginas Publicas
+const SiteVitrine = lazy(() => import("@/pages/public/SiteVitrine"));
+const PropertyLandingPage = lazy(() => import("@/pages/public/PropertyLandingPage"));
+
 function AppContent() {
   const { profile, loading: profileLoading, error: profileError } = useUserProfile();
   const { accessStatus, loading: accessLoading } = useCompanyAccess();
@@ -32,6 +36,53 @@ function AppContent() {
 
   // Hook para auditoria de autenticação
   useAuthAudit();
+
+  const hostname = window.location.hostname;
+  const parts = hostname.split('.');
+  
+  // Considera subdomínio se: (ex: jastelo.localhost) -> parts[1] == 'localhost' ou se (jastelo.iafeoficial.com) -> parts.length >= 3 && parts[0] !== 'www'
+  // Também evitamos considerar subdomínios padrão como "app.iafeoficial.com" caso o crm seja no app. Mas assumimos que o CRM roda no domínio raiz ou app.
+  // Vamos simplificar e não usar subdomínio se for "app" ou "admin" ou "www" ou IP
+  const blockedSubdomains = ['www', 'app', 'admin'];
+  const isIp = /^[0-9.]+$/.test(hostname);
+  
+  const isSubdomain = !isIp && parts.length >= 2 && !blockedSubdomains.includes(parts[0]) && 
+    ((parts.length >= 3 && parts[1] !== 'localhost') || (parts.length === 2 && parts[1] === 'localhost'));
+  
+  const subdomainSlug = isSubdomain ? parts[0] : null;
+
+  // Se for rota pública, não exige perfil nem acesso
+  const isPublicRoute = location.pathname.startsWith('/s/') || location.pathname.startsWith('/imovel/') || isSubdomain;
+  
+  if (isPublicRoute) {
+    if (isSubdomain && subdomainSlug) {
+      if (location.pathname.startsWith('/imovel/')) {
+        return (
+          <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-white">Carregando...</div></div>}>
+            <Routes>
+              <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+              <Route path="*" element={<SiteVitrine companySlug={subdomainSlug} />} />
+            </Routes>
+          </Suspense>
+        );
+      }
+      
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-white">Carregando...</div></div>}>
+          <SiteVitrine companySlug={subdomainSlug} />
+        </Suspense>
+      );
+    }
+
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-white">Carregando...</div></div>}>
+        <Routes>
+          <Route path="/s/:companySlug" element={<SiteVitrine />} />
+          <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+        </Routes>
+      </Suspense>
+    );
+  }
 
   if (profileLoading || accessLoading) {
     return (
@@ -84,7 +135,7 @@ function AppContent() {
     );
   }
 
-  const mustChangePassword = false; // revertido: sem fluxo obrigatório de troca de senha
+  const mustChangePassword = false;
 
   const handleChangePassword = async () => {
     try {
@@ -102,8 +153,6 @@ function AppContent() {
       }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      // Marcar como alterada
-      // revertido: sem marcação no perfil
       setNewPassword("");
       setConfirmPassword("");
     } catch (err: any) {
@@ -115,19 +164,15 @@ function AppContent() {
 
   return (
     <ContractTemplatesProvider>
-      {/* Banner de impersonação (super_admin acessando como outro usuário) */}
       <ImpersonationBanner />
-
-      {/* Banner de período de carência */}
       {accessStatus?.isGracePeriod && (
         <GracePeriodBanner accessStatus={accessStatus} />
       )}
-      {/* Persistência de rota atual */}
-      {null}
       <Routes>
+        <Route path="/s/:companySlug" element={<Suspense fallback={<div>Carregando...</div>}><SiteVitrine /></Suspense>} />
+        <Route path="/imovel/:slug" element={<Suspense fallback={<div>Carregando...</div>}><PropertyLandingPage /></Suspense>} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/" element={<Index />} />
-        {/* Rotas reais por módulo */}
         <Route path="/dashboard" element={<Index />} />
         <Route path="/properties" element={<Index />} />
         <Route path="/contracts" element={<Index />} />
@@ -140,6 +185,8 @@ function AppContent() {
         <Route path="/users" element={<Index />} />
         <Route path="/permissions" element={<Index />} />
         <Route path="/inquilinato" element={<Index />} />
+        <Route path="/marketing" element={<Index />} />
+        <Route path="/partnerships" element={<Index />} />
         <Route path="/disparador" element={<Index />} />
         <Route path="/conversas" element={<Index />} />
         <Route path="/configurations" element={<Index />} />
@@ -147,7 +194,6 @@ function AppContent() {
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Modal obrigatório de troca de senha */}
       <Dialog open={mustChangePassword} onOpenChange={() => { }}>
         <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
           <DialogHeader>
@@ -192,7 +238,6 @@ function App() {
   const [sessionError, setSessionError] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
 
-  // Detectar problemas de sessão e mostrar recuperação
   useEffect(() => {
     if (sessionError && !showRecovery) {
       setShowRecovery(true);
@@ -227,23 +272,23 @@ function App() {
   }
 
   if (!session) {
-    // Permitir acesso à Landing Page mesmo sem sessão
-    if (window.location.pathname === '/landing') {
+    const isPublicRoute = window.location.pathname.startsWith('/s/') || window.location.pathname.startsWith('/imovel/');
+    if (window.location.pathname === '/landing' || isPublicRoute) {
       const LandingPage = lazy(() => import("@/pages/LandingPage"));
       return (
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Routes>
-            <Route path="/landing" element={
-              <Suspense fallback={<div className="min-h-screen bg-black" />}>
-                <LandingPage />
-              </Suspense>
-            } />
-            <Route path="*" element={<LoginPage onLoginSuccess={() => { }} />} />
-          </Routes>
+          <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-white">Carregando...</div></div>}>
+            <Routes>
+              <Route path="/landing" element={<LandingPage />} />
+              <Route path="/s/:companySlug" element={<SiteVitrine />} />
+              <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+              <Route path="*" element={<LoginPage onLoginSuccess={() => { }} />} />
+            </Routes>
+          </Suspense>
         </Router>
       );
     }
-    return <LoginPage onLoginSuccess={() => { /* evita reload global em dev */ }} />;
+    return <LoginPage onLoginSuccess={() => { }} />;
   }
 
   return (
@@ -253,14 +298,9 @@ function App() {
         v7_relativeSplatPath: true
       }}
     >
-      {/* REMOVIDO PersistRoute temporariamente para testar se está causando conflito */}
       <AppContent />
     </Router>
   );
 }
 
 export default App;
-
-// REMOVIDO: Componente PersistRoute que estava causando problemas de recarregamento
-// O componente tinha múltiplos listeners de eventos que conflitavam com a API de visibilidade
-// e causavam loops de renderização quando a janela era minimizada ou a aba era trocada

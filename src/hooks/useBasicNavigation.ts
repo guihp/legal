@@ -5,7 +5,7 @@ export type View =
   | "dashboard" | "properties" | "contracts" | "agenda" | "plantao"
   | "reports" | "clients" | "clients-crm" | "connections" | "users"
   | "permissions" | "inquilinato" | "disparador" | "conversas"
-  | "configurations" | "profile" | "landing";
+  | "configurations" | "profile" | "landing" | "marketing" | "partnerships";
 
 /**
  * Hook ULTRA-SIMPLIFICADO de navegação

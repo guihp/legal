@@ -45,6 +45,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { useRef } from 'react';
+import { cn } from '@/lib/utils';
 
 // Função para determinar cor do status baseado no stage
 const getStageColor = (stage: string) => {
@@ -299,7 +300,7 @@ export function ClientsCRMView() {
   }
 
   return (
-    <div className="space-y-6 p-6 min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+    <div className="space-y-6 min-h-0 bg-background text-foreground">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -308,10 +309,10 @@ export function ClientsCRMView() {
         className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
       >
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
             CRM de Clientes
           </h1>
-          <p className="text-gray-400">
+          <p className="text-muted-foreground">
             Gestão completa do relacionamento com clientes e prospects
           </p>
         </div>
@@ -326,7 +327,7 @@ export function ClientsCRMView() {
             <Button
               variant="outline"
               onClick={() => setShowBulkAssignModal(true)}
-              className="flex items-center gap-2 bg-gray-900/50 border-green-600/50 text-green-400 hover:bg-gray-800"
+              className="flex items-center gap-2 bg-card border-green-600/50 text-green-700 dark:text-green-400 hover:bg-muted/80"
             >
               <Users className="h-4 w-4" />
               Gestão em Massa
@@ -338,7 +339,7 @@ export function ClientsCRMView() {
               <Button
                 variant="outline"
                 onClick={() => setShowBrokerFilter(!showBrokerFilter)}
-                className="flex items-center gap-2 bg-gray-900/50 border-blue-600/50 text-blue-400 hover:bg-gray-800"
+                className="flex items-center gap-2 bg-card border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-muted/80"
               >
                 <Filter className="h-4 w-4" />
                 Filtrar Corretores 
@@ -354,15 +355,15 @@ export function ClientsCRMView() {
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full left-0 mt-2 w-80 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50 p-4"
+                  className="absolute top-full left-0 mt-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 p-4"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-medium text-white">Filtrar por Corretor</h4>
+                    <h4 className="text-sm font-medium text-foreground">Filtrar por Corretor</h4>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowBrokerFilter(false)}
-                      className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -373,7 +374,7 @@ export function ClientsCRMView() {
                       variant="outline"
                       size="sm"
                       onClick={selectAllBrokers}
-                      className="text-xs bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700"
+                      className="text-xs bg-background border-border text-foreground hover:bg-muted"
                     >
                       Todos
                     </Button>
@@ -381,7 +382,7 @@ export function ClientsCRMView() {
                       variant="outline"
                       size="sm"
                       onClick={clearBrokerFilter}
-                      className="text-xs bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700"
+                      className="text-xs bg-background border-border text-foreground hover:bg-muted"
                     >
                       Limpar
                     </Button>
@@ -389,7 +390,7 @@ export function ClientsCRMView() {
 
                   <div className="max-h-60 overflow-y-auto space-y-2">
                     {/* Opção para leads sem corretor */}
-                    <div className="flex items-center space-x-2 p-2 hover:bg-gray-800 rounded">
+                    <div className="flex items-center space-x-2 p-2 hover:bg-muted/60 rounded">
                       <Checkbox
                         id="unassigned"
                         checked={selectedBrokers.has('unassigned')}
@@ -397,10 +398,10 @@ export function ClientsCRMView() {
                       />
                       <label
                         htmlFor="unassigned"
-                        className="text-sm text-gray-300 cursor-pointer flex-1"
+                        className="text-sm text-muted-foreground cursor-pointer flex-1"
                       >
                         <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-gray-500" />
+                          <User className="h-4 w-4 text-muted-foreground" />
                           Sem corretor atribuído
                         </div>
                       </label>
@@ -408,7 +409,7 @@ export function ClientsCRMView() {
 
                     {/* Lista de corretores */}
                     {brokers.map(broker => (
-                      <div key={broker.id} className="flex items-center space-x-2 p-2 hover:bg-gray-800 rounded">
+                      <div key={broker.id} className="flex items-center space-x-2 p-2 hover:bg-muted/60 rounded">
                         <Checkbox
                           id={broker.id}
                           checked={selectedBrokers.has(broker.id)}
@@ -416,10 +417,10 @@ export function ClientsCRMView() {
                         />
                         <label
                           htmlFor={broker.id}
-                          className="text-sm text-gray-300 cursor-pointer flex-1"
+                          className="text-sm text-muted-foreground cursor-pointer flex-1"
                         >
                           <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-amber-400" />
+                            <User className="h-4 w-4 text-amber-500" />
                             {broker.full_name}
                           </div>
                         </label>
@@ -428,8 +429,8 @@ export function ClientsCRMView() {
                   </div>
 
                   {selectedBrokers.size > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-700">
-                      <p className="text-xs text-gray-400">
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <p className="text-xs text-muted-foreground">
                         {selectedBrokers.size} corretor{selectedBrokers.size !== 1 ? 'es' : ''} selecionado{selectedBrokers.size !== 1 ? 's' : ''}
                       </p>
                     </div>
@@ -468,14 +469,14 @@ export function ClientsCRMView() {
             whileHover={{ scale: 1.02, y: -5 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300">
+            <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-400">{stat.title}</p>
-                    <p className="text-2xl font-bold text-white">{stat.value}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
+                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
                   </div>
-                  <div className="p-3 rounded-full bg-gray-700/50">
+                  <div className="p-3 rounded-full bg-muted/60">
                     <stat.icon className={`h-6 w-6 ${stat.color}`} />
                   </div>
                 </div>
@@ -498,7 +499,7 @@ export function ClientsCRMView() {
             placeholder="Buscar por nome, email ou telefone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 bg-gray-800/50 border-gray-700 text-white placeholder-gray-400 focus:border-blue-500"
+            className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
           />
         </div>
       </motion.div>
@@ -510,7 +511,7 @@ export function ClientsCRMView() {
         transition={{ delay: 1, duration: 0.8 }}
       >
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-gray-800/50 backdrop-blur-sm">
+          <TabsList className="grid w-full grid-cols-6 bg-muted/50 border border-border">
             <TabsTrigger value="todos" className="data-[state=active]:bg-blue-600/20 data-[state=active]:text-blue-400">
               Todos ({stats.total})
             </TabsTrigger>
@@ -542,7 +543,7 @@ export function ClientsCRMView() {
                     transition={{ delay: index * 0.1, duration: 0.5 }}
                     whileHover={{ scale: 1.01, y: -2 }}
                   >
-                    <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300">
+                    <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300">
                       <CardContent className="p-6">
                         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
                           {/* Informações Principais do Cliente */}
@@ -550,12 +551,12 @@ export function ClientsCRMView() {
                             {/* Header com Nome e Status */}
                             <div className="flex items-start gap-3 mb-4">
                               <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                                <span className="text-white font-semibold text-sm">
+                                <span className="text-foreground font-semibold text-sm">
                                   {lead.nome.split(' ').map(n => n[0]).join('').substring(0, 2)}
                                 </span>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h3 className="text-lg font-semibold text-white mb-2">{lead.nome}</h3>
+                                <h3 className="text-lg font-semibold text-foreground mb-2">{lead.nome}</h3>
                                 <div className="flex gap-2 flex-wrap">
                                   <Badge variant="outline" className={getStageColor(lead.stage)}>
                                     {lead.stage}
@@ -587,7 +588,7 @@ export function ClientsCRMView() {
                             {/* Grupos de Informações lado a lado */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                               {/* Informações de Contato - Seção 1 */}
-                              <div className="bg-gray-900/30 p-4 rounded-lg">
+                              <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
                                 <h4 className="text-sm font-medium text-blue-400 mb-3 flex items-center gap-2">
                                   <MessageSquare className="h-4 w-4" />
                                   Informações de Contato
@@ -615,7 +616,7 @@ export function ClientsCRMView() {
                               </div>
 
                               {/* Informações do Negócio - Seção 2 */}
-                              <div className="bg-gray-900/30 p-4 rounded-lg">
+                              <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
                                 <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
                                   <AlertCircle className="h-4 w-4" />
                                   Interesse e Valor
@@ -646,7 +647,7 @@ export function ClientsCRMView() {
 
                               {/* Informações Adicionais - Seção 3 */}
                               {(lead.observacoes || lead.cpf || lead.estado_civil || lead.message) ? (
-                                <div className="bg-gray-900/30 p-4 rounded-lg">
+                                <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
                                   <h4 className="text-sm font-medium text-purple-400 mb-3 flex items-center gap-2">
                                     <FileText className="h-4 w-4" />
                                     Informações Adicionais
@@ -690,7 +691,7 @@ export function ClientsCRMView() {
                                 </div>
                               ) : (
                                 // Placeholder vazio para manter alinhamento
-                                <div className="bg-gray-900/30 p-4 rounded-lg opacity-50">
+                                <div className="bg-muted/40 p-4 rounded-lg border border-border/50 opacity-50">
                                   <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                                     <FileText className="h-4 w-4" />
                                     Sem dados adicionais
@@ -708,23 +709,23 @@ export function ClientsCRMView() {
                               const actions = [
                                 { 
                                   icon: Eye, 
-                                  color: "bg-blue-700 border-blue-600 text-blue-100 hover:bg-blue-600", 
+                                  className: "!bg-blue-600 hover:!bg-blue-700 !text-white border-0 shadow-sm",
                                   label: "Ver Detalhes",
                                   action: () => handleViewLead(lead),
                                   disabled: false
                                 },
                                 { 
                                   icon: Edit, 
-                                  color: "bg-green-700 border-green-600 text-green-100 hover:bg-green-600", 
+                                  className: "!bg-green-600 hover:!bg-green-700 !text-white border-0 shadow-sm",
                                   label: "Editar",
                                   action: () => handleEditLead(lead),
                                   disabled: false
                                 },
                                 { 
                                   icon: MessageSquare, 
-                                  color: hasWhatsAppChat 
-                                    ? "bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600" 
-                                    : "bg-gray-700 border-gray-600 text-gray-400 cursor-not-allowed",
+                                  className: hasWhatsAppChat 
+                                    ? "!bg-emerald-600 hover:!bg-emerald-700 !text-white border-0 shadow-sm" 
+                                    : "!bg-muted !text-muted-foreground border border-border cursor-not-allowed",
                                   label: hasWhatsAppChat 
                                     ? "WhatsApp" 
                                     : "WhatsApp (Sem conversa)",
@@ -740,14 +741,22 @@ export function ClientsCRMView() {
                                   whileTap={!action.disabled ? { scale: 0.9 } : {}}
                                 >
                                   <Button 
-                                    variant="outline" 
                                     size="sm" 
                                     disabled={action.disabled}
-                                    className={`${action.color} backdrop-blur-sm transition-all duration-200 ${action.disabled ? 'opacity-50' : ''}`}
+                                    className={cn(
+                                      "h-9 w-9 min-w-9 shrink-0 p-0 transition-all duration-200",
+                                      action.className,
+                                      action.disabled && "opacity-50"
+                                    )}
                                     title={action.label}
                                     onClick={action.disabled ? undefined : action.action}
                                   >
-                                    <action.icon className="h-4 w-4" />
+                                    <action.icon
+                                      className={cn(
+                                        "h-4 w-4 shrink-0",
+                                        action.disabled ? "text-muted-foreground" : "text-white"
+                                      )}
+                                    />
                                   </Button>
                                 </motion.div>
                               ));
@@ -766,10 +775,10 @@ export function ClientsCRMView() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.8 }}
                 >
-                  <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60">
+                  <Card className="bg-card border-border">
                     <CardContent className="p-12 text-center">
                       <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-white mb-2">Nenhum cliente encontrado</h3>
+                      <h3 className="text-lg font-semibold text-foreground mb-2">Nenhum cliente encontrado</h3>
                       <p className="text-gray-400 mb-4">
                         {searchTerm ? 'Não encontramos clientes com os critérios de busca.' : 'Você ainda não possui clientes cadastrados.'}
                       </p>
@@ -801,7 +810,7 @@ export function ClientsCRMView() {
                           <PaginationLink
                             href="#"
                             isActive={safePage === (i + 1)}
-                            className="text-white hover:text-blue-400 data-[state=active]:text-blue-400"
+                            className="text-muted-foreground hover:text-blue-600 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400"
                             onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }}
                           >
                             {i + 1}
@@ -848,11 +857,11 @@ export function ClientsCRMView() {
 
       {/* Modal Visualizar Cliente */}
       <Dialog open={showViewModal} onOpenChange={handleCloseViewModal}>
-        <DialogContent className="max-w-4xl bg-gray-900/95 border-gray-700/50 text-white">
+        <DialogContent className="max-w-4xl bg-background border-border text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-white flex items-center gap-3">
+            <DialogTitle className="text-2xl font-bold text-foreground flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                <span className="text-white font-semibold">
+                <span className="text-foreground font-semibold">
                   {selectedLead?.nome?.split(' ').map(n => n[0]).join('').substring(0, 2)}
                 </span>
               </div>
@@ -892,9 +901,9 @@ export function ClientsCRMView() {
               {/* Informações em Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Dados Pessoais */}
-                <Card className="bg-gray-800/50 border-gray-700/60">
+                <Card className="bg-card border-border">
                   <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                       <User className="h-5 w-5 text-blue-400" />
                       Dados Pessoais
                     </h3>
@@ -934,9 +943,9 @@ export function ClientsCRMView() {
                 </Card>
 
                 {/* Informações do Negócio */}
-                <Card className="bg-gray-800/50 border-gray-700/60">
+                <Card className="bg-card border-border">
                   <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                       <Building2 className="h-5 w-5 text-green-400" />
                       Informações do Negócio
                     </h3>
@@ -968,9 +977,9 @@ export function ClientsCRMView() {
 
               {/* Observações */}
               {selectedLead.observacoes && (
-                <Card className="bg-gray-800/50 border-gray-700/60">
+                <Card className="bg-card border-border">
                   <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                       <MessageSquare className="h-5 w-5 text-purple-400" />
                       Observações
                     </h3>
@@ -980,11 +989,11 @@ export function ClientsCRMView() {
               )}
 
               {/* Actions Footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
+              <div className="flex justify-end gap-3 pt-4 border-t border-border">
                 <Button
                   variant="outline"
                   onClick={handleCloseViewModal}
-                  className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300"
+                  className="border-border text-red-600 hover:bg-red-500/10 dark:text-red-400"
                 >
                   Fechar
                 </Button>

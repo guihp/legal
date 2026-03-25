@@ -521,7 +521,7 @@ export function AddEventModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-gray-800 border-gray-700">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-background border-border text-foreground">
         <DialogHeader>
           <DialogTitle className="text-white flex items-center gap-2">
             <CalendarIcon className="h-5 w-5" />
@@ -752,7 +752,7 @@ export function AddEventModal({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">💡</span>
-                    <span className="text-yellow-300 text-sm font-medium">
+                    <span className="text-sm font-medium text-amber-900 dark:text-yellow-300">
                       Sugestão: {getSuggestedTime()}
                     </span>
                   </div>
@@ -835,7 +835,7 @@ export function AddEventModal({
                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-blue-400" />
-                    <span className="text-blue-300 font-medium">
+                    <span className="font-medium text-blue-800 dark:text-blue-300">
                       Horário selecionado: {time}
                     </span>
                   </div>
@@ -869,7 +869,7 @@ export function AddEventModal({
               <span className="text-lg">👥</span>
               Corretor
               {selectedDate && time && (
-                <span className="text-xs bg-blue-500/20 px-2 py-1 rounded-full text-blue-300">
+                <span className="text-xs bg-blue-500/20 px-2 py-1 rounded-full text-blue-800 dark:text-blue-300">
                   Baseado na disponibilidade
                 </span>
               )}
@@ -956,7 +956,7 @@ export function AddEventModal({
               <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mt-2">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">⚠️</span>
-                  <span className="text-yellow-300 text-sm">
+                  <span className="text-sm text-amber-900 dark:text-yellow-300">
                     Selecione data e horário para filtrar apenas corretores disponíveis no plantão
                   </span>
                 </div>
@@ -965,7 +965,7 @@ export function AddEventModal({
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mt-2">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🔍</span>
-                  <span className="text-blue-300 text-sm">
+                  <span className="text-sm text-blue-800 dark:text-blue-300">
                     Mostrando apenas corretores disponíveis em {format(selectedDate, "dd/MM", { locale: ptBR })} às {time}
                     {corretoresDisponiveis.filter(c => c.available).length === 0 && (
                       <span className="text-red-400 ml-2">⚠️ Nenhum corretor disponível neste horário</span>

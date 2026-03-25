@@ -50,12 +50,12 @@ function TimePicker({ value, onChange, disabled }: TimePickerProps) {
 
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className={`bg-gray-800 border-gray-700 text-white h-9 ${disabled ? 'opacity-60' : ''}`}>
+      <SelectTrigger className={`bg-background border-border text-foreground h-9 ${disabled ? 'opacity-60' : ''}`}>
         <SelectValue placeholder="—:—" />
       </SelectTrigger>
-      <SelectContent className="bg-gray-900 border border-gray-800 text-white max-h-64">
+      <SelectContent className="bg-popover border-border max-h-64">
         {times.map((t) => (
-          <SelectItem key={t} value={t} className="text-white font-mono">
+          <SelectItem key={t} value={t} className="font-mono">
             {t}
           </SelectItem>
         ))}
@@ -1010,18 +1010,18 @@ const PlantaoView = () => {
 
       {/* Abas Plantão */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'calendarios' | 'escala')} className="w-full">
-        <TabsList className="bg-gray-800 border border-gray-700">
+        <TabsList className="bg-muted/50 border border-border">
           {isManager && (<TabsTrigger value="calendarios">Calendários</TabsTrigger>)}
           <TabsTrigger value="escala">Escala do Plantão</TabsTrigger>
         </TabsList>
 
         {isManager && (
           <TabsContent value="calendarios" className="mt-4">
-            <Card className="border-gray-800 bg-gray-900">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <CardTitle className="text-white">Calendários</CardTitle>
+                    <CardTitle className="text-card-foreground">Calendários</CardTitle>
                     <CardDescription className="text-xs mt-1">
                       Última atualização em: {lastUpdated ? lastUpdated.toLocaleString('pt-BR') : '—'}
                     </CardDescription>
@@ -1030,7 +1030,7 @@ const PlantaoView = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-white bg-transparent border-0 shadow-none"
+                      className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
                       onClick={() => puxarAgendas('manual')}
                       disabled={loading}
                     >
@@ -1048,7 +1048,7 @@ const PlantaoView = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-white bg-transparent border-0 shadow-none"
+                      className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
                       onClick={handleAddAgenda}
                       disabled={loading}
                     >
@@ -1059,25 +1059,25 @@ const PlantaoView = () => {
 
                 {/* Modal Adicionar Agenda */}
                 <Dialog open={isAddAgendaOpen} onOpenChange={setIsAddAgendaOpen}>
-                  <DialogContent className="bg-gray-900 border border-gray-800 text-white">
+                  <DialogContent className="bg-background border-border text-foreground">
                     <DialogHeader>
                       <DialogTitle>Adicionar nova agenda</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs text-gray-400">Nome da agenda</label>
+                        <label className="text-xs text-muted-foreground">Nome da agenda</label>
                         <Input
                           value={newAgendaName}
                           onChange={(e) => setNewAgendaName(e.target.value)}
                           placeholder="Ex.: Corretor João"
-                          className="bg-gray-800 border-gray-700 text-white mt-1"
+                          className="bg-background border-border text-foreground mt-1"
                         />
                       </div>
                       <div className="flex justify-end gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-white bg-transparent border-0 shadow-none"
+                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
                           onClick={() => setIsAddAgendaOpen(false)}
                           disabled={addingAgenda}
                         >
@@ -1086,7 +1086,7 @@ const PlantaoView = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-white bg-transparent border-0 shadow-none"
+                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
                           onClick={submitAddAgenda}
                           disabled={addingAgenda}
                         >
@@ -1099,20 +1099,20 @@ const PlantaoView = () => {
 
                 {/* Modal Confirmar Exclusão */}
                 <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-                  <DialogContent className="bg-gray-900 border border-gray-800 text-white">
+                  <DialogContent className="bg-background border-border text-foreground">
                     <DialogHeader>
                       <DialogTitle>Remover agenda</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-3">
-                      <p className="text-sm text-gray-300">Tem certeza que deseja remover esta agenda?</p>
+                      <p className="text-sm text-muted-foreground">Tem certeza que deseja remover esta agenda?</p>
                       {deleteTargetName && (
-                        <p className="text-xs text-gray-400">Agenda: <span className="text-gray-200">{deleteTargetName}</span></p>
+                        <p className="text-xs text-muted-foreground">Agenda: <span className="text-foreground">{deleteTargetName}</span></p>
                       )}
                       <div className="flex justify-end gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-white bg-transparent border-0 shadow-none"
+                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
                           onClick={() => setIsDeleteOpen(false)}
                           disabled={deletingAgenda}
                         >
@@ -1139,7 +1139,7 @@ const PlantaoView = () => {
                       placeholder="Buscar por nome ou ID"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-400"
+                      className="bg-background border-border text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                 </div>
@@ -1147,7 +1147,7 @@ const PlantaoView = () => {
                 {loading ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+                      <div key={i} className="rounded-lg border border-border bg-card p-4">
                         <div className="flex items-center gap-3">
                           <Skeleton className="h-3 w-3 rounded-full" />
                           <Skeleton className="h-5 w-48" />
@@ -1161,19 +1161,19 @@ const PlantaoView = () => {
                     ))}
                   </div>
                 ) : filteredCalendars.length === 0 ? (
-                  <p className="text-sm text-gray-400">Nenhum calendário para exibir.</p>
+                  <p className="text-sm text-muted-foreground">Nenhum calendário para exibir.</p>
                 ) : (
                   <TooltipProvider>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                       {filteredCalendars.map((cal) => (
                         <div
                           key={`${cal.id}-${cal.name}`}
-                          className="rounded-md border border-gray-800 bg-gray-900 px-2 py-1.5 hover:border-blue-800/50 hover:shadow-lg transition-all"
+                          className="rounded-md border border-border bg-card px-2 py-1.5 hover:border-primary/40 hover:shadow-md transition-all"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0 flex items-center gap-2">
                               <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cal.color || '#64748b' }} />
-                              <h3 className="text-[13px] font-medium text-white truncate max-w-[220px]">{cal.name}</h3>
+                              <h3 className="text-[13px] font-medium text-foreground truncate max-w-[220px]">{cal.name}</h3>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <Tooltip>
@@ -1181,7 +1181,7 @@ const PlantaoView = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="px-2 h-7 text-blue-300 hover:text-blue-200"
+                                    className="px-2 h-7 text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                                     onClick={async () => {
                                       await navigator.clipboard.writeText(cal.id);
                                       toast.success('Calendar ID copiado');
@@ -1216,9 +1216,9 @@ const PlantaoView = () => {
         )}
 
         <TabsContent value="escala" className="mt-4">
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-border bg-card text-card-foreground">
             <CardHeader>
-              <CardTitle className="text-white">Escala do Plantão</CardTitle>
+              <CardTitle className="text-card-foreground">Escala do Plantão</CardTitle>
               <CardDescription className="text-xs mt-1">Configure horários de plantão por calendário</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1292,18 +1292,18 @@ const PlantaoView = () => {
                       }
 
                       return (
-                        <div key={c.id} className="rounded-xl border border-gray-800 p-4 bg-gradient-to-br from-gray-900 to-gray-950 hover:border-blue-800/40 hover:shadow-xl transition-all">
+                        <div key={c.id} className="rounded-xl border border-border p-4 bg-card hover:border-emerald-500/35 hover:shadow-md transition-all">
                           <div className="flex items-start justify-between gap-3 cursor-pointer select-none" onClick={() => toggleExpanded(c.id, c.name)} role="button" aria-expanded={isOpen}>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                {isOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-                                <h3 className="text-white font-semibold truncate">{c.name}</h3>
+                                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                <h3 className="text-foreground font-semibold truncate">{c.name}</h3>
                               </div>
                               {/* resumo removido por solicitação */}
-                              <p className="text-xs text-gray-400 mt-1">
-                                Usuário: <span className="text-gray-200">{ownerName}</span>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Usuário: <span className="text-foreground">{ownerName}</span>
                                 {cfg.assignedUserId === profile?.id && (profile?.role === 'corretor' || profile?.role === 'gestor') && (
-                                  <span className="ml-2 px-1.5 py-0.5 bg-blue-900/50 text-blue-200 rounded text-[10px]">
+                                  <span className="ml-2 px-1.5 py-0.5 bg-blue-500/15 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200 rounded text-[10px]">
                                     Sua agenda
                                   </span>
                                 )}
@@ -1316,7 +1316,7 @@ const PlantaoView = () => {
                                   <DialogTrigger asChild>
                                     <Button
                                       variant="ghost"
-                                      className="text-blue-300 hover:text-blue-200 hover:bg-blue-900/20"
+                                      className="text-blue-700 hover:text-blue-800 hover:bg-blue-500/10 dark:text-blue-300 dark:hover:text-blue-200 dark:hover:bg-blue-900/20"
                                       onClick={() => {
                                         setConfigCalendarId(c.id);
                                         setIsConfigOpen(true);
@@ -1327,29 +1327,29 @@ const PlantaoView = () => {
                                       Configurar
                                     </Button>
                                   </DialogTrigger>
-                                  <DialogContent className="bg-gray-900 border border-gray-800 text-white">
+                                  <DialogContent className="bg-background border-border text-foreground">
                                     <DialogHeader>
                                       <DialogTitle>Configurar agenda</DialogTitle>
                                     </DialogHeader>
                                     <div className="space-y-3">
                                       <div>
-                                        <label className="text-xs text-gray-400">Vincular agenda ao usuário</label>
+                                        <label className="text-xs text-muted-foreground">Vincular agenda ao usuário</label>
                                         <Select value={assignedUserLocal} onValueChange={setAssignedUserLocal}>
-                                          <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                                          <SelectTrigger className="bg-background border-border text-foreground">
                                             <SelectValue placeholder={
                                               companyUsers.length === 0
                                                 ? "Nenhum usuário encontrado"
                                                 : "Selecione um usuário"
                                             } />
                                           </SelectTrigger>
-                                          <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                                            <SelectItem value="__remove__" className="text-gray-400">
+                                          <SelectContent className="bg-popover border-border">
+                                            <SelectItem value="__remove__" className="text-muted-foreground">
                                               Remover vinculação
                                             </SelectItem>
                                             {companyUsers.map(u => (
-                                              <SelectItem key={u.id} value={u.id} className="text-white">
+                                              <SelectItem key={u.id} value={u.id}>
                                                 {u.full_name || u.email}
-                                                <span className="text-xs text-gray-400 ml-2">
+                                                <span className="text-xs text-muted-foreground ml-2">
                                                   ({u.role === 'gestor' ? 'Gestor' : 'Corretor'})
                                                 </span>
                                               </SelectItem>
@@ -1366,7 +1366,7 @@ const PlantaoView = () => {
                                         <Button variant="ghost" className="text-red-400 hover:text-red-300" onClick={() => { setIsConfigOpen(false); setConfigCalendarId(null); }}>Cancelar</Button>
                                         <Button
                                           variant="ghost"
-                                          className="text-white hover:bg-transparent"
+                                          className="text-foreground hover:bg-muted/60"
                                           onClick={() => {
                                             // Tratar valor especial para remoção
                                             const effectiveUserId = assignedUserLocal === '__remove__' ? null : assignedUserLocal;
@@ -1397,7 +1397,7 @@ const PlantaoView = () => {
                               {(canEdit) && (
                                 <Button
                                   variant="ghost"
-                                  className={`hover:bg-transparent ${dirtyCalendars[c.id] ? 'text-emerald-300' : 'text-white/70'}`}
+                                  className={`hover:bg-muted/40 ${dirtyCalendars[c.id] ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}
                                   disabled={!!savingCalendars[c.id]}
                                   onClick={() => salvarCalendario(c.id)}
                                 >
@@ -1418,18 +1418,18 @@ const PlantaoView = () => {
                                 return (
                                   <div
                                     key={d}
-                                    className={`rounded-lg border p-3 ${active ? 'border-emerald-600/30 bg-emerald-900/10' : 'border-gray-800 bg-gray-900'}`}
+                                    className={`rounded-lg border p-3 ${active ? 'border-emerald-600/30 bg-emerald-500/10 dark:bg-emerald-900/10' : 'border-border bg-card'}`}
                                   >
                                     <div className="flex items-center justify-between gap-2">
-                                      <span className="text-sm font-medium text-white">{d}</span>
+                                      <span className="text-sm font-medium text-foreground">{d}</span>
                                       <div className="flex items-center gap-2">
-                                        <span className="text-[11px] text-gray-400">{active ? 'Trabalha' : 'Não trabalha'}</span>
+                                        <span className="text-[11px] text-muted-foreground">{active ? 'Trabalha' : 'Não trabalha'}</span>
                                         <Switch checked={!!active} disabled={!canEdit} onCheckedChange={(v) => { if (canEdit) setDayWorking(c.id, d, v); }} />
                                       </div>
                                     </div>
                                     <div className="mt-3 grid grid-cols-2 gap-2">
                                       <div>
-                                        <label className="text-[10px] text-gray-400">Início</label>
+                                        <label className="text-[10px] text-muted-foreground">Início</label>
                                         <TimePicker
                                           value={(info?.start as string) || '09:00'}
                                           disabled={!canEdit || !active}
@@ -1437,7 +1437,7 @@ const PlantaoView = () => {
                                         />
                                       </div>
                                       <div>
-                                        <label className="text-[10px] text-gray-400">Fim</label>
+                                        <label className="text-[10px] text-muted-foreground">Fim</label>
                                         <TimePicker
                                           value={(info?.end as string) || '18:00'}
                                           disabled={!canEdit || !active}

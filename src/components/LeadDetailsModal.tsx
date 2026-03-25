@@ -66,7 +66,7 @@ export function LeadDetailsModal({ isOpen, onClose, leadId }: LeadDetailsModalPr
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-4xl bg-gray-900/95 border-gray-700/50 text-white">
+            <DialogContent className="max-w-4xl bg-background border-border text-foreground">
                 <DialogHeader>
                     <DialogTitle className="text-2xl font-bold text-white flex items-center gap-3">
                         {loading ? (

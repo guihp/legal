@@ -842,7 +842,7 @@ export function ConnectionsViewSimplified() {
   }
 
   return (
-    <div className="space-y-6 p-6 min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+    <div className="space-y-6 min-h-0 bg-background text-foreground">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
@@ -1083,7 +1083,7 @@ export function ConnectionsViewSimplified() {
 
       {/* Modal Adicionar Instância */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="bg-gray-900/95 border-gray-700/50 text-white">
+        <DialogContent className="bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle className="text-white">
               {canCreate ? 'Nova Conexão WhatsApp' : 'Conexão WhatsApp'}
@@ -1196,7 +1196,7 @@ export function ConnectionsViewSimplified() {
           setSelectedInstance(null);
         }
       }}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-md">
+        <DialogContent className="bg-background border-border text-foreground max-w-md">
           <DialogHeader>
             <DialogTitle className="text-white text-lg">
               QR Code - {selectedInstance?.instance_name}
@@ -1300,7 +1300,7 @@ export function ConnectionsViewSimplified() {
 
       {/* Modal de Sucesso */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-        <DialogContent className="bg-gray-900/95 border-gray-700/50 text-white max-w-sm">
+        <DialogContent className="bg-background border-border text-foreground max-w-sm">
           <div className="text-center py-6">
             <div className="w-20 h-20 bg-gradient-to-br from-green-600/30 to-green-700/30 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-green-500/50">
               <Check className="h-12 w-12 text-green-400" />
@@ -1320,7 +1320,7 @@ export function ConnectionsViewSimplified() {
 
       {/* Modal de Configurações */}
       <Dialog open={showConfigModal} onOpenChange={setShowConfigModal}>
-        <DialogContent className="bg-gray-900/95 border-gray-700/50 text-white max-w-lg">
+        <DialogContent className="bg-background border-border text-foreground max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Settings className="h-5 w-5 text-blue-400" />
@@ -1477,7 +1477,7 @@ export function ConnectionsViewSimplified() {
 
       {/* Modal Solicitar Conexão */}
       <Dialog open={showRequestModal} onOpenChange={setShowRequestModal}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-md">
+        <DialogContent className="bg-background border-border text-foreground max-w-md">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-blue-400" />
@@ -1563,7 +1563,7 @@ export function ConnectionsViewSimplified() {
 
       {/* Modal: Solicitação pendente existente */}
       <Dialog open={showPendingModal} onOpenChange={setShowPendingModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Solicitação pendente encontrada</DialogTitle>
             <DialogDescription>

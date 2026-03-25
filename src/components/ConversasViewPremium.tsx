@@ -56,21 +56,21 @@ const bubble = {
 const SkeletonCards = () => (
   <div className="space-y-3">
     {[1, 2, 3].map(i => (
-      <div key={i} className="h-16 rounded-2xl bg-zinc-800/50 animate-pulse" />
+      <div key={i} className="h-16 rounded-2xl bg-[var(--cv-panel-muted)]/60 animate-pulse" />
     ))}
   </div>
 );
 
 // Empty State para conversas
 const EmptyConversas = () => (
-  <div className="grid h-40 place-items-center rounded-2xl border border-dashed border-zinc-700/60 text-zinc-400">
+  <div className="grid h-40 place-items-center rounded-2xl border border-dashed border-[var(--cv-border)] text-[var(--cv-text-muted)]">
     Selecione uma instância para ver as conversas
   </div>
 );
 
 // Empty State para chat
 const EmptyChat = () => (
-  <div className="grid h-56 place-items-center rounded-2xl border border-dashed border-zinc-700/60 text-zinc-400">
+  <div className="grid h-56 place-items-center rounded-2xl border border-dashed border-[var(--cv-border)] text-[var(--cv-text-muted)]">
     Selecione uma conversa para ver as mensagens
   </div>
 );
@@ -344,8 +344,8 @@ function MessageBubble({ row }: { row: any }) {
     return (
       <div className={isAI ? 'self-end' : 'self-start'}>
         <div className={isAI
-          ? 'max-w-[72ch] rounded-lg bg-[#005c4b] px-3 py-2 text-white shadow-sm rounded-tr-none'
-          : 'max-w-[72ch] rounded-lg bg-[#202c33] px-3 py-2 text-zinc-100 shadow-sm rounded-tl-none'}>
+          ? 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tr-none bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+          : 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tl-none bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'}>
           {/* Grid de imagens estilo WhatsApp */}
           <div className={`grid gap-1 mb-2 ${
             mediaImages.length === 1 ? 'grid-cols-1' :
@@ -383,7 +383,7 @@ function MessageBubble({ row }: { row: any }) {
                {processTextWithBold(content)}
              </div>
            )}
-          <div className="text-[10px] text-white/60 text-right mt-1 -mb-1">
+          <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
             {row.data ? formatHour(row.data) : ''}
           </div>
         </div>
@@ -428,7 +428,7 @@ function MessageBubble({ row }: { row: any }) {
             style={{
               maxWidth: '100%',
               height: 'auto',
-              backgroundColor: '#27272a'
+              backgroundColor: 'var(--cv-media-placeholder)'
             }}
           />
         );
@@ -534,14 +534,14 @@ function MessageBubble({ row }: { row: any }) {
 
   // 3) SEM mídia → renderiza apenas texto
   return (
-    <div className={isAI ? 'self-end' : 'self-start'}>
+      <div className={isAI ? 'self-end' : 'self-start'}>
       <div className={isAI
-        ? 'max-w-[72ch] rounded-lg bg-[#005c4b] px-3 py-2 text-white shadow-sm rounded-tr-none'
-        : 'max-w-[72ch] rounded-lg bg-[#202c33] px-3 py-2 text-zinc-100 shadow-sm rounded-tl-none'}>
+        ? 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tr-none bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+        : 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tl-none bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'}>
         <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
           {processTextWithBold(content)}
         </div>
-        <div className="text-[10px] text-white/60 text-right mt-1 -mb-1">
+        <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
           {row.data ? formatHour(row.data) : ''}
         </div>
       </div>
@@ -1130,38 +1130,38 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   return (
     // Ajuste de altura para compensar o layout pai (sidebar/header) e padding (aprox 7rem / 112px)
-    <div className="h-[calc(100vh-7rem)] bg-[#111b21] text-[#e9edef] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[#202c33]">
+    <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR (Lista de Conversas) */}
-      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[#202c33] bg-[#111b21] z-20`}>
+      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] z-20`}>
         {/* HEADER SIDEBAR */}
-        <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shrink-0">
+        <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden">
               <MessageCircle className="w-6 h-6 text-white" />
             </div>
-            <h1 className="font-semibold text-[#e9edef] text-sm md:text-base">Conversas</h1>
+            <h1 className="font-semibold text-[var(--cv-text)] text-sm md:text-base">Conversas</h1>
           </div>
-          <div className="flex gap-3 text-[#aebac1]">
+          <div className="flex gap-3 text-[var(--cv-icon)]">
             <MessageSquare className="w-5 h-5 cursor-pointer" />
             <MoreVertical className="w-5 h-5 cursor-pointer" />
           </div>
         </div>
 
         {/* SEARCH & FILTER */}
-        <div className="p-2 border-b border-[#202c33]">
-          <div className="bg-[#202c33] rounded-lg px-3 py-1.5 flex items-center gap-2">
-            <Search className="w-4 h-4 text-[#8696a0]" />
+        <div className="p-2 border-b border-[var(--cv-border)]">
+          <div className="bg-[var(--cv-search-bg)] rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <Search className="w-4 h-4 text-[var(--cv-text-muted)]" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Pesquisar ou começar uma nova..."
-              className="bg-transparent border-none outline-none text-sm text-[#d1d7db] w-full placeholder-[#8696a0]"
+              className="bg-transparent border-none outline-none text-sm text-[var(--cv-input-text)] w-full placeholder:text-[var(--cv-text-muted)]"
             />
           </div>
         </div>
 
         {/* INSTANCES LIST (Horizontal) */}
-        <div className="py-2 px-3 border-b border-[#202c33] overflow-x-auto whitespace-nowrap custom-scrollbar">
+        <div className="py-2 px-3 border-b border-[var(--cv-border)] overflow-x-auto whitespace-nowrap custom-scrollbar">
           {instances?.map((inst: any) => (
             <button
               key={inst.name}
@@ -1171,8 +1171,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 setSelectedLead(null);
               }}
               className={`inline-block px-3 py-1 text-xs rounded-full mr-2 transition-colors border ${selectedInstance === inst.name
-                ? "bg-[#00a884] text-[#111b21] border-[#00a884]"
-                : "bg-[#202c33] text-[#8696a0] border-transparent hover:bg-[#2a3942]"
+                ? "bg-[var(--cv-tab-active-bg)] text-[var(--cv-tab-active-text)] border-[var(--cv-tab-active-bg)]"
+                : "bg-[var(--cv-tab-inactive-bg)] text-[var(--cv-tab-inactive-text)] border-transparent hover:bg-[var(--cv-hover)]"
                 }`}
             >
               {inst.name}
@@ -1183,7 +1183,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         {/* CHAT LIST */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredConversas.length === 0 && selectedInstance ? (
-            <div className="p-4 text-center text-[#8696a0] text-sm">
+            <div className="p-4 text-center text-[var(--cv-text-muted)] text-sm">
               Nenhuma conversa encontrada.
             </div>
           ) : (
@@ -1195,7 +1195,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   openSession(conv.sessionId);
                   setSelectedLead(null);
                 }}
-                className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[#202c33] transition-colors border-b border-[#202c33] ${selectedConversation === conv.sessionId ? 'bg-[#2a3942]' : ''}`}
+                className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--cv-hover)] transition-colors border-b border-[var(--cv-border)] ${selectedConversation === conv.sessionId ? 'bg-[var(--cv-panel-muted)]' : ''}`}
               >
                 <div className="w-12 h-12 rounded-full bg-slate-600 flex-shrink-0 relative overflow-hidden">
                   <Avatar className="h-full w-full">
@@ -1204,12 +1204,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-0.5">
-                    <h3 className="text-[#e9edef] font-normal truncate max-w-[70%] text-base">{conv.displayName}</h3>
-                    <span className="text-xs text-[#8696a0] whitespace-nowrap">
+                    <h3 className="text-[var(--cv-text)] font-normal truncate max-w-[70%] text-base">{conv.displayName}</h3>
+                    <span className="text-xs text-[var(--cv-text-muted)] whitespace-nowrap">
                       {conv.lastMessageDate ? formatHour(conv.lastMessageDate) : ''}
                     </span>
                   </div>
-                  <p className="text-[#8696a0] text-sm truncate flex items-center">
+                  <p className="text-[var(--cv-text-muted)] text-sm truncate flex items-center">
                     <span className="truncate">{conv.lastMessageContent || "Toque para abrir conversa"}</span>
                   </p>
                 </div>
@@ -1220,28 +1220,28 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       </div>
 
       {/* MAIN CHAT AREA */}
-      <div className={`${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-[#0b141a] relative w-full h-full`}>
+      <div className={`${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-[var(--cv-chat)] relative w-full h-full`}>
         {!selectedConversation && !selectedLead ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[#00a884] bg-[#222e35]">
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[var(--cv-accent)] bg-[var(--cv-empty)]">
             <div className="max-w-[560px]">
 
-              <h2 className="text-3xl font-light text-[#e9edef] mb-5">
+              <h2 className="text-3xl font-light text-[var(--cv-text)] mb-5">
                 Gerencie suas conversas
               </h2>
-              <p className="text-[#8696a0] text-sm leading-6">
+              <p className="text-[var(--cv-text-muted)] text-sm leading-6">
                 Selecione uma conversa para ver as mensagens.
               </p>
             </div>
-            <div className="absolute bottom-10 flex items-center gap-2 text-[#8696a0] text-xs">
+            <div className="absolute bottom-10 flex items-center gap-2 text-[var(--cv-text-muted)] text-xs">
               <span className="opacity-80">Protegido com criptografia de ponta a ponta</span>
             </div>
           </div>
         ) : (
           <>
             {/* CHAT HEADER */}
-            <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shadow-sm shrink-0 z-10 w-full">
+            <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shadow-sm shrink-0 z-10 w-full">
               <div className="flex items-center gap-3 overflow-hidden">
-                <Button variant="ghost" size="icon" className="md:hidden text-[#aebac1] mr-1" onClick={() => {
+                <Button variant="ghost" size="icon" className="md:hidden text-[var(--cv-icon)] mr-1" onClick={() => {
                   setShowSidebar(true);
                   setSelectedConversation(null);
                   setSelectedLead(null);
@@ -1254,15 +1254,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   </Avatar>
                 </div>
                 <div className="flex flex-col overflow-hidden">
-                  <span className="text-[#e9edef] font-normal text-base truncate cursor-pointer hover:underline">
+                  <span className="text-[var(--cv-text)] font-normal text-base truncate cursor-pointer hover:underline">
                     {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
                   </span>
-                  <p className="text-xs text-[#8696a0] truncate">
+                  <p className="text-xs text-[var(--cv-text-muted)] truncate">
                     {currentConversation?.leadPhone || selectedLead?.phone}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-4 text-[#aebac1]">
+              <div className="flex gap-4 text-[var(--cv-icon)]">
                 <Search className="h-5 w-5 cursor-pointer" />
                 {currentConversation && (
                   <ConversationActionsMenu conversation={currentConversation} onGenerateSummary={handleGenerateSummary} onFollowUp={handleFollowUp} />
@@ -1274,7 +1274,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             <div 
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-[#0b141a] bg-opacity-95"
+              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar bg-[var(--cv-chat)] bg-opacity-95"
               style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay' }}>
               <div className="space-y-2 pb-2">
                 {/* LEAD MESSAGES */}
@@ -1316,11 +1316,11 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </div>
 
             {/* INPUT AREA */}
-            <div className="min-h-[62px] bg-[#202c33] px-4 py-2 flex items-end gap-2 shrink-0 z-10 w-full">
-              <Button variant="ghost" size="icon" className="text-[#8696a0] hover:bg-transparent rounded-full mb-1">
+            <div className="min-h-[62px] bg-[var(--cv-panel)] px-4 py-2 flex items-end gap-2 shrink-0 z-10 w-full">
+              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1">
                 <span className="text-xl">😊</span>
               </Button>
-              <Button variant="ghost" size="icon" className="text-[#8696a0] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()}>
+              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()}>
                 <Paperclip className="h-5 w-5" />
               </Button>
               <input
@@ -1331,13 +1331,13 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 multiple={false}
               />
 
-              <div className="flex-1 bg-[#2a3942] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1">
+              <div className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]">
                 <textarea
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   onKeyDown={onTextareaKeyDown}
                   placeholder="Mensagem"
-                  className="w-full bg-transparent border-none outline-none text-[#d1d7db] placeholder-[#8696a0] text-sm resize-none custom-scrollbar max-h-[100px]"
+                  className="w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] text-sm resize-none custom-scrollbar max-h-[100px]"
                   rows={1}
                   style={{ minHeight: '24px' }}
                 />
@@ -1346,14 +1346,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               {messageInput.trim() ? (
                 <Button
                   onClick={sendText}
-                  className="bg-[#00a884] hover:bg-[#008f6f] text-[#111b21] rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-transform active:scale-95"
+                  className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-[var(--cv-tab-active-text)] rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-transform active:scale-95"
                 >
                   <Send className="h-5 w-5 ml-0.5" />
                 </Button>
               ) : (
                 <Button
                   onClick={recording ? stopRecord : startRecord}
-                  className={`rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-all ${recording ? "bg-red-500 animate-pulse text-white" : "bg-[#202c33] hover:bg-[#37404a] text-[#8696a0]"}`}
+                  className={`rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-all ${recording ? "bg-red-500 animate-pulse text-white" : "bg-[var(--cv-tab-inactive-bg)] hover:bg-[var(--cv-hover-strong)] text-[var(--cv-text-muted)]"}`}
                 >
                   <Mic className="h-5 w-5" />
                 </Button>
@@ -1370,14 +1370,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#0b141a] bg-opacity-95 flex flex-col"
+            className="fixed inset-0 z-50 bg-[var(--cv-chat)] bg-opacity-95 flex flex-col"
           >
             {/* Header Preview */}
-            <div className="h-16 flex items-center justify-between px-4 w-full text-[#aebac1]">
-              <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[#3b4a54] rounded-full">
+            <div className="h-16 flex items-center justify-between px-4 w-full text-[var(--cv-icon)]">
+              <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[var(--cv-preview-bar-hover)] rounded-full">
                 <ArrowLeft className="w-6 h-6" />
               </Button>
-              <h2 className="font-medium text-white">Visualizar {previewData.type === 'arquivo' ? 'Arquivo' : previewData.type === 'imagem' ? 'Imagem' : 'Mídia'}</h2>
+              <h2 className="font-medium text-[var(--cv-text)]">Visualizar {previewData.type === 'arquivo' ? 'Arquivo' : previewData.type === 'imagem' ? 'Imagem' : 'Mídia'}</h2>
               <div className="w-10"></div> {/* Spacer */}
             </div>
 
@@ -1386,7 +1386,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               {previewData.type === 'imagem' ? (
                 <img src={previewData.base64} alt="Preview" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
               ) : previewData.type === 'arquivo' ? (
-                <div className="flex flex-col items-center gap-4 text-zinc-300 p-10 bg-[#202c33] rounded-xl border border-zinc-700">
+                <div className="flex flex-col items-center gap-4 text-[var(--cv-text)] p-10 bg-[var(--cv-panel)] rounded-xl border border-[var(--cv-border)]">
                   <div className="w-20 h-20 bg-zinc-600 rounded-full flex items-center justify-center">
                     <Paperclip className="w-10 h-10 text-white" />
                   </div>
@@ -1406,13 +1406,13 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </div>
 
             {/* Caption Input */}
-            <div className="bg-[#202c33] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg">
+            <div className="bg-[var(--cv-panel)] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg border border-[var(--cv-border)]">
               <input
                 autoFocus
                 value={previewData.caption}
                 onChange={(e) => setPreviewData({ ...previewData, caption: e.target.value })}
                 placeholder="Adicione uma legenda..."
-                className="bg-transparent text-[#d1d7db] placeholder-[#8696a0] w-full outline-none px-4"
+                className="bg-transparent text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] w-full outline-none px-4"
                 onKeyDown={(e) => e.key === 'Enter' && sendPreview()}
               />
             </div>
@@ -1421,7 +1421,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             <div className="flex justify-end px-6 pb-6 w-full max-w-5xl mx-auto">
               <button
                 onClick={sendPreview}
-                className="bg-[#00a884] hover:bg-[#008f6f] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
               >
                 {busy ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-6 h-6 ml-0.5" />}
               </button>
