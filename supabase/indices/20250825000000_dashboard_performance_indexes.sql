@@ -77,13 +77,13 @@ ON whatsapp_messages (timestamp DESC, instance_id)
 WHERE from_me = true;
 
 -- =====================================================
--- TABELA: imobipro_messages (Fallback para Heatmap)
+-- TABELA: crm_whatsapp_messages (fallback heatmap)
 -- =====================================================
 
 -- Índice para heatmap alternativo (caso whatsapp_messages não exista)
 -- Suporta: WHERE data >= ? AND data <= ? + GROUP BY temporal + instancia
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_imobipro_messages_heatmap 
-ON imobipro_messages (data DESC, instancia);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_crm_whatsapp_messages_heatmap
+ON crm_whatsapp_messages (data DESC, instancia);
 
 -- =====================================================
 -- TABELA: whatsapp_instances
@@ -157,7 +157,7 @@ ESTIMATIVAS DE IMPACTO:
 
 3. MENSAGENS (Heatmap):
    - idx_whatsapp_messages_heatmap: Consultas de heatmap 10-20x mais rápidas
-   - idx_imobipro_messages_heatmap: Fallback eficiente
+   - idx_crm_whatsapp_messages_heatmap: fallback eficiente
 
 4. USUARIOS:
    - idx_user_profiles_corretor_active: Lookup de corretores otimizado

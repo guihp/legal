@@ -465,7 +465,7 @@ export type Database = {
           },
         ]
       }
-      imobipro_messages: {
+      crm_whatsapp_messages: {
         Row: {
           data: string | null
           id: number

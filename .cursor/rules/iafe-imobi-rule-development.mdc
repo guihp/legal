@@ -10,7 +10,7 @@ alwaysApply: true
 
 ---
 
-## 3. Banco de Dados — regras e convenções (alinhado ao schema-db-imobipro.md)
+## 3. Banco de Dados — regras e convenções
 
 * Nomenclatura: snake_case para tabelas/colunas (o schema atual já segue isso). Não usar PascalCase/camelCase no DB; use camelCase apenas em TypeScript.
 * IDs: preferir uuid (usar gen_random_uuid()), exceto quando legados exigirem outro tipo (documentar). Note que no schema algumas tabelas ainda têm id (text); padronizar quando possível.

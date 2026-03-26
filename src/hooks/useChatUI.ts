@@ -64,7 +64,7 @@ export function useChatUI() {
     try {
       // Ler da view normalizada, com escopo por role
       let query = supabase
-        .from('vw_imobipro_instances')
+        .from('vw_crm_whatsapp_instances')
         .select('*')
         .order('instancia_label', { ascending: true });
 
@@ -110,7 +110,7 @@ export function useChatUI() {
 
       // Ler da view normalizada (última mensagem por session)
       const { data, error } = await supabase
-        .from('vw_imobipro_conversas')
+        .from('vw_crm_whatsapp_conversas')
         .select('*')
         .eq('instancia_key', instancia.toLowerCase())
         .order('last_data', { ascending: false, nullsLast: true });
@@ -170,7 +170,7 @@ export function useChatUI() {
       }
 
       const { data, error } = await supabase
-        .from('vw_imobipro_messages')
+        .from('vw_crm_whatsapp_messages')
         .select('session_id, data, message')
         .eq('session_id', _chatId)
         .order('data', { ascending: true, nullsLast: true });

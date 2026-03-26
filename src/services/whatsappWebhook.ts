@@ -71,7 +71,7 @@ export async function sendWhatsAppMessage(payload: WhatsAppMessagePayload): Prom
         corretor_id: payload.corretor_id,
         corretor_nome: payload.corretor_nome,
         timestamp: payload.timestamp,
-        source: 'imobipro_dashboard',
+        source: 'iafe_imobi_dashboard',
         from_corretor: payload.from_corretor
       },
       

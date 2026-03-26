@@ -50,8 +50,8 @@
 - ✅ `idx_contracts_created_at_valor` - VGV por período
 - ✅ `idx_contracts_status_valor_created_at` - Agrupamento por status
 
-#### **IMOBIPRO_MESSAGES** (1 índice)
-- ✅ `idx_imobipro_messages_heatmap` - Heatmap alternativo
+#### **crm_whatsapp_messages** (1 índice)
+- ✅ `idx_crm_whatsapp_messages_heatmap` — heatmap alternativo
 
 ---
 
@@ -225,4 +225,4 @@ REINDEX INDEX idx_leads_source_created_at;
 **🔄 Compatibilidade**: 100% compatível com queries do `metrics.ts`  
 **📈 Benefício**: Dashboard responsivo + melhor UX em tempo real
 
-**Sistema de índices para dashboard IMOBIPRO**: ✅ **IMPLEMENTADO E ATIVO**
+**Sistema de índices para dashboard**: ✅ **IMPLEMENTADO E ATIVO**

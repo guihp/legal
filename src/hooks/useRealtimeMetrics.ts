@@ -35,7 +35,7 @@ const DEFAULT_TABLES = [
   'leads',
   'imoveisvivareal', 
   'whatsapp_messages',
-  'imobipro_messages',
+  'crm_whatsapp_messages',
   'whatsapp_instances',
   'contracts',
   'user_profiles'

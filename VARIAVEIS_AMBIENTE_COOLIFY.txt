@@ -8,7 +8,7 @@
 # ============================================
 # OBRIGATÓRIAS - Preencha com seus valores
 # ============================================
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
 VITE_SUPABASE_ANON_KEY=sua_anon_key_aqui
 
 # ============================================

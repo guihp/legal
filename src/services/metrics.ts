@@ -523,9 +523,9 @@ export async function getConvoHeatmap(options: DateRange, brokerId?: string): Pr
   try {
     console.log('🚀 Iniciando busca de heatmap de conversas...', { options, brokerId });
 
-    // Como whatsapp_messages não existe mais, ir direto para imobipro_messages
-    console.log('📞 Buscando dados de conversas em imobipro_messages (sistema atual)');
-    return await getHeatmapFromImobiproMessages(options, brokerId);
+    // Fallback: tabela consolidada crm_whatsapp_messages
+    console.log('📞 Buscando dados de conversas em crm_whatsapp_messages');
+    return await getHeatmapFromCrmWhatsappMessages(options, brokerId);
     
   } catch (error) {
     console.error('❌ Erro ao buscar dados de heatmap:', error);
@@ -577,9 +577,9 @@ async function getHeatmapFromWhatsAppMessages(options: DateRange, brokerId?: str
   }
 }
 
-async function getHeatmapFromImobiproMessages(options: DateRange, brokerFilter?: string): Promise<HeatmapData> {
+async function getHeatmapFromCrmWhatsappMessages(options: DateRange, brokerFilter?: string): Promise<HeatmapData> {
   try {
-    console.log('🔍 Buscando dados do heatmap em imobipro_messages...', { 
+    console.log('🔍 Buscando dados do heatmap em crm_whatsapp_messages...', { 
       from: options.from.toISOString(), 
       to: options.to.toISOString(),
       brokerFilter 
@@ -618,7 +618,7 @@ async function getHeatmapFromImobiproMessages(options: DateRange, brokerFilter?:
     }
 
     let query = supabase
-      .from('imobipro_messages')
+      .from('crm_whatsapp_messages')
       .select('data, instancia')
       .gte('data', options.from.toISOString())
       .lte('data', options.to.toISOString());
@@ -634,7 +634,7 @@ async function getHeatmapFromImobiproMessages(options: DateRange, brokerFilter?:
     const { data, error } = await query;
 
     if (error) {
-      console.error('❌ Erro na query imobipro_messages:', error);
+      console.error('❌ Erro na query crm_whatsapp_messages:', error);
       throw error;
     }
 
@@ -650,7 +650,7 @@ async function getHeatmapFromImobiproMessages(options: DateRange, brokerFilter?:
     return result;
     
   } catch (error) {
-    console.error('Erro ao buscar dados do imobipro_messages:', error);
+    console.error('Erro ao buscar dados do crm_whatsapp_messages:', error);
     throw error;
   }
 }

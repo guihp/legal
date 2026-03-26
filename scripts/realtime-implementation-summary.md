@@ -20,7 +20,7 @@ const DEFAULT_TABLES = [
   'leads',                // Leads do funil
   'imoveisvivareal',     // Propriedades/imóveis
   'whatsapp_messages',   // Mensagens WhatsApp
-  'imobipro_messages',   // Mensagens alternativas
+  'crm_whatsapp_messages',   // Mensagens consolidadas
   'whatsapp_instances',  // Instâncias de WhatsApp
   'contracts',           // Contratos (VGV)
   'user_profiles'        // Perfis de usuários/corretores
@@ -258,7 +258,7 @@ const { data, isLoading, refetch } = useRealtimeMetricsWithCache(
 
 ### 🎯 **Resultado Final**
 
-O dashboard ImobiPRO agora possui **sistema de tempo real profissional** que:
+O dashboard IAFÉ IMOBI agora possui **sistema de tempo real profissional** que:
 
 1. **Monitora 7 tabelas críticas** automaticamente
 2. **Atualiza métricas** instantaneamente quando dados mudam

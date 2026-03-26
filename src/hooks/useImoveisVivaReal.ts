@@ -84,6 +84,11 @@ export function useImoveisVivaReal(initial?: {
         .from('imoveisvivareal')
         .select('*', { count: 'exact' });
 
+      // Defesa extra no client: sempre escopar por company_id quando disponível
+      if (profile?.company_id) {
+        query = query.eq('company_id', profile.company_id);
+      }
+
       if (filters.search && filters.search.trim().length > 0) {
         const term = filters.search.trim();
         query = query.or(

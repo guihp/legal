@@ -195,7 +195,7 @@ export function PortalsView() {
       // Rodapé
       const pageHeight = doc.internal.pageSize.height;
       doc.setFontSize(8);
-      doc.text('Relatório gerado pelo Sistema ImobiPro', 20, pageHeight - 20);
+      doc.text('Relatório gerado pelo Sistema IAFÉ IMOBI', 20, pageHeight - 20);
       doc.text(`© ${new Date().getFullYear()} - Todos os direitos reservados`, 20, pageHeight - 10);
       
       // Salvar o PDF

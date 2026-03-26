@@ -50,7 +50,7 @@ CREATE TABLE public.company_features (
 CREATE TABLE public.company_settings (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL,
-    display_name TEXT NOT NULL DEFAULT 'ImobiPro'::text,
+    display_name TEXT NOT NULL DEFAULT 'IAFÉ IMOBI'::text,
     display_subtitle TEXT NOT NULL DEFAULT 'Gestão Imobiliária'::text,
     logo_url TEXT,
     theme TEXT NOT NULL DEFAULT 'dark'::text,
@@ -163,12 +163,12 @@ CREATE TABLE public.dispatch_configurations (
 );
 
 -- Create sequences for integer ID tables
-CREATE SEQUENCE IF NOT EXISTS imobipro_messages1_id_seq;
+CREATE SEQUENCE IF NOT EXISTS crm_whatsapp_messages_id_seq;
 CREATE SEQUENCE IF NOT EXISTS imoveisvivareal_id_seq;
 
--- ImobiPro messages table
-CREATE TABLE public.imobipro_messages (
-    id INTEGER NOT NULL DEFAULT nextval('imobipro_messages1_id_seq'::regclass),
+-- Mensagens WhatsApp (tabela consolidada)
+CREATE TABLE public.crm_whatsapp_messages (
+    id INTEGER NOT NULL DEFAULT nextval('crm_whatsapp_messages_id_seq'::regclass),
     session_id VARCHAR(255) NOT NULL,
     message JSONB NOT NULL,
     data TIMESTAMP DEFAULT now(),
@@ -323,13 +323,13 @@ CREATE TABLE public.user_profiles (
     chat_instance TEXT
 );
 
--- WhatsApp chats table (REMOVED - using imobipro_messages instead)
+-- WhatsApp chats table (REMOVED - using crm_whatsapp_messages instead)
 
 -- WhatsApp instances table (REMOVED - using external N8N endpoints)
 -- All WhatsApp functionality now handled via external webhooks
 -- See: https://devlabz.n8nlabz.com.br/webhook/* endpoints
 
--- WhatsApp messages table (REMOVED - using imobipro_messages instead)
+-- WhatsApp messages table (REMOVED - using crm_whatsapp_messages instead)
 
 -- =============================================================================
 -- CONSTRAINTS AND INDEXES
@@ -343,7 +343,7 @@ ALTER TABLE public.company_settings ADD CONSTRAINT company_settings_pkey PRIMARY
 ALTER TABLE public.contract_templates ADD CONSTRAINT contract_templates_pkey PRIMARY KEY (id);
 ALTER TABLE public.contracts ADD CONSTRAINT contracts_pkey PRIMARY KEY (id);
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_pkey PRIMARY KEY (id);
-ALTER TABLE public.imobipro_messages ADD CONSTRAINT imobipro_messages1_pkey PRIMARY KEY (id);
+ALTER TABLE public.crm_whatsapp_messages ADD CONSTRAINT crm_whatsapp_messages_pkey PRIMARY KEY (id);
 ALTER TABLE public.imoveisvivareal ADD CONSTRAINT imoveisvivareal_pkey PRIMARY KEY (id);
 ALTER TABLE public.inquilinato_conversations ADD CONSTRAINT inquilinato_conversations_pkey PRIMARY KEY (id);
 ALTER TABLE public.inquilinato_messages ADD CONSTRAINT inquilinato_messages_pkey PRIMARY KEY (id);
@@ -377,7 +377,7 @@ ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_company_id_f
 ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
 -- Property tables removed - using imoveisvivareal instead
 ALTER TABLE public.user_profiles ADD CONSTRAINT user_profiles_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
--- WhatsApp instances, chats and messages tables removed - using external endpoints and imobipro_messages
+-- WhatsApp instances, chats and messages tables removed - using external endpoints and crm_whatsapp_messages
 
 -- Unique Constraints
 ALTER TABLE public.company_settings ADD CONSTRAINT company_settings_company_id_key UNIQUE (company_id);
@@ -659,7 +659,7 @@ AS $$
         or (me.role = 'corretor' and l.id_corretor_responsavel = me.uid)
         -- ou se já houve handoff (existe msg com sua instancia)
         or (me.role = 'corretor' and exists (
-             select 1 from public.imobipro_messages m
+             select 1 from public.crm_whatsapp_messages m
              where m.session_id = l.id::text
                and m.instancia = me.chat_instance
            ))
@@ -668,7 +668,7 @@ AS $$
   handoff as (
     -- início do atendimento humano para ESTE usuário (primeira msg com a instancia dele)
     select min(m.data) as ts
-    from public.imobipro_messages m, me
+    from public.crm_whatsapp_messages m, me
     where m.session_id = p_session_id
       and m.instancia = me.chat_instance
   )
@@ -682,7 +682,7 @@ AS $$
     -- true para mensagens anteriores ao handoff (usado para pintar/cinzar e inserir o divisor)
     (handoff.ts is not null and m.data < handoff.ts) as before_handoff,
     handoff.ts as handoff_ts
-  from public.imobipro_messages m
+  from public.crm_whatsapp_messages m
   join allowed_sessions s on s.sid = m.session_id
   left join handoff on true
   where m.session_id = p_session_id
@@ -747,7 +747,7 @@ CREATE TRIGGER update_leads_updated_at BEFORE UPDATE ON public.leads FOR EACH RO
 CREATE TRIGGER update_oncall_schedules_updated_at BEFORE UPDATE ON public.oncall_schedules FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_role_permissions_updated_at BEFORE UPDATE ON public.role_permissions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON public.user_profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
--- WhatsApp instances, chats and messages triggers removed - using external endpoints and imobipro_messages
+-- WhatsApp instances, chats and messages triggers removed - using external endpoints and crm_whatsapp_messages
 
 -- Special triggers
 CREATE TRIGGER set_contract_template_defaults_trigger BEFORE INSERT ON public.contract_templates FOR EACH ROW EXECUTE FUNCTION public.set_contract_template_defaults();
@@ -771,7 +771,7 @@ ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.oncall_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
--- WhatsApp instances, chats and messages RLS removed - using external endpoints and imobipro_messages
+-- WhatsApp instances, chats and messages RLS removed - using external endpoints and crm_whatsapp_messages
 
 -- Audit logs policies
 CREATE POLICY "audit_logs_insert_system" ON public.audit_logs
@@ -1093,6 +1093,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(create
 -- - Performance indexes on key columns
 -- - Triggers for automatic field updates
 -- - Removed: properties, property_images, whatsapp_instances, whatsapp_chats, whatsapp_messages, oncall_events
--- - Using: imoveisvivareal (properties), imobipro_messages (chat), external N8N webhooks (WhatsApp instances)
+-- - Using: imoveisvivareal (properties), crm_whatsapp_messages (chat), external N8N webhooks (WhatsApp instances)
 
-COMMENT ON SCHEMA public IS 'Complete ImobiPro database schema - WhatsApp via external endpoints';
+COMMENT ON SCHEMA public IS 'IAFÉ IMOBI — schema principal; WhatsApp via endpoints externos';

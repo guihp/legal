@@ -1,6 +1,6 @@
 # 🚀 Guia de Deploy no Coolify
 
-Este documento descreve como fazer deploy do IMOBIPRO no Coolify.
+Este documento descreve como fazer deploy do IAFÉ IMOBI no Coolify.
 
 ## ✅ Pré-requisitos
 
@@ -23,7 +23,8 @@ No painel do Coolify, adicione as seguintes variáveis de ambiente no campo **"E
 #### **Obrigatórias:**
 
 ```env
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+# Projeto Supabase atual (imobi): bfcssdogttmqeujgmxdf
+VITE_SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
 VITE_SUPABASE_ANON_KEY=sua_anon_key_aqui
 ```
 

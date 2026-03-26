@@ -8,6 +8,20 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
+/** Planos com vitrine pública automática (site em /s/{slug}) */
+const PLANS_WITH_PUBLIC_SITE = new Set(['professional', 'enterprise'])
+
+function slugifyCompanySite(input: string): string {
+  const s = String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  return s || 'imobiliaria'
+}
+
 serve(async (req) => {
   console.log('🚀 Edge Function create-company-with-user chamada');
   console.log('📝 Método:', req.method);
@@ -102,7 +116,7 @@ serve(async (req) => {
       cnpj,
       phone,
       address,
-      plan = 'basic',
+      plan = 'essential',
       trial_days = 14,
       max_users = 10
     } = body;
@@ -335,7 +349,58 @@ serve(async (req) => {
 
     console.log('✅ Perfil criado:', userProfile);
 
-    // 4. Registrar no log de acesso
+    // 4. Vitrine pública (company_websites) — planos Professional / Enterprise
+    let site_slug: string | null = null
+    const displayName = (name || `Empresa ${phoneClean}`).trim()
+    if (PLANS_WITH_PUBLIC_SITE.has(String(plan || '').toLowerCase())) {
+      const { data: already } = await supabaseAdmin
+        .from('company_websites')
+        .select('id, slug')
+        .eq('company_id', companyId)
+        .maybeSingle()
+
+      if (!already) {
+        const base = slugifyCompanySite(displayName)
+        const shortId = String(companyId).replace(/-/g, '').slice(0, 8)
+        const candidates = [base, `${base}-${shortId}`]
+        for (let i = 2; i < 60; i++) candidates.push(`${base}-${i}`)
+
+        let chosen = base
+        for (const slug of candidates) {
+          const { data: clash } = await supabaseAdmin
+            .from('company_websites')
+            .select('id')
+            .eq('slug', slug)
+            .maybeSingle()
+          if (!clash) {
+            chosen = slug
+            break
+          }
+        }
+
+        const { error: siteError } = await supabaseAdmin.from('company_websites').insert({
+          company_id: companyId,
+          slug: chosen,
+          title: displayName,
+          description:
+            'Confira nossos imóveis e fale com nossa equipe. Conteúdo editável pelo painel em Marketing.',
+          is_published: true,
+          theme_color: '#3B82F6',
+        })
+
+        if (siteError) {
+          console.error('⚠️ Erro ao criar company_websites (não bloqueia criação da empresa):', siteError)
+        } else {
+          site_slug = chosen
+          console.log('✅ Vitrine criada:', chosen)
+        }
+      } else {
+        site_slug = already.slug
+        console.log('ℹ️ Empresa já possui company_websites:', site_slug)
+      }
+    }
+
+    // 5. Registrar no log de acesso
     try {
       await supabaseClient
         .from('company_access_logs')
@@ -361,7 +426,9 @@ serve(async (req) => {
         company_id: companyId,
         user_id: authUser.user.id,
         email: login_email.trim().toLowerCase(),
-        password: generatedPassword
+        password: generatedPassword,
+        site_slug,
+        plan,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

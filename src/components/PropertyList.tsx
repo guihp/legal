@@ -328,15 +328,23 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const fetchImoveisStats = async () => {
     try {
       setStatsLoading(true);
-      const totalResPromise = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }) as Promise<any>;
-      const dispResPromise = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel') as Promise<any>;
+      const companyId = profile?.company_id;
+      const base = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }) as any;
+      const scoped = companyId ? base.eq('company_id', companyId) : base;
+
+      const totalResPromise = scoped as Promise<any>;
+      const dispResPromise = (companyId
+        ? (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('disponibilidade', 'disponivel')
+        : (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel')) as Promise<any>;
       const aluguelResPromise = (supabase as any)
         .from('imoveisvivareal')
         .select('id', { count: 'exact', head: true })
+        .match(companyId ? { company_id: companyId } : {})
         .in('modalidade', ['Rent', 'Sale/Rent']) as Promise<any>;
       const vendaResPromise = (supabase as any)
         .from('imoveisvivareal')
         .select('id', { count: 'exact', head: true })
+        .match(companyId ? { company_id: companyId } : {})
         .in('modalidade', ['For Sale', 'Sale/Rent']) as Promise<any>;
 
       const [totalRes, dispRes, aluguelRes, vendaRes] = await Promise.all([totalResPromise, dispResPromise, aluguelResPromise, vendaResPromise]);
@@ -354,7 +362,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   useEffect(() => {
     fetchImoveisStats();
-  }, []);
+  }, [profile?.company_id]);
 
   // Real-time: atualiza métricas quando houver qualquer mudança em public.imoveisvivareal
   useEffect(() => {
@@ -1503,10 +1511,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 onClick={() => setIsVivaRealModalOpen(true)}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg"
+                className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg whitespace-normal h-auto min-h-10 px-4 py-2 leading-snug"
               >
-                <Upload className="h-4 w-4 mr-2" />
-                Adicionar Imóveis VivaReal
+                <Upload className="h-4 w-4 mr-2 shrink-0" />
+                <span className="text-center sm:text-left">Adicionar Imóveis VivaReal</span>
               </Button>
             </motion.div>
             </div>
@@ -2263,7 +2271,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           alt={`Imagem ${idx + 1}`}
                           className="w-full h-24 object-cover rounded-md border border-gray-700"
                           onError={(e) => {
-                            handleImageErrorWithFallback(e, url, '/placeholder-property.jpg', 'thumbnail');
+                            handleImageErrorWithFallback(e, url, '/placeholder-property.jpg');
                           }}
                         />
                         <button

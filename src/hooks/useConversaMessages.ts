@@ -391,11 +391,11 @@ export function useConversaMessages() {
 
     // nova assinatura filtrada
     const channel = supabase
-      .channel(`imobi_msgs_${sessionId}_${Date.now()}`)
+      .channel(`crm_wa_msgs_${sessionId}_${Date.now()}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: `imobipro_messages_${companyPhoneRef.current}`,
+        table: `crm_whatsapp_messages_${companyPhoneRef.current}`,
         filter: `session_id=eq.${sessionId}`
       } as any, (payload: any) => {
         if ((import.meta as any).env?.DEV) console.info('[chat RT]', payload.eventType, payload.new?.id || payload.old?.id);

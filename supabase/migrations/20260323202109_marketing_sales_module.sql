@@ -84,6 +84,7 @@ CREATE OR REPLACE FUNCTION public.increment_page_view(page_id UUID)
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public
 AS $$
   UPDATE public.property_landing_pages
   SET views = views + 1

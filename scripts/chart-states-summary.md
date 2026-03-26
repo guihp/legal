@@ -2,7 +2,7 @@
 
 ## ✅ Implementação Concluída
 
-Criados **3 componentes padronizados** para todos os estados de gráficos no sistema ImobiPRO.
+Criados **3 componentes padronizados** para todos os estados de gráficos no sistema IAFÉ IMOBI.
 
 ### 📄 Arquivos Criados
 

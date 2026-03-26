@@ -53,7 +53,7 @@ export function useConversasRealtime(callbacks: RealtimeCallbacks) {
   useEffect(() => {
     if (!profile) return;
 
-    // Subscrever inserções na tabela imobipro_messages
+    // Subscrever inserções na tabela dinâmica crm_whatsapp_messages_{telefone}
     // Buscar telefone da empresa para saber qual tabela escutar
     const setupSubscription = async () => {
       try {
@@ -69,7 +69,7 @@ export function useConversasRealtime(callbacks: RealtimeCallbacks) {
         }
 
         const cleanPhone = data.phone.replace(/\D/g, '');
-        const tableName = `imobipro_messages_${cleanPhone}`;
+        const tableName = `crm_whatsapp_messages_${cleanPhone}`;
         console.log(`[Realtime] Escutando tabela dinâmica: ${tableName}`);
 
         const subscription = supabase

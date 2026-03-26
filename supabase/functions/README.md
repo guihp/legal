@@ -1,6 +1,6 @@
-# Edge Functions - IMOBIPRO System
+# Edge Functions — IAFÉ IMOBI
 
-Este diretório contém as Edge Functions do sistema IMOBIPRO. Estas funções executam lógica server-side com permissões SERVICE_ROLE para operações que requerem privilégios elevados.
+Este diretório contém as Edge Functions do projeto. Executam lógica server-side com permissões SERVICE_ROLE quando necessário.
 
 ## Functions Disponíveis
 
@@ -116,7 +116,7 @@ As functions precisam das seguintes variáveis configuradas no projeto Supabase:
 
 ```bash
 # Via Supabase CLI
-supabase secrets set SUPABASE_URL=https://seu-projeto.supabase.co
+supabase secrets set SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
 supabase secrets set SUPABASE_ANON_KEY=sua-anon-key
 
 # Via Supabase Dashboard

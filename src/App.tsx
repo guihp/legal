@@ -39,16 +39,37 @@ function AppContent() {
 
   const hostname = window.location.hostname;
   const parts = hostname.split('.');
-  
-  // Considera subdomínio se: (ex: jastelo.localhost) -> parts[1] == 'localhost' ou se (jastelo.iafeoficial.com) -> parts.length >= 3 && parts[0] !== 'www'
-  // Também evitamos considerar subdomínios padrão como "app.iafeoficial.com" caso o crm seja no app. Mas assumimos que o CRM roda no domínio raiz ou app.
-  // Vamos simplificar e não usar subdomínio se for "app" ou "admin" ou "www" ou IP
+
   const blockedSubdomains = ['www', 'app', 'admin'];
   const isIp = /^[0-9.]+$/.test(hostname);
-  
-  const isSubdomain = !isIp && parts.length >= 2 && !blockedSubdomains.includes(parts[0]) && 
-    ((parts.length >= 3 && parts[1] !== 'localhost') || (parts.length === 2 && parts[1] === 'localhost'));
-  
+
+  // Domínio raiz configurado (não deve ser interpretado como slug de empresa)
+  const configuredSiteDomain = (import.meta as any)?.env?.VITE_PUBLIC_SITE_DOMAIN as string | undefined;
+  const configuredAppUrl = (import.meta as any)?.env?.VITE_PUBLIC_APP_URL as string | undefined;
+  const configuredAppHost = (() => {
+    try {
+      return configuredAppUrl ? new URL(configuredAppUrl).hostname : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+
+  const rootHost = (configuredSiteDomain || configuredAppHost || '').trim();
+  const rootPartsCount = rootHost ? rootHost.split('.').length : 0;
+
+  // Considera subdomínio de empresa apenas quando houver algo ANTES do domínio raiz.
+  // Ex: jastelo.imobi.iafeoficial.com (4 partes) -> subdomainSlug=jastelo
+  // Ex: imobi.iafeoficial.com (3 partes, domínio raiz) -> NÃO é subdomínio
+  // Ex: jastelo.localhost (2 partes) -> subdomainSlug=jastelo
+  const isLocalhostSubdomain = parts.length === 2 && parts[1] === 'localhost' && !blockedSubdomains.includes(parts[0]);
+  const isCompanySubdomain =
+    !isIp &&
+    !!rootHost &&
+    hostname.endsWith(rootHost) &&
+    parts.length === rootPartsCount + 1 &&
+    !blockedSubdomains.includes(parts[0]);
+
+  const isSubdomain = isLocalhostSubdomain || isCompanySubdomain;
   const subdomainSlug = isSubdomain ? parts[0] : null;
 
   // Se for rota pública, não exige perfil nem acesso
@@ -186,6 +207,8 @@ function AppContent() {
         <Route path="/permissions" element={<Index />} />
         <Route path="/inquilinato" element={<Index />} />
         <Route path="/marketing" element={<Index />} />
+        <Route path="/marketing-site" element={<Index />} />
+        <Route path="/marketing-lps" element={<Index />} />
         <Route path="/partnerships" element={<Index />} />
         <Route path="/disparador" element={<Index />} />
         <Route path="/conversas" element={<Index />} />

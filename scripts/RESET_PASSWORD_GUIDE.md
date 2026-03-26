@@ -1,6 +1,6 @@
 # 🔐 Guia para Resetar Senhas de Usuários
 
-Este guia explica como resetar senhas de usuários no sistema IMOBIPRO.
+Este guia explica como resetar senhas de usuários no sistema IAFÉ IMOBI.
 
 ## 📋 Métodos Disponíveis
 
@@ -21,7 +21,7 @@ Este guia explica como resetar senhas de usuários no sistema IMOBIPRO.
 #### **Passo 1: Fazer Deploy da Edge Function**
 
 ```bash
-cd /Volumes/HD/Downloads/imobipro-main
+cd /caminho/do/repositorio/legal
 
 # Fazer login no Supabase CLI
 supabase login
@@ -54,7 +54,7 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmY3NzZG9ndHRtcWV1amdteGRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MjMwOTcsImV4cCI6MjA3NjA5OTA5N30.fVPtCjUKT3upBOIf7mm9pB2uxqlMfnMZjYd2cmb9bdg'
 );
 supabase.auth.signInWithPassword({
-  email: 'admin@imobipro.com',
+  email: 'admin@iafeimobi.local',
   password: 'admin123'
 }).then(({ data, error }) => {
   if (error) console.error('Erro:', error);

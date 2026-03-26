@@ -1,4 +1,4 @@
--- Migration: Criar automaticamente tabela imobipro_messages_{phone} quando uma empresa for criada
+-- Migration: Criar automaticamente tabela crm_whatsapp_messages_{phone} quando uma empresa for criada
 -- Cria a tabela específica da empresa com a estrutura necessária
 
 -- Função para criar a tabela de mensagens da empresa
@@ -15,7 +15,7 @@ BEGIN
   phone_clean := regexp_replace(p_whatsapp_ai_phone, '[^0-9]', '', 'g');
   
   -- Construir nome da tabela
-  table_name := 'imobipro_messages_' || phone_clean;
+  table_name := 'crm_whatsapp_messages_' || phone_clean;
   
   -- Verificar se a tabela já existe
   IF EXISTS (
@@ -27,16 +27,16 @@ BEGIN
     RETURN;
   END IF;
   
-  -- Criar a tabela com a estrutura da tabela original imobipro_messages
+  -- Criar a tabela com a estrutura da tabela original crm_whatsapp_messages
   EXECUTE format('
     CREATE TABLE IF NOT EXISTS public.%I (
-      id INTEGER NOT NULL DEFAULT nextval(''imobipro_messages1_id_seq''::regclass),
+      id INTEGER NOT NULL DEFAULT nextval(''public.crm_whatsapp_messages_id_seq''::regclass),
       session_id VARCHAR(255) NOT NULL,
       message JSONB NOT NULL,
       data TIMESTAMP DEFAULT now(),
       media TEXT,
       instancia TEXT DEFAULT ''sdr''::text,
-      CONSTRAINT %I_pkey PRIMARY KEY (id)
+      CONSTRAINT %I PRIMARY KEY (id)
     )
   ', table_name, table_name || '_pkey');
   
@@ -51,7 +51,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.create_company_messages_table IS 'Cria automaticamente a tabela imobipro_messages_{phone} para uma empresa';
+COMMENT ON FUNCTION public.create_company_messages_table IS 'Cria automaticamente a tabela crm_whatsapp_messages_{phone} para uma empresa';
 
 -- Função trigger que será chamada quando uma empresa for criada
 CREATE OR REPLACE FUNCTION public.trigger_create_company_messages_table()

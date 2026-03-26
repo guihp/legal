@@ -27,7 +27,7 @@ BEGIN
   phone_clean := regexp_replace(p_phone, '[^0-9]', '', 'g');
   
   -- Construir nome da tabela (usar prefixo v_ para evitar ambiguidade)
-  v_table_name := 'imobipro_messages_' || phone_clean;
+  v_table_name := 'crm_whatsapp_messages_' || phone_clean;
   
   -- Verificar se a tabela existe (usar alias para evitar ambiguidade)
   IF NOT EXISTS (
@@ -76,4 +76,4 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.conversation_for_user_by_phone IS 'Busca mensagens da tabela dinâmica imobipro_messages_{phone} para uma sessão específica';
+COMMENT ON FUNCTION public.conversation_for_user_by_phone IS 'Busca mensagens da tabela dinâmica crm_whatsapp_messages_{phone} para uma sessão específica';

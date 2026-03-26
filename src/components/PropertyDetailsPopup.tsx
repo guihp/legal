@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MapPin, Bed, Bath, Square, Calendar, X, Shield, Globe, Link as LinkIcon, Copy } from "lucide-react";
+import { MapPin, Bed, Bath, Square, Calendar, X, Shield, Globe, Link as LinkIcon, Copy, ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useState, useEffect } from "react";
@@ -35,38 +36,64 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
   const [lpSlug, setLpSlug] = useState('');
   const [lpTitle, setLpTitle] = useState('');
   const [lpPublished, setLpPublished] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+
+  /* LP: carrega só ao abrir o modal (evita request a cada abertura do popup do imóvel) */
+  useEffect(() => {
+    if (!lpOpen || !property) return;
+    loadLpData();
+    // loadLpData usa `property` e `profile` atuais ao abrir o modal LP
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- disparamos só por lpOpen / troca de imóvel
+  }, [lpOpen, property?.id]);
 
   useEffect(() => {
     if (open && property) {
-      loadLpData();
+      setGalleryIndex(0);
     }
-  }, [open, property]);
+  }, [open, property?.id]);
+
+  const resolveLpCompanyId = (): string | null => {
+    const fromProperty = (property as { company_id?: string | null })?.company_id;
+    return profile?.company_id ?? fromProperty ?? null;
+  };
 
   const loadLpData = async () => {
     if (!property) return;
-    
+    const companyId = resolveLpCompanyId();
+    if (!companyId) {
+      toast.error('Não foi possível identificar a empresa do imóvel.');
+      return;
+    }
+
     try {
       setLpLoading(true);
       const { data, error } = await supabase
         .from('property_landing_pages')
         .select('*')
         .eq('property_id', property.id)
+        .eq('company_id', companyId)
         .maybeSingle();
-      
+
+      if (error) {
+        console.error(error);
+        toast.error('Erro ao carregar dados da landing page.');
+        return;
+      }
+
       if (data) {
         setLpData(data);
-        setLpSlug(data.slug || '');
-        setLpTitle(data.title || '');
-        setLpPublished(data.is_published || false);
+        setLpSlug((data as { slug?: string }).slug || '');
+        setLpTitle((data as { page_title?: string | null }).page_title || '');
+        setLpPublished(!!(data as { is_published?: boolean }).is_published);
       } else {
         setLpData(null);
-        // Sugerir slug baseado no ID
         setLpSlug(`imovel-${property.id}`);
-        setLpTitle(property.title || 'Lindo Imóvel');
+        setLpTitle(property.title || '');
         setLpPublished(false);
       }
     } catch (err) {
       console.error(err);
+      toast.error('Erro ao carregar landing page.');
     } finally {
       setLpLoading(false);
     }
@@ -77,41 +104,59 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
       toast.error('O link (slug) é obrigatório.');
       return;
     }
-    
-    // Validar slug básico (letras, numeros, hifens)
+
     if (!/^[a-z0-9-]+$/.test(lpSlug)) {
-      toast.error("O link deve conter apenas letras minúsculas, números e hifens.");
+      toast.error('O link deve conter apenas letras minúsculas, números e hifens.');
+      return;
+    }
+
+    const companyId = resolveLpCompanyId();
+    if (!companyId) {
+      toast.error('Empresa não identificada. Faça login novamente.');
+      return;
+    }
+
+    const propertyCompanyId = (property as { company_id?: string | null })?.company_id;
+    if (propertyCompanyId && propertyCompanyId !== companyId) {
+      toast.error('Este imóvel não pertence à sua empresa.');
       return;
     }
 
     try {
-      const payload = {
-        property_id: Number(property!.id),
-        slug: lpSlug,
-        title: lpTitle,
-        is_published: lpPublished,
-        theme_color: '#3B82F6' // Padrão
-      };
+      const pageTitle = lpTitle.trim() || null;
 
       if (lpData?.id) {
         const { error } = await supabase
           .from('property_landing_pages')
-          .update(payload)
-          .eq('id', lpData.id);
+          .update({
+            slug: lpSlug,
+            is_published: lpPublished,
+            page_title: pageTitle,
+          })
+          .eq('id', lpData.id)
+          .eq('company_id', companyId);
         if (error) throw error;
-        toast.success("Landing Page atualizada!");
+        setLpData({ ...lpData, slug: lpSlug, is_published: lpPublished, page_title: pageTitle });
+        toast.success('Landing page atualizada!');
       } else {
         const { data, error } = await supabase
           .from('property_landing_pages')
-          .insert(payload)
+          .insert({
+            property_id: Number(property!.id),
+            company_id: companyId,
+            slug: lpSlug,
+            is_published: lpPublished,
+            page_title: pageTitle,
+          })
           .select()
           .single();
         if (error) throw error;
         setLpData(data);
-        toast.success("Landing Page gerada com sucesso!");
+        toast.success('Landing page criada com sucesso!');
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao gerar LP. Link já existente?');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg || 'Erro ao salvar. O slug pode já estar em uso por outro imóvel.');
     }
   };
 
@@ -156,9 +201,25 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
+  const galleryImages = property.property_images ?? [];
+  const galleryLen = galleryImages.length;
+  const activeGalleryIndex = galleryLen > 0 ? Math.min(galleryIndex, galleryLen - 1) : 0;
+  const activeGalleryImage = galleryLen > 0 ? galleryImages[activeGalleryIndex] : null;
+
+  const goPrevImage = () => {
+    if (galleryLen < 2) return;
+    setGalleryIndex((i) => (i - 1 + galleryLen) % galleryLen);
+  };
+
+  const goNextImage = () => {
+    if (galleryLen < 2) return;
+    setGalleryIndex((i) => (i + 1) % galleryLen);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border text-foreground">
+      <DialogContent className="max-w-4xl w-[min(100%,896px)] max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 bg-background border-border text-foreground">
+        <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-border/60">
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
@@ -207,35 +268,102 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
             </DialogClose>
           </div>
         </DialogHeader>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Imagens */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Imagens</h3>
-            {property.property_images && property.property_images.length > 0 ? (
-              <div className="grid grid-cols-1 gap-3">
-                {property.property_images.map((image, index) => (
-                  <div key={image.id} className="aspect-video bg-muted rounded-lg overflow-hidden">
-                    <img 
-                      src={convertGoogleDriveUrl(image.image_url, 'medium')} 
-                      alt={`${property.title} - Imagem ${index + 1}`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain lg:flex-row lg:overflow-hidden">
+          {/* Galeria: preview fixo + miniaturas com scroll próprio */}
+          <div className="flex w-full flex-shrink-0 flex-col border-b border-border/60 bg-muted/25 lg:w-[min(100%,380px)] lg:overflow-hidden lg:border-b-0 lg:border-r">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+              <div className="flex flex-shrink-0 items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Imagens</h3>
+                {galleryLen > 0 && (
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {activeGalleryIndex + 1} / {galleryLen}
+                  </span>
+                )}
+              </div>
+
+              <div className="relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-muted">
+                {activeGalleryImage ? (
+                  <>
+                    <img
+                      src={convertGoogleDriveUrl(activeGalleryImage.image_url, 'full')}
+                      alt={`${property.title} - Imagem ${activeGalleryIndex + 1}`}
+                      className="max-h-[min(28vh,220px)] min-h-[160px] w-full object-contain sm:min-h-[200px] sm:max-h-[min(38vh,320px)]"
+                      loading="eager"
                       onError={(e) => {
-                        handleImageErrorWithFallback(e, image.image_url, '/placeholder-property.jpg');
+                        handleImageErrorWithFallback(e, activeGalleryImage.image_url, '/placeholder-property.jpg');
                       }}
                     />
+                    {galleryLen > 1 && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="absolute left-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border border-border bg-background/90 shadow-md hover:bg-background"
+                          onClick={goPrevImage}
+                          aria-label="Imagem anterior"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border border-border bg-background/90 shadow-md hover:bg-background"
+                          onClick={goNextImage}
+                          aria-label="Próxima imagem"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </Button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex min-h-[200px] w-full items-center justify-center py-12">
+                    <span className="text-muted-foreground">Nenhuma imagem disponível</span>
                   </div>
-                ))}
+                )}
               </div>
-            ) : (
-              <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                <span className="text-muted-foreground">Nenhuma imagem disponível</span>
-              </div>
-            )}
+
+              {galleryLen > 1 && (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <p className="mb-2 text-xs text-muted-foreground">Clique na miniatura para ampliar</p>
+                  <div className="max-h-[min(24vh,200px)] overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] sm:max-h-[min(30vh,240px)]">
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+                      {galleryImages.map((image, index) => (
+                        <button
+                          key={image.id}
+                          type="button"
+                          onClick={() => setGalleryIndex(index)}
+                          className={cn(
+                            'aspect-video overflow-hidden rounded-md border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            index === activeGalleryIndex
+                              ? 'border-primary ring-2 ring-primary/25'
+                              : 'border-transparent opacity-85 hover:opacity-100'
+                          )}
+                        >
+                          <img
+                            src={convertGoogleDriveUrl(image.image_url, 'thumbnail')}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              handleImageErrorWithFallback(e, image.image_url, '/placeholder-property.jpg');
+                            }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Informações */}
+          {/* Informações — scroll independente */}
+          <div className="min-h-0 flex-1 p-6 lg:overflow-y-auto lg:overscroll-contain">
           <div className="space-y-6">
             {/* Preço */}
             <div>
@@ -304,9 +432,10 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
               </div>
             </div>
           </div>
+          </div>
         </div>
 
-        <div className="flex justify-between items-center mt-6 pt-4 border-t border-border flex-wrap gap-4">
+        <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           <div className="flex gap-2 items-center flex-wrap">
             <Button 
               variant="outline"
@@ -425,17 +554,20 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
             ) : (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">Título da LP</label>
-                  <Input 
+                  <label className="text-sm text-muted-foreground">Título da página (opcional)</label>
+                  <Input
                     value={lpTitle}
-                    onChange={e => setLpTitle(e.target.value)}
-                    placeholder="Título chamativo..."
+                    onChange={(e) => setLpTitle(e.target.value)}
+                    placeholder="Ex.: Casa 3 quartos no Turú — aparece no título do navegador"
                     className="bg-background border-border text-foreground"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Se vazio, usamos os dados do imóvel na página pública.
+                  </p>
                 </div>
-                
+
                 <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">Link Personalizado (Slug)</label>
+                  <label className="text-sm text-muted-foreground">Link personalizado (slug)</label>
                   <div className="flex">
                     <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground sm:text-xs">
                       /imovel/
@@ -461,21 +593,43 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
                   </span>
                 </div>
 
-                {lpPublished && lpData && (
+                {lpPublished ? (
                   <div className="p-3 bg-muted/50 rounded-lg border border-border mt-2">
-                    <div className="text-xs text-muted-foreground mb-1">Seu link de divulgação:</div>
+                    <div className="text-xs text-muted-foreground mb-1">Link público (ativo após salvar):</div>
                     <div className="flex items-center gap-2">
                       <div className="text-indigo-700 dark:text-indigo-300 text-sm truncate flex-1">
-                        {window.location.host}/imovel/{lpSlug}
+                        {`${window.location.origin}/imovel/${lpSlug}`}
                       </div>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCopyLink}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 shrink-0"
+                        onClick={handleCopyLink}
+                        disabled={!lpSlug}
+                      >
                         <Copy className="h-4 w-4 text-muted-foreground" />
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => window.open(`/imovel/${lpSlug}`, '_blank')}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 shrink-0"
+                        onClick={() => window.open(`/imovel/${lpSlug}`, '_blank')}
+                        disabled={!lpSlug}
+                      >
                         <LinkIcon className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </div>
+                    {!lpData?.id && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                        Clique em &quot;Salvar&quot; para registrar a página e tornar o link acessível.
+                      </p>
+                    )}
                   </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground rounded-md border border-dashed border-border bg-muted/30 p-3">
+                    Com o modo rascunho, o link <span className="font-mono">/imovel/{lpSlug || '…'}</span> não fica
+                    público. Ative &quot;Publicada&quot; e salve para divulgar.
+                  </p>
                 )}
 
                 <div className="flex gap-3 justify-end pt-4 mt-4 border-t border-border">

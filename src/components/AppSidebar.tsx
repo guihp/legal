@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon, LayoutDashboard, Globe, Layers } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -77,13 +77,14 @@ const menuItems = [
     view: "users" as const,
     permissionKey: "menu_users",
   },
-  {
-    title: "Lei do Inquilinato",
-    url: "#",
-    icon: Bot,
-    view: "inquilinato" as const,
-    permissionKey: "menu_inquilinato",
-  },
+  // Removido do menu (não expor no sidebar)
+  // {
+  //   title: "Lei do Inquilinato",
+  //   url: "#",
+  //   icon: Bot,
+  //   view: "inquilinato" as const,
+  //   permissionKey: "menu_inquilinato",
+  // },
   // {
   //   title: "Disparador",
   //   url: "#",
@@ -98,19 +99,35 @@ const menuItems = [
     view: "conversas" as const,
     permissionKey: "menu_conversas",
   },
+  // Removido do menu (não expor no sidebar)
+  // {
+  //   title: "Rede de Parcerias",
+  //   url: "#",
+  //   icon: Share2,
+  //   view: "partnerships" as const,
+  //   permissionKey: "menu_partnerships",
+  // },
+];
+
+/** Subitens do menu Presença digital (site vitrine + LPs) */
+const digitalPresenceItems = [
   {
-    title: "Marketing & LPs",
-    url: "#",
-    icon: Megaphone,
-    view: "marketing" as const,
-    permissionKey: "menu_marketing",
+    title: 'Visão geral',
+    view: 'marketing' as const,
+    icon: LayoutDashboard,
+    permissionKey: 'menu_marketing',
   },
   {
-    title: "Rede de Parcerias",
-    url: "#",
-    icon: Share2,
-    view: "partnerships" as const,
-    permissionKey: "menu_partnerships",
+    title: 'Site vitrine',
+    view: 'marketing-site' as const,
+    icon: Globe,
+    permissionKey: 'menu_marketing',
+  },
+  {
+    title: 'Landing pages',
+    view: 'marketing-lps' as const,
+    icon: Layers,
+    permissionKey: 'menu_marketing',
   },
 ];
 
@@ -150,7 +167,28 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile" | "marketing" | "partnerships") => void;
+  onViewChange: (
+    view:
+      | 'dashboard'
+      | 'properties'
+      | 'agenda'
+      | 'plantao'
+      | 'reports'
+      | 'clients'
+      | 'clients-crm'
+      | 'connections'
+      | 'users'
+      | 'permissions'
+      | 'inquilinato'
+      | 'disparador'
+      | 'conversas'
+      | 'configurations'
+      | 'profile'
+      | 'marketing'
+      | 'marketing-site'
+      | 'marketing-lps'
+      | 'partnerships'
+  ) => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -272,6 +310,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     return hasAccess;
   });
 
+  const filteredDigitalItems = digitalPresenceItems.filter((item) => {
+    if (!profile) return false;
+    return hasPermission(item.permissionKey);
+  });
+
   const filteredSecondaryItems = secondaryItems.filter(item => {
     if (!('permissionKey' in item) || !item.permissionKey) return true;
     if (!profile) return false;
@@ -337,7 +380,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       ${currentView === item.view
                         ? theme === 'dark'
                           ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
+                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
                         : ''
                       }
                     `}
@@ -396,6 +439,54 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {filteredDigitalItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold flex items-center gap-2">
+              <Megaphone className="h-3.5 w-3.5 opacity-80" />
+              Presença digital
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredDigitalItems.map((item) => (
+                  <SidebarMenuItem key={item.view}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={currentView === item.view}
+                      className={`
+                      text-theme-secondary hover:text-theme-primary transition-all duration-200
+                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
+                      ${
+                        currentView === item.view
+                          ? theme === 'dark'
+                            ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
+                            : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
+                          : ''
+                      }
+                    `}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onViewChange(item.view);
+                          navigate(`/${item.view}`);
+                        }}
+                        onMouseEnter={() => {
+                          import('@/components/MarketingView');
+                          import('@/components/MarketingLandingPagesView');
+                        }}
+                        className="flex items-center gap-3 w-full px-3 py-2 pl-4"
+                      >
+                        <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                        <span>{item.title}</span>
+                      </button>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
             Analytics
@@ -413,7 +504,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       ${currentView === item.view
                         ? theme === 'dark'
                           ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
+                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
                         : ''
                       }
                     `}
@@ -459,7 +550,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       ${('view' in item) && currentView === item.view
                         ? theme === 'dark'
                           ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-green-600/10 to-green-700/10 text-green-800 border-l-2 border-green-600 font-medium'
+                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
                         : ''
                       }
                     `}

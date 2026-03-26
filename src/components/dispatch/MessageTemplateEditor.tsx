@@ -58,7 +58,7 @@ const sampleData = {
   telefone: '(11) 98765-4321',
   email: 'maria@exemplo.com',
   corretor: 'João Corretor',
-  empresa: 'ImobiPRO'
+  empresa: 'IAFÉ IMOBI'
 };
 
 export function MessageTemplateEditor({

@@ -13,7 +13,7 @@ Código Local → Git Commit → Git Push → Coolify (Auto Deploy)
 ### 1. Verificar Status do Git
 
 ```bash
-cd /Volumes/HD/Downloads/imobipro-main
+cd /caminho/do/repositorio/legal
 git status
 ```
 

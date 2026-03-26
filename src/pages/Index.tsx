@@ -109,6 +109,10 @@ const MarketingView = createLazyComponent(
   () => import("@/components/MarketingView").then(m => ({ default: m.MarketingView })),
   "MarketingView"
 );
+const MarketingLandingPagesView = createLazyComponent(
+  () => import("@/components/MarketingLandingPagesView").then(m => ({ default: m.MarketingLandingPagesView })),
+  "MarketingLandingPagesView"
+);
 const PartnershipsView = createLazyComponent(
   () => import("@/components/PartnershipsView").then(m => ({ default: m.PartnershipsView })),
   "PartnershipsView"
@@ -196,7 +200,35 @@ const Index = () => {
       case "conversas":
         return <ConversasView />;
       case "marketing":
-        return <MarketingView />;
+        if (!hasPermission('menu_marketing')) {
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <p className="text-gray-400 text-sm">Você não tem permissão para o módulo Presença digital.</p>
+            </div>
+          );
+        }
+        return <MarketingView section="overview" />;
+      case "marketing-site":
+        if (!hasPermission('menu_marketing')) {
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <p className="text-gray-400 text-sm">Você não tem permissão para o módulo Presença digital.</p>
+            </div>
+          );
+        }
+        return <MarketingView section="website" />;
+      case "marketing-lps":
+        if (!hasPermission('menu_marketing')) {
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <p className="text-gray-400 text-sm">Você não tem permissão para o módulo Presença digital.</p>
+            </div>
+          );
+        }
+        return <MarketingLandingPagesView />;
       case "partnerships":
         return <PartnershipsView />;
       case "landing" as any: // Cast para evitar erro de tipo estrito se 'landing' não estiver em basicNavigation

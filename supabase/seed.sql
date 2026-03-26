@@ -1,5 +1,5 @@
 -- =============================================================================
--- SEED DATA FOR IMOBIPRO SYSTEM
+-- SEED DATA — IAFÉ IMOBI
 -- =============================================================================
 -- This file contains safe demo data for new installations
 -- DO NOT include production data, PII, or sensitive information
@@ -27,7 +27,7 @@ INSERT INTO auth.users (
   '00000000-0000-0000-0000-000000000000', -- default instance_id
   'authenticated',
   'authenticated',
-  'admin@imobipro.com',
+  'admin@iafeimobi.local',
   crypt('admin123', gen_salt('bf')), -- password: admin123 (change in production!)
   NOW(),
   NOW(),
@@ -53,7 +53,7 @@ INSERT INTO public.user_profiles (
   '550e8400-e29b-41d4-a716-446655440000', -- same ID as auth.users
   '550e8400-e29b-41d4-a716-446655440001', -- Demo Imobiliária company
   'Admin Sistema',
-  'admin@imobipro.com',
+  'admin@iafeimobi.local',
   '+5511999999999',
   'admin',
   true,

@@ -3,7 +3,7 @@
 ## ❌ Erro Atual
 ```
 Não foi possível encontrar um servidor com o nome de host especificado.
-Fetch API cannot load https://ibmyytoyqjoycrgutzef.supabase.co/auth/v1/token
+Fetch API cannot load https://bfcssdogttmqeujgmxdf.supabase.co/auth/v1/token
 ```
 
 ## ✅ Solução Passo a Passo
@@ -16,7 +16,7 @@ Fetch API cannot load https://ibmyytoyqjoycrgutzef.supabase.co/auth/v1/token
 ### 2. Verificar URL do Supabase
 Verifique no Supabase Dashboard:
 - [ ] Vá em Settings > API
-- [ ] Confirme que a URL é: `https://ibmyytoyqjoycrgutzef.supabase.co`
+- [ ] Confirme que a URL é: `https://bfcssdogttmqeujgmxdf.supabase.co`
 - [ ] Confirme que a `anon` key está correta
 
 ### 3. Redeploy Completo
@@ -36,7 +36,7 @@ Se o erro persistir após fazer tudo acima:
 
 1. **Testar URL do Supabase:**
    ```bash
-   curl https://ibmyytoyqjoycrgutzef.supabase.co/rest/v1/
+   curl https://bfcssdogttmqeujgmxdf.supabase.co/rest/v1/
    ```
    Deve retornar uma resposta (mesmo que seja erro de autenticação)
 
@@ -53,8 +53,8 @@ Se o erro persistir após fazer tudo acima:
 ## 📝 Variáveis Configuradas (Estão Corretas)
 
 ```
-VITE_SUPABASE_URL=https://ibmyytoyqjoycrgutzef.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
+VITE_SUPABASE_ANON_KEY=<copie em Supabase Dashboard → Settings → API → anon public>
 VITE_WHATSAPP_API_BASE=https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook
 VITE_EVOLUTION_API_URL=https://evo-sw04w08owc0gocsgoow8okcg.vemprajogo.com
 VITE_DEFAULT_NEW_USER_PASSWORD=Imobi@1234

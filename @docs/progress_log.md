@@ -1,4 +1,11 @@
-# Progress Log - ImobiPro
+# Progress Log — IAFÉ IMOBI
+
+## 2026-03-25 — Remoção de marca legada anterior / padronização WhatsApp
+
+- Marca e textos: substituídos por IAFÉ IMOBI; emails de exemplo em seed/docs para `*@iafeimobi.local`; suporte `contato@iafeimobi.com.br` no alerta de assinatura.
+- Banco (migrations): tabela consolidada `crm_whatsapp_messages`, sequence `crm_whatsapp_messages_id_seq`, shards `crm_whatsapp_messages_{telefone}`; views `vw_crm_whatsapp_*`; migration `20260325150000_rename_legacy_whatsapp_messages_to_crm.sql` para projetos que ainda tinham nomes antigos.
+- Código: `types`, hooks (realtime/chat), métricas, webhooks e scraper alinhados aos novos identificadores.
+- Regra Cursor: `iafe-imobi-rule-development.mdc` (substitui arquivo antigo).
 
 ## 2026-01-12 - Sistema Multi-Empresa e Painel Admin
 
@@ -176,7 +183,7 @@ Implementado sistema que permite ao super_admin acessar o sistema como qualquer 
 INSERT INTO public.user_profiles (id, email, full_name, role, company_id, is_active)
 VALUES (
   'UUID_DO_USUARIO_AUTH',
-  'admin@imobipro.com.br',
+  'admin@iafeimobi.local',
   'Super Administrador',
   'super_admin',
   NULL,

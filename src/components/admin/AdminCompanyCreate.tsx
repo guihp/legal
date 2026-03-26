@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Building2, ArrowLeft, Check, Loader2, Phone, MessageSquare, Bot, AlertCircle, Copy, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,9 +47,9 @@ const initialFormData: CompanyFormData = {
   cnpj: '',
   phone: '',
   address: '',
-  plan: 'basic',
+  plan: 'essential',
   trial_days: 14,
-  max_users: 10,
+  max_users: 1,
 };
 
 // Formatar telefone para exibição
@@ -85,7 +85,13 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOptional, setShowOptional] = useState(false);
-  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    email: string;
+    password: string;
+    companyId: string;
+    siteSlug: string | null;
+  } | null>(null);
+  const pendingCompanyIdRef = useRef<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const updateField = (field: keyof CompanyFormData, value: string | number) => {
@@ -142,9 +148,12 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
       console.log('📥 Resultado da criação:', result);
 
       if (result) {
+        pendingCompanyIdRef.current = result.companyId;
         setCreatedCredentials({
           email: result.email,
-          password: result.password
+          password: result.password,
+          companyId: result.companyId,
+          siteSlug: result.siteSlug,
         });
         toast.success('Empresa criada com sucesso!');
       } else {
@@ -257,6 +266,45 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
             </p>
           </div>
 
+          {/* Plano — define limites e se a vitrine pública é criada automaticamente (Professional) */}
+          <div className="space-y-2">
+            <Label className="text-white font-medium">Plano de assinatura</Label>
+            <Select
+              value={formData.plan}
+              onValueChange={(v) => {
+                setFormData((prev) => {
+                  const max_users =
+                    v === 'essential'
+                      ? 1
+                      : v === 'growth'
+                        ? 7
+                        : v === 'professional'
+                          ? 15
+                          : v === 'enterprise'
+                            ? 25
+                            : prev.max_users;
+                  return { ...prev, plan: v, max_users };
+                });
+              }}
+            >
+              <SelectTrigger className="bg-gray-900/50 border-gray-600 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-800 border-gray-700">
+                <SelectItem value="essential">Essential — CRM + IA (sem site vitrine)</SelectItem>
+                <SelectItem value="growth">Growth — equipe até 7 usuários (sem site vitrine)</SelectItem>
+                <SelectItem value="professional">
+                  Professional — site vitrine + LPs (cria rota pública /s/slug automaticamente)
+                </SelectItem>
+                <SelectItem value="enterprise">Enterprise — mesmo pacote digital que Professional + escala</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-gray-500 text-xs">
+              No plano Professional ou Enterprise, o sistema cria o registro do site público; a equipe edita título e
+              descrição em Marketing.
+            </p>
+          </div>
+
           {/* Campos Opcionais - Colapsável */}
           <div className="border-t border-gray-700 pt-4">
             <Button
@@ -328,21 +376,8 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                 </div>
 
                 <div className="border-t border-gray-700 pt-4 mt-4">
-                  <h4 className="text-gray-300 font-medium mb-3">Configurações do Plano</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-gray-400 text-sm">Plano</Label>
-                      <Select value={formData.plan} onValueChange={(v) => updateField('plan', v)}>
-                        <SelectTrigger className="bg-gray-900/50 border-gray-600 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-gray-800 border-gray-700">
-                          <SelectItem value="basic">Básico</SelectItem>
-                          <SelectItem value="professional">Profissional</SelectItem>
-                          <SelectItem value="enterprise">Enterprise</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <h4 className="text-gray-300 font-medium mb-3">Ajustes finos do plano</h4>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-gray-400 text-sm">Dias de Trial</Label>
                       <Select 
@@ -370,6 +405,9 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-gray-800 border-gray-700">
+                          <SelectItem value="1">1 (Essential)</SelectItem>
+                          <SelectItem value="7">7 (Growth)</SelectItem>
+                          <SelectItem value="15">15 (Professional)</SelectItem>
                           <SelectItem value="5">5</SelectItem>
                           <SelectItem value="10">10</SelectItem>
                           <SelectItem value="25">25</SelectItem>
@@ -415,14 +453,17 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
       </Card>
 
       {/* Modal de Credenciais Criadas */}
-      <Dialog open={!!createdCredentials} onOpenChange={(open) => {
-        if (!open) {
-          setCreatedCredentials(null);
-          if (createdCredentials) {
-            onSuccess(createdCredentials.email); // Passar email como ID temporário
+      <Dialog
+        open={!!createdCredentials}
+        onOpenChange={(open) => {
+          if (!open) {
+            const id = pendingCompanyIdRef.current;
+            pendingCompanyIdRef.current = null;
+            setCreatedCredentials(null);
+            if (id) onSuccess(id);
           }
-        }
-      }}>
+        }}
+      >
         <DialogContent className="bg-gray-800 border-gray-700 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
@@ -442,7 +483,26 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                 </p>
               </div>
 
-              <div className="space-y-3">
+                <div className="space-y-3">
+                {createdCredentials.siteSlug && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                    <p className="font-medium text-emerald-50 mb-1">Site público criado</p>
+                    <p className="text-emerald-200/90 mb-2">
+                      Vitrine:{' '}
+                      <a
+                        href={`${window.location.origin}/s/${createdCredentials.siteSlug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline font-mono text-white"
+                      >
+                        {window.location.origin}/s/{createdCredentials.siteSlug}
+                      </a>
+                    </p>
+                    <p className="text-xs text-emerald-200/70">
+                      LPs de imóveis: URL pública /imovel/ mais o slug definido ao publicar cada LP no painel.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label className="text-gray-300 text-sm">Email</Label>
                   <div className="flex gap-2">
@@ -511,10 +571,7 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                   Copiar Tudo
                 </Button>
                 <Button
-                  onClick={() => {
-                    setCreatedCredentials(null);
-                    onSuccess(createdCredentials.email);
-                  }}
+                  onClick={() => setCreatedCredentials(null)}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700"
                 >
                   Fechar

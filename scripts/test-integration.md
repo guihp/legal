@@ -47,7 +47,7 @@
 - [x] `imoveisvivareal` - 27 colunas (tipo_imovel, created_at)
 - [x] `whatsapp_messages` - 15 colunas (timestamp, from_me)
 - [x] `whatsapp_instances` - 17 colunas (user_id)
-- [x] `imobipro_messages` - 6 colunas (data, instancia) - Fallback
+- [x] `crm_whatsapp_messages` — 6 colunas (data, instancia) — fallback
 - [x] `contracts` - 51 colunas (valor, data_inicio, status)
 
 #### ⚠️ Discrepâncias Tratadas
@@ -69,7 +69,7 @@
 - [x] **Dados temporais vazios** - `generateTemporalFallback()` com 6 meses
 - [x] **Heatmap sem dados** - Matriz 7x24 zerada
 - [x] **Disponibilidade ausente** - Simulação 70%/20%/10%
-- [x] **WhatsApp → Imobipro** - Fallback automático para mensagens
+- [x] **WhatsApp → crm_whatsapp_messages** — fallback automático para mensagens
 
 ### 5. Performance e Otimização
 

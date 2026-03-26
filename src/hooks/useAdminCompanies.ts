@@ -235,7 +235,12 @@ export function useAdminCompanies() {
     plan?: string;
     trial_days?: number;
     max_users?: number;
-  }): Promise<{ companyId: string; email: string; password: string } | null> => {
+  }): Promise<{
+    companyId: string;
+    email: string;
+    password: string;
+    siteSlug: string | null;
+  } | null> => {
     if (!isSuperAdmin) return null;
 
     try {
@@ -262,7 +267,7 @@ export function useAdminCompanies() {
           cnpj: data.cnpj || null,
           phone: data.phone || null,
           address: data.address || null,
-          plan: data.plan || 'basic',
+          plan: data.plan || 'essential',
           trial_days: data.trial_days || 14,
           max_users: data.max_users || 10,
         }
@@ -296,7 +301,8 @@ export function useAdminCompanies() {
       return {
         companyId: result.company_id,
         email: result.email,
-        password: result.password
+        password: result.password,
+        siteSlug: result.site_slug ?? null,
       };
     } catch (err: any) {
       console.error('❌ Erro completo ao criar empresa:', err);

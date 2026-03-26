@@ -7,7 +7,7 @@
 - [ ] Clicar em "+ Add"
 - [ ] Adicionar cada variável abaixo:
   ```
-  VITE_SUPABASE_URL=https://ibmyytoyqjoycrgutzef.supabase.co
+  VITE_SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
   VITE_SUPABASE_ANON_KEY=SUA_ANON_KEY_AQUI
   VITE_WHATSAPP_API_BASE=https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook
   VITE_EVOLUTION_API_URL=https://api.evolution.com.br

@@ -48,9 +48,12 @@ pnpm dev
 Crie um arquivo `.env.local` na raiz do projeto:
 
 ```env
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+# Projeto Supabase (imobi / MCP): ref bfcssdogttmqeujgmxdf
+VITE_SUPABASE_URL=https://bfcssdogttmqeujgmxdf.supabase.co
 VITE_SUPABASE_ANON_KEY=sua_anon_key
 ```
+
+A `anon key` está em [Supabase Dashboard](https://supabase.com/dashboard) → projeto **imobiliaria** (`bfcssdogttmqeujgmxdf`) → Settings → API.
 
 ---
 

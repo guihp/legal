@@ -108,7 +108,7 @@ export function BlockedAccessScreen({
           <Button 
             variant="outline" 
             className="w-full border-gray-600 text-gray-300 hover:bg-gray-700"
-            onClick={() => window.open('mailto:suporte@imobipro.com.br', '_blank')}
+            onClick={() => window.open('mailto:contato@iafeimobi.com.br', '_blank')}
           >
             Contatar Suporte
           </Button>

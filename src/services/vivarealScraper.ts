@@ -56,7 +56,7 @@ export async function startVivaRealScraping(url: string, previewOnly: boolean = 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': SUPABASE_ANON_KEY,
-        'x-client-info': 'imobipro-web',
+        'x-client-info': 'iafe-imobi-web',
       },
       body: JSON.stringify({
         url,

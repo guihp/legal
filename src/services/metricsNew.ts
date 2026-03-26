@@ -417,9 +417,9 @@ export async function getConvoHeatmap(options: DateRange, brokerId?: string): Pr
       return heatmapFromWhatsApp;
     }
 
-    // Fallback para imobipro_messages
-    console.log('Fallback para imobipro_messages para dados de heatmap');
-    return await getHeatmapFromImobiproMessages(options, brokerId);
+    // Fallback: crm_whatsapp_messages
+    console.log('Fallback para crm_whatsapp_messages (heatmap)');
+    return await getHeatmapFromCrmWhatsappMessages(options, brokerId);
     
   } catch (error) {
     console.error('Erro ao buscar dados de heatmap:', error);
@@ -471,10 +471,10 @@ async function getHeatmapFromWhatsAppMessages(options: DateRange, brokerId?: str
   }
 }
 
-async function getHeatmapFromImobiproMessages(options: DateRange, instanceFilter?: string): Promise<HeatmapData> {
+async function getHeatmapFromCrmWhatsappMessages(options: DateRange, instanceFilter?: string): Promise<HeatmapData> {
   try {
     let query = supabase
-      .from('imobipro_messages')
+      .from('crm_whatsapp_messages')
       .select('data, instancia')
       .gte('data', options.from.toISOString())
       .lte('data', options.to.toISOString());
@@ -490,7 +490,7 @@ async function getHeatmapFromImobiproMessages(options: DateRange, instanceFilter
     return processHeatmapData((data || []).map(msg => ({ timestamp: msg.data })));
     
   } catch (error) {
-    console.error('Erro ao buscar dados do imobipro_messages:', error);
+    console.error('Erro ao buscar dados do crm_whatsapp_messages:', error);
     throw error;
   }
 }
