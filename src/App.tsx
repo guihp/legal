@@ -40,7 +40,7 @@ function AppContent() {
   const hostname = window.location.hostname;
   const parts = hostname.split('.');
 
-  const blockedSubdomains = ['www', 'app', 'admin'];
+  const blockedSubdomains = ['www', 'app', 'admin', 'imobi'];
   const isIp = /^[0-9.]+$/.test(hostname);
 
   // Domínio raiz configurado (não deve ser interpretado como slug de empresa)
