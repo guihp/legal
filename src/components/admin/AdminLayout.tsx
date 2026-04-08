@@ -80,20 +80,20 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex">
+    <div className="dark min-h-screen bg-gray-950 flex">
       {/* Sidebar */}
       <aside
         className={`
-          ${sidebarOpen ? 'w-64' : 'w-0 -ml-64'} 
+          ${sidebarOpen ? 'w-64 min-w-[256px]' : 'w-0 min-w-0 overflow-hidden'} 
           transition-all duration-300 ease-in-out
-          bg-gray-900/80 backdrop-blur-sm border-r border-gray-800 flex flex-col
-          fixed lg:static h-full z-50
+          bg-gray-900 border-r border-gray-800 flex flex-col
+          sticky top-0 h-screen z-50
         `}
       >
         {/* Logo */}
-        <div className="p-6 border-b border-gray-800">
+        <div className="p-6 border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shrink-0">
               <Shield className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -104,31 +104,31 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         </div>
 
         {/* Menu */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setCurrentView(item.id)}
               className={`
-                w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all
+                w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left
                 ${currentView === item.id
                   ? 'bg-red-500/20 text-red-400 border-l-2 border-red-500'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800/60'
                 }
               `}
             >
-              <item.icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="truncate">{item.label}</span>
             </button>
           ))}
         </nav>
 
         {/* User Info */}
-        <div className="p-4 border-t border-gray-800">
-          <div className="bg-gray-800/50 rounded-lg p-3 mb-3">
+        <div className="p-4 border-t border-gray-800 shrink-0">
+          <div className="bg-gray-800 rounded-lg p-3 mb-3">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
-                <span className="text-white font-medium">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shrink-0">
+                <span className="text-white font-medium text-sm">
                   {userName?.charAt(0) || 'A'}
                 </span>
               </div>
@@ -154,7 +154,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Top Bar */}
-        <header className="h-16 border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm flex items-center justify-between px-6">
+        <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center justify-between px-6">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="lg:hidden text-gray-400 hover:text-white"
@@ -174,7 +174,7 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 p-6 overflow-auto bg-gray-950">
           {renderContent()}
         </main>
       </div>

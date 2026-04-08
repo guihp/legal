@@ -48,6 +48,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
+import { OfficialApiConnectionsView } from "./OfficialApiConnectionsView";
 
 export function ConnectionsViewSimplified() {
   const { profile, isManager } = useUserProfile();
@@ -75,7 +76,7 @@ export function ConnectionsViewSimplified() {
 
   // Tornar tolerante a diferenças de carregamento entre hooks: habilita criação se qualquer fonte indicar gestor/admin
   // Mas desabilita se for API Oficial
-  const isOfficialApi = profile?.email === 'jastelo@iafeoficial.com';
+  const isOfficialApi = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
   const canCreate = (isManager || canCreateInstances) && !isOfficialApi;
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -829,6 +830,10 @@ export function ConnectionsViewSimplified() {
       </Card>
     );
   };
+
+  if (isOfficialApi) {
+    return <OfficialApiConnectionsView />;
+  }
 
   if (loading) {
     return (

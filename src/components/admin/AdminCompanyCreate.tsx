@@ -1,24 +1,15 @@
-import { useState, useRef } from 'react';
-import { Building2, ArrowLeft, Check, Loader2, Phone, MessageSquare, Bot, AlertCircle, Copy, Eye, EyeOff } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import {
+  ArrowLeft, Check, Loader2, Link as LinkIcon, Copy, Clock,
+  Crown, Rocket, Zap, Calendar, Users, ExternalLink, Trash2, RefreshCw,
+  Wifi, Building2, Mail, MapPin
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useAdminCompanies } from '@/hooks/useAdminCompanies';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface AdminCompanyCreateProps {
@@ -26,561 +17,571 @@ interface AdminCompanyCreateProps {
   onSuccess: (companyId: string) => void;
 }
 
-interface CompanyFormData {
+interface PlanInfo {
+  id: string;
   name: string;
-  whatsapp_ai_phone: string;
-  login_email: string; // Email obrigatório para login do gestor
-  email: string; // Email opcional da empresa
-  cnpj: string;
-  phone: string;
-  address: string;
-  plan: string;
-  trial_days: number;
-  max_users: number;
+  price: number;
+  icon: React.ReactNode;
+  accentColor: string;
+  borderClass: string;
+  selectedBorderClass: string;
+  badgeClass: string;
+  maxUsers: number;
+  badge: string;
+  features: string[];
 }
 
-const initialFormData: CompanyFormData = {
-  name: '',
-  whatsapp_ai_phone: '',
-  login_email: '',
-  email: '',
-  cnpj: '',
-  phone: '',
-  address: '',
-  plan: 'essential',
-  trial_days: 14,
-  max_users: 1,
-};
+interface SignupLink {
+  id: string;
+  token: string;
+  plan: string;
+  billing_cycle: string;
+  price_monthly: number;
+  price_total: number;
+  status: string;
+  expires_at: string;
+  company_name: string | null;
+  company_email: string | null;
+  company_cnpj: string | null;
+  company_address: string | null;
+  used_at: string | null;
+  created_at: string;
+  is_official_api: boolean;
+}
 
-// Formatar telefone para exibição
-const formatPhone = (value: string): string => {
-  const numbers = value.replace(/\D/g, '');
-  
-  if (numbers.length <= 2) {
-    return numbers;
-  } else if (numbers.length <= 7) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-  } else if (numbers.length <= 11) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
-  } else {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
+const PLANS: PlanInfo[] = [
+  {
+    id: 'essential',
+    name: 'Essential',
+    price: 499,
+    icon: <Zap className="h-5 w-5" />,
+    accentColor: 'text-amber-400',
+    borderClass: 'border-gray-700 hover:border-amber-500/50',
+    selectedBorderClass: 'border-amber-500 ring-2 ring-amber-500/30',
+    badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    maxUsers: 1,
+    badge: '🥉',
+    features: [
+      'CRM Imobiliário completo',
+      'IA & Automação básica',
+      'Captação de leads',
+      'Integração com WhatsApp',
+    ],
+  },
+  {
+    id: 'growth',
+    name: 'Growth',
+    price: 999,
+    icon: <Rocket className="h-5 w-5" />,
+    accentColor: 'text-blue-400',
+    borderClass: 'border-gray-700 hover:border-blue-500/50',
+    selectedBorderClass: 'border-blue-500 ring-2 ring-blue-500/30',
+    badgeClass: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    maxUsers: 7,
+    badge: '🥈',
+    features: [
+      'Até 7 usuários',
+      'Gestão de equipe + ranking',
+      'IA para todos os usuários',
+      'Relatórios de performance',
+    ],
+  },
+  {
+    id: 'professional',
+    name: 'Professional',
+    price: 1499,
+    icon: <Crown className="h-5 w-5" />,
+    accentColor: 'text-purple-400',
+    borderClass: 'border-gray-700 hover:border-purple-500/50',
+    selectedBorderClass: 'border-purple-500 ring-2 ring-purple-500/30',
+    badgeClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    maxUsers: 15,
+    badge: '🥇',
+    features: [
+      'Até 15 usuários',
+      'Site imobiliário premium',
+      'SEO + Marketing avançado',
+      'Suporte prioritário',
+    ],
+  },
+];
+
+const ANNUAL_DISCOUNT = 0.10;
+
+// Helper: URL base para links (produção ou localhost)
+function getBaseUrl(): string {
+  const envUrl = (import.meta as any)?.env?.VITE_PUBLIC_APP_URL as string | undefined;
+  // Em dev (localhost), usar origin local. Em produção, usar a variável de ambiente.
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return window.location.origin;
   }
-};
-
-// Validar telefone
-const isValidPhone = (phone: string): boolean => {
-  const numbers = phone.replace(/\D/g, '');
-  return numbers.length >= 10 && numbers.length <= 11;
-};
-
-// Validar email
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
+  return envUrl?.replace(/\/$/, '') || window.location.origin;
+}
 
 export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProps) {
-  const { createCompany } = useAdminCompanies();
-  const [formData, setFormData] = useState<CompanyFormData>(initialFormData);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showOptional, setShowOptional] = useState(false);
-  const [createdCredentials, setCreatedCredentials] = useState<{
-    email: string;
-    password: string;
-    companyId: string;
-    siteSlug: string | null;
-  } | null>(null);
-  const pendingCompanyIdRef = useRef<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [isOfficialApi, setIsOfficialApi] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [existingLinks, setExistingLinks] = useState<SignupLink[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(true);
 
-  const updateField = (field: keyof CompanyFormData, value: string | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setError(null);
-  };
+  useEffect(() => { loadLinks(); }, []);
 
-  const handlePhoneChange = (value: string) => {
-    const formatted = formatPhone(value);
-    updateField('whatsapp_ai_phone', formatted);
-  };
-
-  const isFormValid = (): boolean => {
-    return isValidPhone(formData.whatsapp_ai_phone) && isValidEmail(formData.login_email);
-  };
-
-  const handleSubmit = async () => {
-    if (!isValidPhone(formData.whatsapp_ai_phone)) {
-      setError('Informe um número de telefone válido para o WhatsApp da IA');
-      return;
-    }
-
-    if (!isValidEmail(formData.login_email)) {
-      setError('Informe um email válido para login do gestor');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
+  const loadLinks = async () => {
     try {
-      // Extrair apenas números do telefone
-      const phoneNumbers = formData.whatsapp_ai_phone.replace(/\D/g, '');
-      
-      console.log('📤 Enviando dados para criar empresa:', {
-        name: formData.name || `Empresa ${phoneNumbers}`,
-        whatsapp_ai_phone: phoneNumbers,
-        login_email: formData.login_email.trim().toLowerCase(),
-      });
-      
-      const result = await createCompany({
-        name: formData.name || `Empresa ${phoneNumbers}`,
-        whatsapp_ai_phone: phoneNumbers,
-        login_email: formData.login_email.trim().toLowerCase(),
-        email: formData.email || undefined,
-        cnpj: formData.cnpj || undefined,
-        phone: formData.phone || undefined,
-        address: formData.address || undefined,
-        plan: formData.plan,
-        trial_days: formData.trial_days,
-        max_users: formData.max_users,
-      });
+      setLoadingLinks(true);
+      const { data, error } = await supabase
+        .from('signup_links' as any)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-      console.log('📥 Resultado da criação:', result);
-
-      if (result) {
-        pendingCompanyIdRef.current = result.companyId;
-        setCreatedCredentials({
-          email: result.email,
-          password: result.password,
-          companyId: result.companyId,
-          siteSlug: result.siteSlug,
-        });
-        toast.success('Empresa criada com sucesso!');
-      } else {
-        setError('Erro ao criar empresa. Verifique os logs do console para mais detalhes.');
+      if (!error && data) {
+        const now = new Date();
+        const links = (data as any[]).map((link: any) => ({
+          ...link,
+          status: link.status === 'pending' && new Date(link.expires_at) < now ? 'expired' : link.status,
+        }));
+        setExistingLinks(links);
       }
-    } catch (err: any) {
-      console.error('❌ Erro ao criar empresa:', err);
-      setError(err.message || 'Erro ao criar empresa. Verifique os logs do console.');
+    } catch (err) {
+      console.error('Erro ao carregar links:', err);
     } finally {
-      setLoading(false);
+      setLoadingLinks(false);
     }
   };
+
+  const plan = PLANS.find(p => p.id === selectedPlan);
+
+  const getPrice = () => {
+    if (!plan) return { monthly: 0, total: 0 };
+    if (billingCycle === 'annual') {
+      const monthly = Math.round(plan.price * (1 - ANNUAL_DISCOUNT) * 100) / 100;
+      return { monthly, total: Math.round(monthly * 12 * 100) / 100 };
+    }
+    return { monthly: plan.price, total: plan.price };
+  };
+
+  const prices = getPrice();
+
+  const handleGenerateLink = async () => {
+    if (!plan) return;
+
+    setGenerating(true);
+    try {
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+
+      const { data: userData } = await supabase.auth.getUser();
+
+      const { data, error } = await supabase
+        .from('signup_links' as any)
+        .insert({
+          plan: plan.id,
+          billing_cycle: billingCycle,
+          price_monthly: prices.monthly,
+          price_total: prices.total,
+          max_users: plan.maxUsers,
+          is_official_api: isOfficialApi,
+          expires_at: expiresAt.toISOString(),
+          created_by: userData?.user?.id,
+        } as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const baseUrl = getBaseUrl();
+      const link = `${baseUrl}/cadastro/${(data as any).token}`;
+      setGeneratedLink(link);
+      toast.success('Link gerado com sucesso!');
+      loadLinks();
+    } catch (err: any) {
+      console.error('Erro ao gerar link:', err);
+      toast.error('Erro ao gerar link: ' + err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCopyLink = (link: string) => {
+    navigator.clipboard.writeText(link);
+    toast.success('Link copiado!');
+  };
+
+  const handleDeleteLink = async (id: string) => {
+    try {
+      await supabase.from('signup_links' as any).delete().eq('id', id);
+      toast.success('Link removido');
+      loadLinks();
+    } catch (err: any) {
+      toast.error('Erro ao remover: ' + err.message);
+    }
+  };
+
+  const formatCurrency = (value: number) =>
+    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending': return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">Aguardando</Badge>;
+      case 'used': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">Cadastrado</Badge>;
+      case 'expired': return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">Expirado</Badge>;
+      default: return null;
+    }
+  };
+
+  const getPlanInfo = (planId: string) => PLANS.find(pl => pl.id === planId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button 
-          variant="ghost" 
-          onClick={onBack}
-          className="text-gray-400 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Voltar
+        <Button variant="ghost" onClick={onBack} className="text-gray-400 hover:text-white">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
         </Button>
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Building2 className="h-8 w-8 text-blue-400" />
-            Nova Empresa
+            <LinkIcon className="h-8 w-8 text-blue-400" />
+            Gerar Link de Cadastro
           </h1>
           <p className="text-gray-400 mt-1">
-            Cadastre uma nova empresa no sistema
+            Selecione o plano e gere um link exclusivo para o novo cliente (expira em 24h)
           </p>
         </div>
       </div>
 
-      {/* Info Card */}
-      <Card className="bg-blue-500/10 border-blue-500/30 max-w-2xl mx-auto">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <Bot className="h-6 w-6 text-blue-400 mt-0.5" />
-            <div>
-              <p className="text-blue-200 font-medium">Telefone do WhatsApp para a IA</p>
-              <p className="text-blue-200/70 text-sm mt-1">
-                Informe o número do WhatsApp onde a IA ficará conectada para atender os clientes desta empresa.
-                Este é o único campo obrigatório.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Form */}
-      <Card className="bg-gray-800/50 border-gray-700 max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-green-400" />
-            Dados da Empresa
-          </CardTitle>
-          <CardDescription>
-            Telefone do WhatsApp e email para login são obrigatórios
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Campo Obrigatório - WhatsApp */}
-          <div className="space-y-2">
-            <Label className="text-white font-medium flex items-center gap-2">
-              <Phone className="h-4 w-4 text-green-400" />
-              Telefone WhatsApp da IA *
-            </Label>
-            <Input
-              value={formData.whatsapp_ai_phone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
-              placeholder="(00) 00000-0000"
-              className={`bg-gray-900/50 border-2 text-white text-lg py-6 ${
-                formData.whatsapp_ai_phone && !isValidPhone(formData.whatsapp_ai_phone)
-                  ? 'border-red-500/50 focus:border-red-500'
-                  : formData.whatsapp_ai_phone && isValidPhone(formData.whatsapp_ai_phone)
-                  ? 'border-green-500/50 focus:border-green-500'
-                  : 'border-gray-600'
-              }`}
-              autoFocus
-            />
-            <p className="text-gray-400 text-sm">
-              Este número será usado para conectar a IA que irá atender os clientes
-            </p>
-          </div>
-
-          {/* Campo Obrigatório - Email para Login */}
-          <div className="space-y-2">
-            <Label className="text-white font-medium flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-blue-400" />
-              Email para Login do Gestor *
-            </Label>
-            <Input
-              type="email"
-              value={formData.login_email}
-              onChange={(e) => updateField('login_email', e.target.value)}
-              placeholder="gestor@empresa.com"
-              className={`bg-gray-900/50 border-2 text-white text-lg py-6 ${
-                formData.login_email && !isValidEmail(formData.login_email)
-                  ? 'border-red-500/50 focus:border-red-500'
-                  : formData.login_email && isValidEmail(formData.login_email)
-                  ? 'border-green-500/50 focus:border-green-500'
-                  : 'border-gray-600'
-              }`}
-            />
-            <p className="text-gray-400 text-sm">
-              Email que será usado para fazer login no sistema. A senha será gerada automaticamente.
-            </p>
-          </div>
-
-          {/* Plano — define limites e se a vitrine pública é criada automaticamente (Professional) */}
-          <div className="space-y-2">
-            <Label className="text-white font-medium">Plano de assinatura</Label>
-            <Select
-              value={formData.plan}
-              onValueChange={(v) => {
-                setFormData((prev) => {
-                  const max_users =
-                    v === 'essential'
-                      ? 1
-                      : v === 'growth'
-                        ? 7
-                        : v === 'professional'
-                          ? 15
-                          : v === 'enterprise'
-                            ? 25
-                            : prev.max_users;
-                  return { ...prev, plan: v, max_users };
-                });
-              }}
-            >
-              <SelectTrigger className="bg-gray-900/50 border-gray-600 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-700">
-                <SelectItem value="essential">Essential — CRM + IA (sem site vitrine)</SelectItem>
-                <SelectItem value="growth">Growth — equipe até 7 usuários (sem site vitrine)</SelectItem>
-                <SelectItem value="professional">
-                  Professional — site vitrine + LPs (cria rota pública /s/slug automaticamente)
-                </SelectItem>
-                <SelectItem value="enterprise">Enterprise — mesmo pacote digital que Professional + escala</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-gray-500 text-xs">
-              No plano Professional ou Enterprise, o sistema cria o registro do site público; a equipe edita título e
-              descrição em Marketing.
-            </p>
-          </div>
-
-          {/* Campos Opcionais - Colapsável */}
-          <div className="border-t border-gray-700 pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setShowOptional(!showOptional)}
-              className="w-full text-gray-400 hover:text-white justify-between"
-            >
-              <span>Campos opcionais</span>
-              <span className="text-xs bg-gray-700 px-2 py-1 rounded">
-                {showOptional ? 'Ocultar' : 'Mostrar'}
-              </span>
-            </Button>
-            
-            {showOptional && (
-              <div className="mt-4 space-y-4 animate-in slide-in-from-top-2">
-                <div className="space-y-2">
-                  <Label className="text-gray-300">Nome da Empresa</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => updateField('name', e.target.value)}
-                    placeholder="Nome da empresa (opcional)"
-                    className="bg-gray-900/50 border-gray-600 text-white"
-                  />
-                  <p className="text-gray-500 text-xs">Se não informado, será gerado automaticamente</p>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-gray-300">Email</Label>
-                    <Input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => updateField('email', e.target.value)}
-                      placeholder="contato@empresa.com"
-                      className="bg-gray-900/50 border-gray-600 text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-gray-300">CNPJ</Label>
-                    <Input
-                      value={formData.cnpj}
-                      onChange={(e) => updateField('cnpj', e.target.value)}
-                      placeholder="00.000.000/0000-00"
-                      className="bg-gray-900/50 border-gray-600 text-white"
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-gray-300">Telefone Comercial</Label>
-                    <Input
-                      value={formData.phone}
-                      onChange={(e) => updateField('phone', e.target.value)}
-                      placeholder="(00) 00000-0000"
-                      className="bg-gray-900/50 border-gray-600 text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-gray-300">Cidade/Estado</Label>
-                    <Input
-                      value={formData.address}
-                      onChange={(e) => updateField('address', e.target.value)}
-                      placeholder="São Paulo, SP"
-                      className="bg-gray-900/50 border-gray-600 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-700 pt-4 mt-4">
-                  <h4 className="text-gray-300 font-medium mb-3">Ajustes finos do plano</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-gray-400 text-sm">Dias de Trial</Label>
-                      <Select 
-                        value={String(formData.trial_days)} 
-                        onValueChange={(v) => updateField('trial_days', Number(v))}
-                      >
-                        <SelectTrigger className="bg-gray-900/50 border-gray-600 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-gray-800 border-gray-700">
-                          <SelectItem value="7">7 dias</SelectItem>
-                          <SelectItem value="14">14 dias</SelectItem>
-                          <SelectItem value="30">30 dias</SelectItem>
-                          <SelectItem value="60">60 dias</SelectItem>
-                        </SelectContent>
-                      </Select>
+      {/* Step 1: Escolher Plano */}
+      <div>
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <span className="h-7 w-7 rounded-full bg-blue-500 text-white text-sm flex items-center justify-center font-bold">1</span>
+          Escolha o Plano
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {PLANS.map((p) => {
+            const isSelected = selectedPlan === p.id;
+            return (
+              <Card
+                key={p.id}
+                onClick={() => { setSelectedPlan(p.id); setGeneratedLink(null); }}
+                className={`cursor-pointer transition-all duration-200 bg-gray-900 border-2 ${
+                  isSelected ? p.selectedBorderClass : p.borderClass
+                }`}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{p.badge}</span>
+                      <CardTitle className={`text-base ${p.accentColor}`}>{p.name}</CardTitle>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-gray-400 text-sm">Máx. Usuários</Label>
-                      <Select 
-                        value={String(formData.max_users)} 
-                        onValueChange={(v) => updateField('max_users', Number(v))}
-                      >
-                        <SelectTrigger className="bg-gray-900/50 border-gray-600 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-gray-800 border-gray-700">
-                          <SelectItem value="1">1 (Essential)</SelectItem>
-                          <SelectItem value="7">7 (Growth)</SelectItem>
-                          <SelectItem value="15">15 (Professional)</SelectItem>
-                          <SelectItem value="5">5</SelectItem>
-                          <SelectItem value="10">10</SelectItem>
-                          <SelectItem value="25">25</SelectItem>
-                          <SelectItem value="50">50</SelectItem>
-                          <SelectItem value="100">100</SelectItem>
-                          <SelectItem value="999">Ilimitado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {isSelected && (
+                      <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    )}
                   </div>
-                </div>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-3">
+                  <div>
+                    <span className="text-2xl font-bold text-white">{formatCurrency(p.price)}</span>
+                    <span className="text-gray-500 text-sm">/mês</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+                    <Users className="h-3 w-3" />
+                    <span>{p.maxUsers === 1 ? '1 usuário' : `Até ${p.maxUsers} usuários`}</span>
+                  </div>
+                  <ul className="space-y-1.5 border-t border-gray-800 pt-3">
+                    {p.features.map((f, i) => (
+                      <li key={i} className="text-xs text-gray-400 flex items-start gap-2">
+                        <Check className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Step 2: Ciclo de Cobrança */}
+      {selectedPlan && (
+        <div className="animate-in slide-in-from-top-4 duration-300">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <span className="h-7 w-7 rounded-full bg-blue-500 text-white text-sm flex items-center justify-center font-bold">2</span>
+            Ciclo de Cobrança
+          </h2>
+          <div className="grid grid-cols-2 gap-4 max-w-lg">
+            <Card
+              onClick={() => { setBillingCycle('monthly'); setGeneratedLink(null); }}
+              className={`cursor-pointer transition-all duration-200 bg-gray-900 border-2 ${
+                billingCycle === 'monthly' ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <CardContent className="p-4 text-center">
+                <Calendar className={`h-5 w-5 mx-auto mb-2 ${billingCycle === 'monthly' ? 'text-blue-400' : 'text-gray-500'}`} />
+                <p className="text-white font-semibold text-sm">Mensal</p>
+                <p className="text-xl font-bold text-white mt-1">{formatCurrency(plan!.price)}</p>
+                <p className="text-gray-500 text-xs">/mês</p>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => { setBillingCycle('annual'); setGeneratedLink(null); }}
+              className={`cursor-pointer transition-all duration-200 bg-gray-900 border-2 relative ${
+                billingCycle === 'annual' ? 'border-green-500 ring-1 ring-green-500/30' : 'border-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <div className="absolute -top-2.5 right-3">
+                <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0.5 border-0">-10%</Badge>
               </div>
-            )}
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-400" />
-              <span className="text-red-400 text-sm">{error}</span>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <Button
-            onClick={handleSubmit}
-            disabled={loading || !isFormValid()}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 py-6 text-lg"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Criando empresa...
-              </>
-            ) : (
-              <>
-                <Check className="h-5 w-5 mr-2" />
-                Criar Empresa
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Modal de Credenciais Criadas */}
-      <Dialog
-        open={!!createdCredentials}
-        onOpenChange={(open) => {
-          if (!open) {
-            const id = pendingCompanyIdRef.current;
-            pendingCompanyIdRef.current = null;
-            setCreatedCredentials(null);
-            if (id) onSuccess(id);
-          }
-        }}
-      >
-        <DialogContent className="bg-gray-800 border-gray-700 max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <Check className="h-5 w-5 text-green-400" />
-              Empresa Criada com Sucesso!
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Credenciais de acesso para o gestor da empresa
-            </DialogDescription>
-          </DialogHeader>
-          
-          {createdCredentials && (
-            <div className="space-y-4 mt-4">
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-                <p className="text-yellow-200 text-sm font-medium mb-2">
-                  ⚠️ Anote estas credenciais! Elas não serão mostradas novamente.
+              <CardContent className="p-4 text-center">
+                <Calendar className={`h-5 w-5 mx-auto mb-2 ${billingCycle === 'annual' ? 'text-green-400' : 'text-gray-500'}`} />
+                <p className="text-white font-semibold text-sm">Anual</p>
+                <p className="text-xl font-bold text-white mt-1">
+                  {formatCurrency(Math.round(plan!.price * (1 - ANNUAL_DISCOUNT) * 100) / 100)}
                 </p>
+                <p className="text-gray-500 text-xs">/mês</p>
+                <p className="text-green-400 text-[10px] mt-1">
+                  Total: {formatCurrency(Math.round(plan!.price * (1 - ANNUAL_DISCOUNT) * 12 * 100) / 100)}/ano
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Opções + Gerar Link */}
+      {selectedPlan && (
+        <div className="animate-in slide-in-from-top-4 duration-300">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <span className="h-7 w-7 rounded-full bg-blue-500 text-white text-sm flex items-center justify-center font-bold">3</span>
+            Opções e Geração
+          </h2>
+
+          <Card className="bg-gray-900 border-gray-700 max-w-lg">
+            <CardContent className="p-6 space-y-5">
+              {/* Toggle API Oficial */}
+              <div className="flex items-center justify-between bg-gray-800 rounded-lg p-3">
+                <div className="flex items-center gap-2">
+                  <Wifi className="h-4 w-4 text-green-400" />
+                  <div>
+                    <Label className="text-white text-sm font-medium">API Oficial do WhatsApp</Label>
+                    <p className="text-gray-500 text-xs">Ativar integração com Meta Business API</p>
+                  </div>
+                </div>
+                <Switch checked={isOfficialApi} onCheckedChange={setIsOfficialApi} />
               </div>
 
-                <div className="space-y-3">
-                {createdCredentials.siteSlug && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                    <p className="font-medium text-emerald-50 mb-1">Site público criado</p>
-                    <p className="text-emerald-200/90 mb-2">
-                      Vitrine:{' '}
-                      <a
-                        href={`${window.location.origin}/s/${createdCredentials.siteSlug}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline font-mono text-white"
-                      >
-                        {window.location.origin}/s/{createdCredentials.siteSlug}
-                      </a>
-                    </p>
-                    <p className="text-xs text-emerald-200/70">
-                      LPs de imóveis: URL pública /imovel/ mais o slug definido ao publicar cada LP no painel.
-                    </p>
+              {/* Resumo */}
+              <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Plano</span>
+                  <span className="text-white font-medium">{plan!.badge} {plan!.name}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Ciclo</span>
+                  <span className="text-white font-medium">{billingCycle === 'monthly' ? 'Mensal' : 'Anual'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Valor mensal</span>
+                  <span className="text-white font-bold">{formatCurrency(prices.monthly)}</span>
+                </div>
+                {billingCycle === 'annual' && (
+                  <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
+                    <span className="text-gray-400">Total anual</span>
+                    <span className="text-green-400 font-bold">{formatCurrency(prices.total)}</span>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label className="text-gray-300 text-sm">Email</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={createdCredentials.email}
-                      readOnly
-                      className="bg-gray-900/50 border-gray-600 text-white font-mono"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        navigator.clipboard.writeText(createdCredentials.email);
-                        toast.success('Email copiado!');
-                      }}
-                      className="border-gray-600"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Usuários</span>
+                  <span className="text-white">{plan!.maxUsers}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-gray-300 text-sm">Senha</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type={showPassword ? 'text' : 'password'}
-                      value={createdCredentials.password}
-                      readOnly
-                      className="bg-gray-900/50 border-gray-600 text-white font-mono"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="border-gray-600"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        navigator.clipboard.writeText(createdCredentials.password);
-                        toast.success('Senha copiada!');
-                      }}
-                      className="border-gray-600"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
+                {isOfficialApi && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">WhatsApp</span>
+                    <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">API Oficial</Badge>
                   </div>
+                )}
+                <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
+                  <span className="text-gray-400">Expiração do link</span>
+                  <span className="text-amber-400 font-medium flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> 24 horas
+                  </span>
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              {/* Botão Gerar */}
+              {!generatedLink ? (
                 <Button
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      `Email: ${createdCredentials.email}\nSenha: ${createdCredentials.password}`
-                    );
-                    toast.success('Credenciais copiadas!');
-                  }}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={handleGenerateLink}
+                  disabled={generating}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-5 text-base"
                 >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copiar Tudo
+                  {generating ? (
+                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Gerando...</>
+                  ) : (
+                    <><LinkIcon className="h-5 w-5 mr-2" /> Gerar Link de Cadastro</>
+                  )}
                 </Button>
-                <Button
-                  onClick={() => setCreatedCredentials(null)}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                >
-                  Fechar
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-center">
+                    <Check className="h-5 w-5 text-green-400 mx-auto mb-1" />
+                    <p className="text-green-300 text-sm font-medium">Link gerado com sucesso!</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={generatedLink}
+                      readOnly
+                      className="flex-1 bg-gray-800 border border-gray-600 text-white text-xs rounded-lg px-3 py-2 font-mono truncate"
+                    />
+                    <Button onClick={() => handleCopyLink(generatedLink)} className="bg-blue-600 hover:bg-blue-700 shrink-0">
+                      <Copy className="h-4 w-4 mr-1" /> Copiar
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => { setGeneratedLink(null); setSelectedPlan(null); }}
+                    className="w-full border-gray-600 text-gray-300 hover:text-white"
+                  >
+                    Gerar Outro Link
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Links Existentes */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Clock className="h-5 w-5 text-gray-400" />
+            Links Gerados
+          </h2>
+          <Button variant="ghost" size="sm" onClick={loadLinks} className="text-gray-400 hover:text-white">
+            <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
+          </Button>
+        </div>
+
+        {loadingLinks ? (
+          <div className="text-center py-8">
+            <Loader2 className="h-6 w-6 text-gray-400 animate-spin mx-auto" />
+          </div>
+        ) : existingLinks.length === 0 ? (
+          <Card className="bg-gray-900 border-gray-700">
+            <CardContent className="p-8 text-center">
+              <LinkIcon className="h-8 w-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-gray-500">Nenhum link gerado ainda</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {existingLinks.map((link) => {
+              const baseUrl = getBaseUrl();
+              const linkUrl = `${baseUrl}/cadastro/${link.token}`;
+              const expiresAt = new Date(link.expires_at);
+              const isActive = link.status === 'pending' && expiresAt > new Date();
+              const pInfo = getPlanInfo(link.plan);
+
+              return (
+                <Card key={link.id} className={`border bg-gray-900 ${
+                  link.status === 'used' ? 'border-green-500/30' :
+                  isActive ? 'border-gray-700' :
+                  'border-gray-800 opacity-50'
+                }`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        {/* Linha 1: Plano + ciclo + preço + status */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {pInfo && <Badge className={`${pInfo.badgeClass} text-[10px]`}>{pInfo.badge} {pInfo.name}</Badge>}
+                          <span className="text-gray-500 text-xs">{link.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}</span>
+                          <span className="text-gray-500 text-xs">•</span>
+                          <span className="text-white text-xs font-medium">{formatCurrency(link.price_monthly)}/mês</span>
+                          {link.is_official_api && (
+                            <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">API Oficial</Badge>
+                          )}
+                          {getStatusBadge(isActive ? 'pending' : link.status)}
+                        </div>
+
+                        {/* Dados do cliente (quando usado) */}
+                        {link.status === 'used' && link.company_name && (
+                          <div className="bg-green-500/5 border border-green-500/15 rounded-lg p-2.5 space-y-1">
+                            <p className="text-green-400 text-xs font-medium flex items-center gap-1">
+                              <Check className="h-3 w-3" /> Cliente cadastrado
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                              <p className="text-gray-300 text-xs flex items-center gap-1">
+                                <Building2 className="h-3 w-3 text-gray-500" /> {link.company_name}
+                              </p>
+                              {link.company_email && (
+                                <p className="text-gray-300 text-xs flex items-center gap-1">
+                                  <Mail className="h-3 w-3 text-gray-500" /> {link.company_email}
+                                </p>
+                              )}
+                              {link.company_cnpj && (
+                                <p className="text-gray-300 text-xs flex items-center gap-1">
+                                  <Building2 className="h-3 w-3 text-gray-500" /> {link.company_cnpj}
+                                </p>
+                              )}
+                              {link.company_address && (
+                                <p className="text-gray-300 text-xs flex items-center gap-1">
+                                  <MapPin className="h-3 w-3 text-gray-500" /> {link.company_address}
+                                </p>
+                              )}
+                            </div>
+                            {link.used_at && (
+                              <p className="text-gray-500 text-[10px]">
+                                Cadastrado em {new Date(link.used_at).toLocaleString('pt-BR')}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Expiração */}
+                        {isActive && (
+                          <p className="text-amber-400/60 text-[10px]">
+                            Expira em {expiresAt.toLocaleString('pt-BR')}
+                          </p>
+                        )}
+                        {link.status === 'expired' && (
+                          <p className="text-red-400/60 text-[10px]">Expirou em {expiresAt.toLocaleString('pt-BR')}</p>
+                        )}
+                      </div>
+
+                      {/* Ações */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isActive && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => handleCopyLink(linkUrl)}
+                              className="text-gray-400 hover:text-white h-8 w-8 p-0" title="Copiar link">
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => window.open(linkUrl, '_blank')}
+                              className="text-gray-400 hover:text-white h-8 w-8 p-0" title="Abrir link">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(link.id)}
+                          className="text-gray-500 hover:text-red-400 h-8 w-8 p-0" title="Remover">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

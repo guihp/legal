@@ -23,6 +23,7 @@ import { Toaster } from './components/ui/sonner';
 // Paginas Publicas
 const SiteVitrine = lazy(() => import("@/pages/public/SiteVitrine"));
 const PropertyLandingPage = lazy(() => import("@/pages/public/PropertyLandingPage"));
+const SignupPage = lazy(() => import("@/pages/public/SignupPage"));
 
 function AppContent() {
   const { profile, loading: profileLoading, error: profileError } = useUserProfile();
@@ -73,7 +74,7 @@ function AppContent() {
   const subdomainSlug = isSubdomain ? parts[0] : null;
 
   // Se for rota pública, não exige perfil nem acesso
-  const isPublicRoute = location.pathname.startsWith('/s/') || location.pathname.startsWith('/imovel/') || isSubdomain;
+  const isPublicRoute = location.pathname.startsWith('/s/') || location.pathname.startsWith('/imovel/') || location.pathname.startsWith('/cadastro/') || isSubdomain;
   
   if (isPublicRoute) {
     if (isSubdomain && subdomainSlug) {
@@ -100,6 +101,7 @@ function AppContent() {
         <Routes>
           <Route path="/s/:companySlug" element={<SiteVitrine />} />
           <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+          <Route path="/cadastro/:token" element={<SignupPage />} />
         </Routes>
       </Suspense>
     );
@@ -210,6 +212,7 @@ function AppContent() {
         <Route path="/marketing-site" element={<Index />} />
         <Route path="/marketing-lps" element={<Index />} />
         <Route path="/partnerships" element={<Index />} />
+        <Route path="/n8n-leads-api" element={<Index />} />
         <Route path="/disparador" element={<Index />} />
         <Route path="/conversas" element={<Index />} />
         <Route path="/configurations" element={<Index />} />
@@ -295,7 +298,7 @@ function App() {
   }
 
   if (!session) {
-    const isPublicRoute = window.location.pathname.startsWith('/s/') || window.location.pathname.startsWith('/imovel/');
+    const isPublicRoute = window.location.pathname.startsWith('/s/') || window.location.pathname.startsWith('/imovel/') || window.location.pathname.startsWith('/cadastro/');
     if (window.location.pathname === '/landing' || isPublicRoute) {
       const LandingPage = lazy(() => import("@/pages/LandingPage"));
       return (
@@ -305,6 +308,7 @@ function App() {
               <Route path="/landing" element={<LandingPage />} />
               <Route path="/s/:companySlug" element={<SiteVitrine />} />
               <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+              <Route path="/cadastro/:token" element={<SignupPage />} />
               <Route path="*" element={<LoginPage onLoginSuccess={() => { }} />} />
             </Routes>
           </Suspense>

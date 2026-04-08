@@ -157,7 +157,7 @@ export function AdminDashboard() {
       )}
 
       {/* Status Overview */}
-      <Card className="bg-gray-800/50 border-gray-700">
+      <Card className="bg-gray-800 border-gray-700">
         <CardHeader>
           <CardTitle className="text-white">Distribuicao por Status</CardTitle>
           <CardDescription>Visao geral dos status das empresas</CardDescription>

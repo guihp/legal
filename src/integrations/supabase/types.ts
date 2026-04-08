@@ -10,54 +10,286 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.4"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          id: string
+          meta: Json | null
+          resource: string
+          resource_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          resource: string
+          resource_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          resource?: string
+          resource_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_templates: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          id: string
+          is_official_api: boolean | null
+          message: string
+          shortcut: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          id?: string
+          is_official_api?: boolean | null
+          message: string
+          shortcut: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          is_official_api?: boolean | null
+          message?: string
+          shortcut?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           address: string | null
+          admin_notes: string | null
+          APIOficial: boolean | null
+          billing_email: string | null
+          block_reason: string | null
+          blocked_at: string | null
           cnpj: string | null
           created_at: string | null
           email: string | null
+          grace_period_days: number | null
           id: string
           is_active: boolean | null
+          last_activity_at: string | null
           logo_url: string | null
           max_users: number | null
           name: string
           phone: string | null
           plan: string | null
+          subscription_expires_at: string | null
+          subscription_status: string | null
+          trial_ends_at: string | null
           updated_at: string | null
+          whatsapp_ai_phone: string | null
         }
         Insert: {
           address?: string | null
+          admin_notes?: string | null
+          APIOficial?: boolean | null
+          billing_email?: string | null
+          block_reason?: string | null
+          blocked_at?: string | null
           cnpj?: string | null
           created_at?: string | null
           email?: string | null
+          grace_period_days?: number | null
           id?: string
           is_active?: boolean | null
+          last_activity_at?: string | null
           logo_url?: string | null
           max_users?: number | null
           name: string
           phone?: string | null
           plan?: string | null
+          subscription_expires_at?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
           updated_at?: string | null
+          whatsapp_ai_phone?: string | null
         }
         Update: {
           address?: string | null
+          admin_notes?: string | null
+          APIOficial?: boolean | null
+          billing_email?: string | null
+          block_reason?: string | null
+          blocked_at?: string | null
           cnpj?: string | null
           created_at?: string | null
           email?: string | null
+          grace_period_days?: number | null
           id?: string
           is_active?: boolean | null
+          last_activity_at?: string | null
           logo_url?: string | null
           max_users?: number | null
           name?: string
           phone?: string | null
           plan?: string | null
+          subscription_expires_at?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
           updated_at?: string | null
+          whatsapp_ai_phone?: string | null
         }
         Relationships: []
+      }
+      company_access_logs: {
+        Row: {
+          action: string
+          company_id: string
+          created_at: string
+          id: string
+          meta: Json | null
+          new_status: string | null
+          performed_by: string | null
+          previous_status: string | null
+          reason: string | null
+        }
+        Insert: {
+          action: string
+          company_id: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          new_status?: string | null
+          performed_by?: string | null
+          previous_status?: string | null
+          reason?: string | null
+        }
+        Update: {
+          action?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          new_status?: string | null
+          performed_by?: string | null
+          previous_status?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_access_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_access_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_access_logs_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_api_keys: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          key_hash: string
+          key_name: string
+          key_prefix: string
+          last_used_at: string | null
+          revoked_at: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          key_hash: string
+          key_name?: string
+          key_prefix: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          key_hash?: string
+          key_name?: string
+          key_prefix?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_api_keys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_api_keys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_features: {
         Row: {
@@ -90,6 +322,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_features_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
             referencedColumns: ["id"]
           },
         ]
@@ -169,10 +408,84 @@ export type Database = {
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "company_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_websites: {
+        Row: {
+          analytics_google: string | null
+          company_id: string
+          created_at: string | null
+          description: string | null
+          hero_images: Json | null
+          id: string
+          is_published: boolean | null
+          logo_url: string | null
+          pixel_facebook: string | null
+          slug: string
+          theme_color: string | null
+          title: string
+          title_color: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          analytics_google?: string | null
+          company_id: string
+          created_at?: string | null
+          description?: string | null
+          hero_images?: Json | null
+          id?: string
+          is_published?: boolean | null
+          logo_url?: string | null
+          pixel_facebook?: string | null
+          slug: string
+          theme_color?: string | null
+          title: string
+          title_color?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          analytics_google?: string | null
+          company_id?: string
+          created_at?: string | null
+          description?: string | null
+          hero_images?: Json | null
+          id?: string
+          is_published?: boolean | null
+          logo_url?: string | null
+          pixel_facebook?: string | null
+          slug?: string
+          theme_color?: string | null
+          title?: string
+          title_color?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_websites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_websites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
         ]
       }
       contract_templates: {
         Row: {
+          company_id: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
@@ -185,8 +498,10 @@ export type Database = {
           name: string
           template_type: string | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
+          company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -199,8 +514,10 @@ export type Database = {
           name: string
           template_type?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
+          company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -213,8 +530,31 @@ export type Database = {
           name?: string
           template_type?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contract_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_templates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contracts: {
         Row: {
@@ -257,7 +597,6 @@ export type Database = {
           property_address: string
           property_area: number | null
           property_city: string | null
-          property_id: string | null
           property_state: string | null
           property_title: string
           property_type: string | null
@@ -310,7 +649,6 @@ export type Database = {
           property_address: string
           property_area?: number | null
           property_city?: string | null
-          property_id?: string | null
           property_state?: string | null
           property_title: string
           property_type?: string | null
@@ -363,7 +701,6 @@ export type Database = {
           property_address?: string
           property_area?: number | null
           property_city?: string | null
-          property_id?: string | null
           property_state?: string | null
           property_title?: string
           property_type?: string | null
@@ -377,13 +714,6 @@ export type Database = {
           valor?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "contracts_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "contracts_template_id_fkey"
             columns: ["template_id"]
@@ -457,6 +787,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispatch_configurations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "dispatch_configurations_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -465,7 +802,61 @@ export type Database = {
           },
         ]
       }
-      crm_whatsapp_messages: {
+      imobipro_messages: {
+        Row: {
+          data: string | null
+          id: number
+          instancia: string | null
+          media: string | null
+          message: Json
+          session_id: string
+        }
+        Insert: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message: Json
+          session_id: string
+        }
+        Update: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message?: Json
+          session_id?: string
+        }
+        Relationships: []
+      }
+      imobipro_messages_5519991679072: {
+        Row: {
+          data: string | null
+          id: number
+          instancia: string | null
+          media: string | null
+          message: Json
+          session_id: string
+        }
+        Insert: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message: Json
+          session_id: string
+        }
+        Update: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message?: Json
+          session_id?: string
+        }
+        Relationships: []
+      }
+      imobipro_messages_559870230832: {
         Row: {
           data: string | null
           id: number
@@ -494,6 +885,7 @@ export type Database = {
       }
       imoveisvivareal: {
         Row: {
+          accepts_partnership: boolean | null
           andar: number | null
           ano_construcao: number | null
           bairro: string | null
@@ -506,6 +898,7 @@ export type Database = {
           created_at: string | null
           descricao: string | null
           disponibilidade: string | null
+          disponibilidade_observacao: string | null
           endereco: string | null
           features: string[] | null
           garagem: number | null
@@ -514,6 +907,7 @@ export type Database = {
           listing_id: string | null
           modalidade: string | null
           numero: string | null
+          partnership_notes: string | null
           preco: number | null
           quartos: number | null
           suite: number | null
@@ -524,6 +918,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          accepts_partnership?: boolean | null
           andar?: number | null
           ano_construcao?: number | null
           bairro?: string | null
@@ -536,6 +931,7 @@ export type Database = {
           created_at?: string | null
           descricao?: string | null
           disponibilidade?: string | null
+          disponibilidade_observacao?: string | null
           endereco?: string | null
           features?: string[] | null
           garagem?: number | null
@@ -544,6 +940,7 @@ export type Database = {
           listing_id?: string | null
           modalidade?: string | null
           numero?: string | null
+          partnership_notes?: string | null
           preco?: number | null
           quartos?: number | null
           suite?: number | null
@@ -554,6 +951,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          accepts_partnership?: boolean | null
           andar?: number | null
           ano_construcao?: number | null
           bairro?: string | null
@@ -566,6 +964,7 @@ export type Database = {
           created_at?: string | null
           descricao?: string | null
           disponibilidade?: string | null
+          disponibilidade_observacao?: string | null
           endereco?: string | null
           features?: string[] | null
           garagem?: number | null
@@ -574,6 +973,7 @@ export type Database = {
           listing_id?: string | null
           modalidade?: string | null
           numero?: string | null
+          partnership_notes?: string | null
           preco?: number | null
           quartos?: number | null
           suite?: number | null
@@ -592,10 +992,74 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "imoveisvivareal_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "imoveisvivareal_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      impersonation_sessions: {
+        Row: {
+          ended_at: string | null
+          id: string
+          impersonated_company_id: string | null
+          impersonated_email: string
+          impersonated_user_id: string
+          ip_address: string | null
+          is_active: boolean | null
+          reason: string | null
+          started_at: string
+          super_admin_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          ended_at?: string | null
+          id?: string
+          impersonated_company_id?: string | null
+          impersonated_email: string
+          impersonated_user_id: string
+          ip_address?: string | null
+          is_active?: boolean | null
+          reason?: string | null
+          started_at?: string
+          super_admin_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          ended_at?: string | null
+          id?: string
+          impersonated_company_id?: string | null
+          impersonated_email?: string
+          impersonated_user_id?: string
+          ip_address?: string | null
+          is_active?: boolean | null
+          reason?: string | null
+          started_at?: string
+          super_admin_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "impersonation_sessions_impersonated_company_id_fkey"
+            columns: ["impersonated_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "impersonation_sessions_impersonated_company_id_fkey"
+            columns: ["impersonated_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
             referencedColumns: ["id"]
           },
         ]
@@ -634,6 +1098,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquilinato_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
             referencedColumns: ["id"]
           },
         ]
@@ -678,6 +1149,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "inquilinato_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "inquilinato_messages_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: false
@@ -703,7 +1181,6 @@ export type Database = {
           name: string | null
           notes: string | null
           phone: string | null
-          property_id: string | null
           source: string | null
           stage: string | null
           updated_at: string | null
@@ -725,7 +1202,6 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
-          property_id?: string | null
           source?: string | null
           stage?: string | null
           updated_at?: string | null
@@ -747,7 +1223,6 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
-          property_id?: string | null
           source?: string | null
           stage?: string | null
           updated_at?: string | null
@@ -762,6 +1237,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "leads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "leads_id_corretor_responsavel_fkey"
             columns: ["id_corretor_responsavel"]
             isOneToOne: false
@@ -769,94 +1251,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "leads_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "leads_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      oncall_events: {
-        Row: {
-          address: string | null
-          assigned_user_id: string | null
-          client_email: string | null
-          client_name: string | null
-          client_phone: string | null
-          company_id: string
-          created_at: string | null
-          description: string | null
-          ends_at: string | null
-          google_event_id: string | null
-          id: string
-          property_id: string | null
-          property_title: string | null
-          starts_at: string
-          status: string | null
-          title: string
-          type: string | null
-          updated_at: string | null
-          user_id: string
-          webhook_source: string | null
-        }
-        Insert: {
-          address?: string | null
-          assigned_user_id?: string | null
-          client_email?: string | null
-          client_name?: string | null
-          client_phone?: string | null
-          company_id: string
-          created_at?: string | null
-          description?: string | null
-          ends_at?: string | null
-          google_event_id?: string | null
-          id?: string
-          property_id?: string | null
-          property_title?: string | null
-          starts_at: string
-          status?: string | null
-          title: string
-          type?: string | null
-          updated_at?: string | null
-          user_id: string
-          webhook_source?: string | null
-        }
-        Update: {
-          address?: string | null
-          assigned_user_id?: string | null
-          client_email?: string | null
-          client_name?: string | null
-          client_phone?: string | null
-          company_id?: string
-          created_at?: string | null
-          description?: string | null
-          ends_at?: string | null
-          google_event_id?: string | null
-          id?: string
-          property_id?: string | null
-          property_title?: string | null
-          starts_at?: string
-          status?: string | null
-          title?: string
-          type?: string | null
-          updated_at?: string | null
-          user_id?: string
-          webhook_source?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "oncall_events_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -971,6 +1369,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "oncall_schedules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "oncall_schedules_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -979,124 +1384,63 @@ export type Database = {
           },
         ]
       }
-      properties: {
+      property_landing_pages: {
         Row: {
-          address: string
-          area: number
-          bathrooms: number | null
-          bedrooms: number | null
-          city: string
-          company_id: string | null
+          company_id: string
           created_at: string | null
-          description: string | null
+          custom_color: string | null
           id: string
-          price: number
-          property_purpose: string | null
-          proprietario_cpf: string | null
-          proprietario_email: string | null
-          proprietario_endereco: string | null
-          proprietario_estado_civil: string | null
-          proprietario_nome: string | null
-          state: string
-          status: string | null
-          title: string
-          type: string
+          is_published: boolean | null
+          page_title: string | null
+          property_id: number
+          slug: string
           updated_at: string | null
-          user_id: string | null
+          views: number | null
         }
         Insert: {
-          address: string
-          area: number
-          bathrooms?: number | null
-          bedrooms?: number | null
-          city: string
-          company_id?: string | null
+          company_id: string
           created_at?: string | null
-          description?: string | null
-          id: string
-          price: number
-          property_purpose?: string | null
-          proprietario_cpf?: string | null
-          proprietario_email?: string | null
-          proprietario_endereco?: string | null
-          proprietario_estado_civil?: string | null
-          proprietario_nome?: string | null
-          state: string
-          status?: string | null
-          title: string
-          type: string
+          custom_color?: string | null
+          id?: string
+          is_published?: boolean | null
+          page_title?: string | null
+          property_id: number
+          slug: string
           updated_at?: string | null
-          user_id?: string | null
+          views?: number | null
         }
         Update: {
-          address?: string
-          area?: number
-          bathrooms?: number | null
-          bedrooms?: number | null
-          city?: string
-          company_id?: string | null
+          company_id?: string
           created_at?: string | null
-          description?: string | null
+          custom_color?: string | null
           id?: string
-          price?: number
-          property_purpose?: string | null
-          proprietario_cpf?: string | null
-          proprietario_email?: string | null
-          proprietario_endereco?: string | null
-          proprietario_estado_civil?: string | null
-          proprietario_nome?: string | null
-          state?: string
-          status?: string | null
-          title?: string
-          type?: string
+          is_published?: boolean | null
+          page_title?: string | null
+          property_id?: number
+          slug?: string
           updated_at?: string | null
-          user_id?: string | null
+          views?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "properties_company_id_fkey"
+            foreignKeyName: "property_landing_pages_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "properties_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "property_landing_pages_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
+            referencedRelation: "companies_needing_attention"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      property_images: {
-        Row: {
-          created_at: string | null
-          id: string
-          image_order: number | null
-          image_url: string
-          property_id: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          image_order?: number | null
-          image_url: string
-          property_id?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          image_order?: number | null
-          image_url?: string
-          property_id?: string | null
-        }
-        Relationships: [
           {
-            foreignKeyName: "property_images_property_id_fkey"
+            foreignKeyName: "property_landing_pages_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
-            referencedRelation: "properties"
+            referencedRelation: "imoveisvivareal"
             referencedColumns: ["id"]
           },
         ]
@@ -1144,12 +1488,12 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           department: string | null
-          email: string | null
-          full_name: string | null
+          email: string
+          full_name: string
           id: string
           is_active: boolean | null
           phone: string | null
-          role: string | null
+          role: string
           updated_at: string | null
         }
         Insert: {
@@ -1158,12 +1502,12 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           department?: string | null
-          email?: string | null
-          full_name?: string | null
+          email: string
+          full_name: string
           id: string
           is_active?: boolean | null
           phone?: string | null
-          role?: string | null
+          role?: string
           updated_at?: string | null
         }
         Update: {
@@ -1172,12 +1516,12 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           department?: string | null
-          email?: string | null
-          full_name?: string | null
+          email?: string
+          full_name?: string
           id?: string
           is_active?: boolean | null
           phone?: string | null
-          role?: string | null
+          role?: string
           updated_at?: string | null
         }
         Relationships: [
@@ -1188,279 +1532,323 @@ export type Database = {
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      whatsapp_chats: {
-        Row: {
-          contact_avatar: string | null
-          contact_name: string | null
-          contact_phone: string
-          created_at: string | null
-          id: string
-          instance_id: string | null
-          is_archived: boolean | null
-          last_message: string | null
-          last_message_time: string | null
-          lead_id: string | null
-          property_id: string | null
-          tags: string[] | null
-          unread_count: number | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Insert: {
-          contact_avatar?: string | null
-          contact_name?: string | null
-          contact_phone: string
-          created_at?: string | null
-          id?: string
-          instance_id?: string | null
-          is_archived?: boolean | null
-          last_message?: string | null
-          last_message_time?: string | null
-          lead_id?: string | null
-          property_id?: string | null
-          tags?: string[] | null
-          unread_count?: number | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          contact_avatar?: string | null
-          contact_name?: string | null
-          contact_phone?: string
-          created_at?: string | null
-          id?: string
-          instance_id?: string | null
-          is_archived?: boolean | null
-          last_message?: string | null
-          last_message_time?: string | null
-          lead_id?: string | null
-          property_id?: string | null
-          tags?: string[] | null
-          unread_count?: number | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
           {
-            foreignKeyName: "whatsapp_chats_instance_id_fkey"
-            columns: ["instance_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_chats_lead_id_fkey"
-            columns: ["lead_id"]
-            isOneToOne: false
-            referencedRelation: "leads"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_chats_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_chats_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whatsapp_instances: {
-        Row: {
-          api_key: string | null
-          chat_count: number | null
-          company_id: string | null
-          contact_count: number | null
-          created_at: string | null
-          id: string
-          instance_name: string
-          is_active: boolean | null
-          last_seen: string | null
-          message_count: number | null
-          phone_number: string | null
-          profile_name: string | null
-          profile_pic_url: string | null
-          status: string | null
-          updated_at: string | null
-          user_id: string | null
-          webhook_url: string | null
-        }
-        Insert: {
-          api_key?: string | null
-          chat_count?: number | null
-          company_id?: string | null
-          contact_count?: number | null
-          created_at?: string | null
-          id?: string
-          instance_name: string
-          is_active?: boolean | null
-          last_seen?: string | null
-          message_count?: number | null
-          phone_number?: string | null
-          profile_name?: string | null
-          profile_pic_url?: string | null
-          status?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-          webhook_url?: string | null
-        }
-        Update: {
-          api_key?: string | null
-          chat_count?: number | null
-          company_id?: string | null
-          contact_count?: number | null
-          created_at?: string | null
-          id?: string
-          instance_name?: string
-          is_active?: boolean | null
-          last_seen?: string | null
-          message_count?: number | null
-          phone_number?: string | null
-          profile_name?: string | null
-          profile_pic_url?: string | null
-          status?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-          webhook_url?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whatsapp_instances_company_id_fkey"
+            foreignKeyName: "user_profiles_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_instances_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whatsapp_messages: {
-        Row: {
-          caption: string | null
-          chat_id: string | null
-          contact_phone: string | null
-          content: string | null
-          created_at: string | null
-          delivered_at: string | null
-          from_me: boolean
-          id: string
-          instance_id: string | null
-          media_url: string | null
-          message_id: string | null
-          message_type: string | null
-          read_at: string | null
-          timestamp: string | null
-          user_id: string | null
-        }
-        Insert: {
-          caption?: string | null
-          chat_id?: string | null
-          contact_phone?: string | null
-          content?: string | null
-          created_at?: string | null
-          delivered_at?: string | null
-          from_me: boolean
-          id?: string
-          instance_id?: string | null
-          media_url?: string | null
-          message_id?: string | null
-          message_type?: string | null
-          read_at?: string | null
-          timestamp?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          caption?: string | null
-          chat_id?: string | null
-          contact_phone?: string | null
-          content?: string | null
-          created_at?: string | null
-          delivered_at?: string | null
-          from_me?: boolean
-          id?: string
-          instance_id?: string | null
-          media_url?: string | null
-          message_id?: string | null
-          message_type?: string | null
-          read_at?: string | null
-          timestamp?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whatsapp_messages_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_messages_instance_id_fkey"
-            columns: ["instance_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
+            referencedRelation: "companies_needing_attention"
             referencedColumns: ["id"]
           },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      companies_needing_attention: {
+        Row: {
+          blocked_at: string | null
+          created_at: string | null
+          days_remaining: number | null
+          email: string | null
+          grace_period_days: number | null
+          id: string | null
+          name: string | null
+          subscription_expires_at: string | null
+          subscription_status: string | null
+          trial_ends_at: string | null
+          user_count: number | null
+        }
+        Insert: {
+          blocked_at?: string | null
+          created_at?: string | null
+          days_remaining?: never
+          email?: string | null
+          grace_period_days?: number | null
+          id?: string | null
+          name?: string | null
+          subscription_expires_at?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
+          user_count?: never
+        }
+        Update: {
+          blocked_at?: string | null
+          created_at?: string | null
+          days_remaining?: never
+          email?: string | null
+          grace_period_days?: number | null
+          id?: string | null
+          name?: string | null
+          subscription_expires_at?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
+          user_count?: never
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      get_conversations_for_corretor: {
-        Args: { selected_instance?: string; user_id: string }
+      admin_get_leads_by_period: {
+        Args: { end_date: string; start_date: string }
         Returns: {
-          display_name: string
+          company_id: string
+          created_at: string
+          lead_id: string
+          source: string
+          stage: string
+        }[]
+      }
+      block_company: {
+        Args: { p_company_id: string; p_reason?: string }
+        Returns: boolean
+      }
+      check_and_update_subscriptions: {
+        Args: never
+        Returns: {
+          execution_time: string
+          updated_count: number
+        }[]
+      }
+      check_company_access: {
+        Args: { p_company_id: string }
+        Returns: {
+          can_access: boolean
+          days_remaining: number
+          is_grace_period: boolean
+          message: string
+          status: string
+        }[]
+      }
+      check_current_user_access: {
+        Args: never
+        Returns: {
+          can_access: boolean
+          days_remaining: number
+          is_grace_period: boolean
+          is_super_admin: boolean
+          message: string
+          status: string
+        }[]
+      }
+      conversation_for_user: {
+        Args: { p_limit?: number; p_offset?: number; p_session_id: string }
+        Returns: {
+          before_handoff: boolean
+          data: string
+          handoff_ts: string
+          id: number
           instancia: string
-          last_message_content: string
-          last_message_date: string
-          last_message_type: string
-          lead_phone: string
-          lead_stage: string
-          message_count: number
+          media: string
+          message: Json
           session_id: string
         }[]
       }
-      get_instances_with_conversation_count: {
-        Args: { user_id: string }
+      conversation_for_user_by_phone: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_phone: string
+          p_session_id: string
+        }
         Returns: {
-          conversation_count: number
+          before_handoff: boolean
+          data: string
+          handoff_ts: string
+          id: number
           instancia: string
+          media: string
+          message: Json
+          session_id: string
         }[]
       }
-      get_user_company_id: {
-        Args: Record<PropertyKey, never>
+      create_company_manager: {
+        Args: {
+          p_company_id: string
+          p_email: string
+          p_full_name: string
+          p_phone?: string
+          p_user_id: string
+        }
         Returns: string
       }
-      get_user_role: {
-        Args: Record<PropertyKey, never>
+      create_company_messages_table: {
+        Args: { p_whatsapp_ai_phone: string }
+        Returns: undefined
+      }
+      create_company_with_trial: {
+        Args: {
+          p_address?: string
+          p_cnpj?: string
+          p_email?: string
+          p_max_users?: number
+          p_name: string
+          p_phone?: string
+          p_plan?: string
+          p_trial_days?: number
+          p_whatsapp_ai_phone: string
+        }
         Returns: string
       }
-      is_admin_user: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
+      end_impersonation: { Args: never; Returns: boolean }
+      get_active_impersonation: {
+        Args: never
+        Returns: {
+          impersonated_company_id: string
+          impersonated_email: string
+          impersonated_user_id: string
+          session_id: string
+          started_at: string
+        }[]
+      }
+      get_admin_metrics: {
+        Args: never
+        Returns: {
+          active_companies: number
+          active_users: number
+          blocked_companies: number
+          expired_companies: number
+          grace_companies: number
+          total_companies: number
+          total_leads: number
+          total_properties: number
+          total_users: number
+          trial_companies: number
+        }[]
+      }
+      get_company_access_logs: {
+        Args: { p_company_id?: string; p_limit?: number; p_offset?: number }
+        Returns: {
+          action: string
+          company_id: string
+          company_name: string
+          created_at: string
+          id: string
+          meta: Json
+          new_status: string
+          performed_by: string
+          performed_by_name: string
+          previous_status: string
+          reason: string
+        }[]
+      }
+      get_company_details: {
+        Args: { p_company_id: string }
+        Returns: {
+          address: string
+          admin_notes: string
+          billing_email: string
+          block_reason: string
+          blocked_at: string
+          cnpj: string
+          created_at: string
+          email: string
+          grace_period_days: number
+          id: string
+          is_active: boolean
+          last_activity_at: string
+          lead_count: number
+          logo_url: string
+          max_users: number
+          name: string
+          phone: string
+          plan: string
+          property_count: number
+          subscription_expires_at: string
+          subscription_status: string
+          trial_ends_at: string
+          updated_at: string
+          user_count: number
+        }[]
+      }
+      get_corretores_conversas_dev: {
+        Args: never
+        Returns: {
+          company_id: string
+          conversation_count: number
+          email: string
+          full_name: string
+          role: string
+          user_id: string
+        }[]
+      }
+      get_imoveis_for_dashboard: {
+        Args: { end_date: string; start_date: string; trunc_type: string }
+        Returns: {
+          bucket: string
+          imoveis: number
+          vgv: number
+        }[]
+      }
+      get_impersonation_history: {
+        Args: { p_limit?: number }
+        Returns: {
+          company_name: string
+          duration_minutes: number
+          ended_at: string
+          impersonated_email: string
+          reason: string
+          session_id: string
+          started_at: string
+          super_admin_email: string
+        }[]
+      }
+      get_leads_for_dashboard: {
+        Args: { end_date: string; start_date: string }
+        Returns: {
+          company_id: string
+          created_at: string
+          lead_id: string
+          source: string
+          stage: string
+        }[]
+      }
+      get_own_company: {
+        Args: never
+        Returns: {
+          address: string
+          cnpj: string
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          logo_url: string
+          max_users: number
+          name: string
+          phone: string
+          plan: string
+          subscription_expires_at: string
+          subscription_status: string
+          trial_ends_at: string
+        }[]
+      }
+      get_user_company_id: { Args: never; Returns: string }
+      get_user_role: { Args: never; Returns: string }
+      increment_page_view: { Args: { page_id: string }; Returns: undefined }
+      is_admin_user: { Args: never; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
+      list_all_companies: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_search?: string
+          p_status?: string
+        }
+        Returns: {
+          block_reason: string
+          blocked_at: string
+          cnpj: string
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          last_activity_at: string
+          max_users: number
+          name: string
+          plan: string
+          subscription_expires_at: string
+          subscription_status: string
+          trial_ends_at: string
+          user_count: number
+        }[]
       }
       list_company_users: {
         Args: {
@@ -1484,6 +1872,74 @@ export type Database = {
           role: string
           updated_at: string
         }[]
+      }
+      list_conversations_by_phone: {
+        Args: { p_instancia?: string; p_phone: string }
+        Returns: {
+          data: string
+          instancia: string
+          media: string
+          message: Json
+          session_id: string
+        }[]
+      }
+      list_users_for_impersonation: {
+        Args: { p_company_id?: string; p_search?: string }
+        Returns: {
+          company_id: string
+          company_name: string
+          email: string
+          full_name: string
+          is_active: boolean
+          last_login: string
+          role: string
+          user_id: string
+        }[]
+      }
+      renew_subscription: {
+        Args: { p_company_id: string; p_days: number; p_notes?: string }
+        Returns: boolean
+      }
+      start_impersonation: {
+        Args: { p_reason?: string; p_user_id: string }
+        Returns: {
+          company_name: string
+          message: string
+          session_id: string
+          success: boolean
+          user_email: string
+          user_name: string
+        }[]
+      }
+      unblock_company: {
+        Args: { p_company_id: string; p_new_status?: string; p_reason?: string }
+        Returns: boolean
+      }
+      update_company: {
+        Args: {
+          p_address?: string
+          p_admin_notes?: string
+          p_billing_email?: string
+          p_cnpj?: string
+          p_company_id: string
+          p_email?: string
+          p_max_users?: number
+          p_name?: string
+          p_phone?: string
+          p_plan?: string
+        }
+        Returns: boolean
+      }
+      update_expired_company_status: { Args: never; Returns: number }
+      update_own_company: {
+        Args: {
+          p_address?: string
+          p_cnpj?: string
+          p_email?: string
+          p_name?: string
+          p_phone?: string
+        }
+        Returns: boolean
       }
     }
     Enums: {

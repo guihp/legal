@@ -14,3 +14,10 @@ entrypoint = "./functions/capture-public-lead/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/capture-public-lead/*.html" ]
+
+# API de leads para integrações externas (n8n) + gestão interna por JWT.
+# Precisamos permitir preflight CORS sem exigir JWT, então verify_jwt=false.
+[functions.company-leads-api]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/company-leads-api/index.ts"

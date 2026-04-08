@@ -117,15 +117,34 @@ const PartnershipsView = createLazyComponent(
   () => import("@/components/PartnershipsView").then(m => ({ default: m.PartnershipsView })),
   "PartnershipsView"
 );
+const N8nLeadsApiView = createLazyComponent(
+  () => import("@/components/N8nLeadsApiView").then(m => ({ default: m.N8nLeadsApiView })),
+  "N8nLeadsApiView"
+);
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PreviewProvider } from "@/contexts/PreviewContext";
+import { useOwnCompany } from "@/hooks/useOwnCompany";
 
 const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
   const { hasPermission } = usePermissions();
+  const { company } = useOwnCompany();
+  const companyPlan = company?.plan || 'essential';
+
+  const PlanBlockedScreen = ({ feature, requiredPlan }: { feature: string; requiredPlan: string }) => (
+    <div className="p-8 text-center">
+      <div className="text-amber-400 mb-4 text-lg font-semibold">🔒 Recurso Indisponível</div>
+      <p className="text-gray-400 text-sm mb-2">
+        O módulo <strong>{feature}</strong> não está disponível no seu plano atual.
+      </p>
+      <p className="text-gray-500 text-xs">
+        Faça upgrade para o plano <strong>{requiredPlan}</strong> para desbloquear este recurso.
+      </p>
+    </div>
+  );
 
   //
 
@@ -142,6 +161,9 @@ const Index = () => {
           />
         );
       case "reports":
+        if (companyPlan === 'essential') {
+          return <PlanBlockedScreen feature="Relatórios" requiredPlan="Growth ou Professional" />;
+        }
         return <ReportsView />;
       case "properties":
         return <PropertyList properties={[]} loading={false} onAddNew={() => window.dispatchEvent(new Event("open-add-imovel-modal"))} />;
@@ -158,6 +180,10 @@ const Index = () => {
       case "connections":
         return <ConnectionsViewSimplified />;
       case "users":
+        // Plano Essential não tem gestão de usuários
+        if (companyPlan === 'essential') {
+          return <PlanBlockedScreen feature="Gestão de Usuários" requiredPlan="Growth ou Professional" />;
+        }
         // Verificar permissão de acesso ao módulo de Usuários
         if (!hasPermission('menu_users')) {
           console.log('🚫 Acesso negado ao módulo de Usuários');
@@ -200,6 +226,9 @@ const Index = () => {
       case "conversas":
         return <ConversasView />;
       case "marketing":
+        if (companyPlan !== 'professional') {
+          return <PlanBlockedScreen feature="Presença Digital" requiredPlan="Professional" />;
+        }
         if (!hasPermission('menu_marketing')) {
           return (
             <div className="p-8 text-center">
@@ -210,6 +239,9 @@ const Index = () => {
         }
         return <MarketingView section="overview" />;
       case "marketing-site":
+        if (companyPlan !== 'professional') {
+          return <PlanBlockedScreen feature="Site Vitrine" requiredPlan="Professional" />;
+        }
         if (!hasPermission('menu_marketing')) {
           return (
             <div className="p-8 text-center">
@@ -220,6 +252,9 @@ const Index = () => {
         }
         return <MarketingView section="website" />;
       case "marketing-lps":
+        if (companyPlan !== 'professional') {
+          return <PlanBlockedScreen feature="Landing Pages" requiredPlan="Professional" />;
+        }
         if (!hasPermission('menu_marketing')) {
           return (
             <div className="p-8 text-center">
@@ -231,6 +266,8 @@ const Index = () => {
         return <MarketingLandingPagesView />;
       case "partnerships":
         return <PartnershipsView />;
+      case "n8n-leads-api":
+        return <N8nLeadsApiView />;
       case "landing" as any: // Cast para evitar erro de tipo estrito se 'landing' não estiver em basicNavigation
         return <LandingPage />;
       case "configurations":

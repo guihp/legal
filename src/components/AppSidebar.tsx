@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon, LayoutDashboard, Globe, Layers } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon, LayoutDashboard, Globe, Layers, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -25,6 +25,7 @@ import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { usePreview } from '@/contexts/PreviewContext';
 import { canAccessPermissionsModule } from '@/lib/permissions/rules';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useOwnCompany } from '@/hooks/useOwnCompany';
 
 const menuItems = [
   {
@@ -163,6 +164,13 @@ const secondaryItems = [
     view: "configurations" as const,
     permissionKey: "menu_configurations",
   },
+  {
+    title: "API Leads n8n",
+    url: "#",
+    icon: KeyRound,
+    view: "n8n-leads-api" as const,
+    permissionKey: "menu_configurations",
+  },
 ];
 
 interface AppSidebarProps {
@@ -188,6 +196,7 @@ interface AppSidebarProps {
       | 'marketing-site'
       | 'marketing-lps'
       | 'partnerships'
+      | 'n8n-leads-api'
   ) => void;
 }
 
@@ -200,6 +209,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
   const { theme, toggleTheme } = useTheme();
+  const { company } = useOwnCompany();
+  const companyPlan = company?.plan || 'essential';
   const {
     isPreviewMode,
     previewName,
@@ -297,6 +308,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
     const hasAccess = hasPermission(item.permissionKey);
     console.log(`🔍 DEBUG: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
+
+    // Restrições por plano
+    // "Usuários" — só Growth e Professional
+    if (item.view === 'users' && companyPlan === 'essential') return false;
+
     return hasAccess;
   });
   const filteredAnalyticsItems = analyticsItems.filter(item => {
@@ -307,11 +323,15 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     }
     const hasAccess = hasPermission(item.permissionKey);
     console.log(`🔍 DEBUG ANALYTICS: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
+    // Relatórios — só Growth e Professional
+    if (item.view === 'reports' && companyPlan === 'essential') return false;
     return hasAccess;
   });
 
   const filteredDigitalItems = digitalPresenceItems.filter((item) => {
     if (!profile) return false;
+    // Presença Digital (site, marketing, LPs) — APENAS Professional
+    if (companyPlan !== 'professional') return false;
     return hasPermission(item.permissionKey);
   });
 
@@ -321,6 +341,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
     // Verificação especial para o módulo de permissões
     if (item.permissionKey === 'menu_permissions') {
+      // Permissões — só Growth e Professional
+      if (companyPlan === 'essential') return false;
       return canAccessPermissionsModule(profile.role);
     }
 
@@ -424,6 +446,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                           dashboard: () => import('@/components/DashboardContent'),
                           plantao: () => import('@/components/PlantaoView'),
                           reports: () => import('@/components/ReportsView'),
+                          'n8n-leads-api': () => import('@/components/N8nLeadsApiView'),
                         };
                         map[item.view]?.();
                       }}

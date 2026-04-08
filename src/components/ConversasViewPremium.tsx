@@ -12,7 +12,13 @@ import {
   Video,
   Mic,
   Image as ImageIcon,
-  File as FileIcon
+  File as FileIcon,
+  Plus,
+  Edit2,
+  Trash2,
+  AlertCircle,
+  Zap,
+  Clock
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -22,6 +28,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useChatInstancesFromMessages } from '@/hooks/useChatInstancesFromMessages';
 import { useConversasList } from '@/hooks/useConversasList';
 import { useConversaMessages } from '@/hooks/useConversaMessages';
@@ -32,8 +39,49 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { LeadDetailsModal } from './LeadDetailsModal';
+import { useChatTemplates } from '@/hooks/useChatTemplates';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
+
+
+function CountdownTimer({ date }: { date: Date | null }) {
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!date) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const calculate = () => {
+      const now = Date.now();
+      const diff = now - date.getTime();
+      const limit = 24 * 60 * 60 * 1000;
+      
+      if (diff >= limit) {
+        setTimeLeft(null);
+      } else {
+        const remaining = limit - diff;
+        const hours = Math.floor(remaining / (1000 * 60 * 60));
+        const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+        setTimeLeft(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+      }
+    };
+
+    calculate();
+    const interval = setInterval(calculate, 1000);
+    return () => clearInterval(interval);
+  }, [date]);
+
+  if (!timeLeft) return <span className="text-[10px] text-red-500 font-semibold px-2 py-0.5 border border-red-500/20 rounded-xl bg-red-500/10 ml-2 whitespace-nowrap">Expirado</span>;
+
+  return (
+    <span className="text-[11px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-xl flex items-center gap-1 shadow-sm border border-blue-500/20 ml-2 whitespace-nowrap">
+      <Clock className="w-3 h-3" /> {timeLeft}
+    </span>
+  );
+}
 
 // Variants de animação exatas
 const list = {
@@ -575,6 +623,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [showSidebar, setShowSidebar] = useState(true);
   const [showLeadModal, setShowLeadModal] = useState(false);
 
+  // Hook e estados de Templates de Chat
+  const { templates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useChatTemplates();
+  const [showTemplatesMenu, setShowTemplatesMenu] = useState(false);
+  const [filteredTemplates, setFilteredTemplates] = useState<any[]>([]);
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
+  const [showManageTemplatesModal, setShowManageTemplatesModal] = useState(false);
+  const [isOfficialApiNew, setIsOfficialApiNew] = useState(false);
+
   // Hook para controlar visualização Mobile
   useEffect(() => {
     if (isMobile) {
@@ -613,10 +669,66 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   const maxAudioSec = 60;
 
+
+
+  // Handlers para Templates
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setMessageInput(val);
+    
+    // Mostra o pop-over de atalhos se digitar /
+    if (val.includes('/')) {
+      const parts = val.split(/(?<=\s|^)\//);
+      if (parts.length > 1) {
+        const query = parts[parts.length - 1].split(/\s/)[0].toLowerCase();
+        
+        let validTemplates = templates;
+        if (disableFreeText) {
+          validTemplates = templates.filter(t => t.is_official_api);
+        }
+        const filtered = validTemplates.filter(t => t.shortcut.toLowerCase().includes(query) || t.shortcut === '/');
+        
+        if (filtered.length > 0) {
+          setFilteredTemplates(filtered);
+          setShowTemplatesMenu(true);
+          setSelectedTemplateIndex(0);
+        } else {
+          setShowTemplatesMenu(false);
+        }
+      } else {
+        setShowTemplatesMenu(false);
+      }
+    } else {
+      setShowTemplatesMenu(false);
+    }
+  };
+
+  const selectTemplate = (template: any) => {
+    const lastSlashIndex = messageInput.lastIndexOf('/');
+    if (lastSlashIndex >= 0) {
+      const prefix = messageInput.substring(0, lastSlashIndex);
+      setMessageInput(prefix + template.message + " ");
+    } else {
+      setMessageInput(template.message + " ");
+    }
+    setShowTemplatesMenu(false);
+  };
+
   // Hooks de dados
   const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
   const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
   const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages, setMyInstance } = useConversaMessages();
+
+  // Determinar restrição de API Oficial (24 horas)
+  const isApiOficialUser = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
+  const activeMessages = selectedLead ? leadMessages : messages;
+  const lastHumanMessage = activeMessages.slice().reverse().find((m: any) => m.message?.type === 'human');
+    
+  const lastHumanDate = lastHumanMessage ? new Date(lastHumanMessage.data) : null;
+  const isPast24Hours = lastHumanDate ? (Date.now() - lastHumanDate.getTime()) > 24 * 60 * 60 * 1000 : false;
+  const disableFreeText = Boolean(isApiOficialUser && isPast24Hours);
+
+
 
   // Realtime (única assinatura): novas mensagens e deleções
   useConversasRealtime({
@@ -988,6 +1100,21 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     if (!val) return;
     if (!selectedConversation && !selectedLead) return;
 
+    if (disableFreeText) {
+      // Find if message matches a template marked as is_official_api
+      // It must be an exact match (or practically exact)
+      const usedTemplate = templates.find(t => t.is_official_api && typeof t.message === 'string' && val.includes(t.message.trim()));
+      
+      if (!usedTemplate) {
+        toast({
+          title: "Operação Bloqueada",
+          description: "Sessão expirada. Apenas templates aprovados na API Oficial podem ser enviados.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     try {
       setBusy(true);
       const targetSession = selectedLead ? selectedLead.id : selectedConversation;
@@ -1022,9 +1149,33 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   };
 
   const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showTemplatesMenu) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedTemplateIndex(prev => (prev + 1) % filteredTemplates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedTemplateIndex(prev => (prev - 1 + filteredTemplates.length) % filteredTemplates.length);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        selectTemplate(filteredTemplates[selectedTemplateIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowTemplatesMenu(false);
+        return;
+      }
+    }
+
     if ((e.key === "Enter" && !e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) {
       e.preventDefault();
-      if (!busy) sendText();
+      if (!busy) {
+        sendText();
+      }
     }
   };
 
@@ -1254,9 +1405,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   </Avatar>
                 </div>
                 <div className="flex flex-col overflow-hidden">
-                  <span className="text-[var(--cv-text)] font-normal text-base truncate cursor-pointer hover:underline">
-                    {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
-                  </span>
+                  <div className="flex items-center overflow-hidden">
+                    <span className="text-[var(--cv-text)] font-normal text-base truncate cursor-pointer hover:underline">
+                      {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
+                    </span>
+                    {isApiOficialUser && <CountdownTimer date={lastHumanDate} />}
+                  </div>
                   <p className="text-xs text-[var(--cv-text-muted)] truncate">
                     {currentConversation?.leadPhone || selectedLead?.phone}
                   </p>
@@ -1315,13 +1469,50 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               </div>
             </div>
 
+            {/* TEMPLATES AUTOCOMPLETE */}
+            <AnimatePresence>
+              {showTemplatesMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute bottom-[72px] left-4 right-4 z-20 bg-[var(--cv-panel)] border border-[var(--cv-border)] rounded-xl shadow-2xl p-2 max-h-64 overflow-y-auto"
+                >
+                  <div className="flex justify-between items-center px-2 pb-2 mb-2 border-b border-[var(--cv-border)]">
+                    <span className="text-xs font-semibold text-[var(--cv-text-muted)]">Templates / Atalhos Rápido</span>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setShowManageTemplatesModal(true)}>Gerenciar Templates</Button>
+                  </div>
+                  {filteredTemplates.length > 0 ? (
+                    filteredTemplates.map((t, i) => (
+                      <div
+                        key={t.id}
+                        onClick={() => selectTemplate(t)}
+                        className={`p-2 rounded-lg cursor-pointer ${i === selectedTemplateIndex ? 'bg-[var(--cv-hover-strong)]' : 'hover:bg-[var(--cv-hover)]'} transition-colors`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs bg-[var(--cv-accent)] text-white border-none shrink-0">{t.shortcut}</Badge>
+                          {t.is_official_api && <Badge variant="outline" className="text-[9px] bg-[#d8f3dc] text-[#1b4332] border-none ml-1 shrink-0 px-1 py-0 h-4">API Oficial</Badge>}
+                          <span className="text-sm text-[var(--cv-text)] truncate">{t.message}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-center p-3 text-[var(--cv-text-muted)]">Nenhum template encontrado</div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* INPUT AREA */}
             <div className="min-h-[62px] bg-[var(--cv-panel)] px-4 py-2 flex items-end gap-2 shrink-0 z-10 w-full">
               <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1">
                 <span className="text-xl">😊</span>
               </Button>
-              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()}>
+              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()} title="Anexar arquivo">
                 <Paperclip className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => setShowManageTemplatesModal(true)} title="Gerenciar Templates e Atalhos">
+                <Zap className="h-5 w-5" />
               </Button>
               <input
                 ref={imgInputRef}
@@ -1334,10 +1525,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               <div className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]">
                 <textarea
                   value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyDown={onTextareaKeyDown}
-                  placeholder="Mensagem"
-                  className="w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] text-sm resize-none custom-scrollbar max-h-[100px]"
+                  placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
+                  className={`w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] ${disableFreeText ? 'placeholder:text-red-400/80' : 'placeholder:text-[var(--cv-text-muted)]'}`}
                   rows={1}
                   style={{ minHeight: '24px' }}
                 />
@@ -1441,6 +1632,90 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         onClose={() => setShowLeadModal(false)}
         leadId={selectedLead ? selectedLead.id : selectedConversation}
       />
+
+      {/* MODAL DE GERENCIAMENTO DE TEMPLATES */}
+      {showManageTemplatesModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[var(--cv-panel)] w-full max-w-2xl rounded-xl shadow-2xl border border-[var(--cv-border)] flex flex-col max-h-[85vh]"
+          >
+            <div className="p-5 border-b border-[var(--cv-border)] flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-[var(--cv-text)]">Gerenciar Mensagens (Templates)</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowManageTemplatesModal(false)}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            </div>
+            
+            <div className="p-5 flex-1 overflow-y-auto">
+              <div className="mb-6 p-4 bg-[var(--cv-hover)] rounded-lg">
+                <h3 className="text-sm font-medium text-[var(--cv-text)] mb-3">Adicionar Novo Template</h3>
+                <div className="flex flex-col gap-3">
+                  <div className="flex gap-3">
+                    <Input id="newShortcut" placeholder="Atalho (ex: /ola)" className="w-1/3 bg-[var(--cv-input-bg)] border-[var(--cv-border)] text-[var(--cv-input-text)]" />
+                    <Input id="newMessage" placeholder="Mensagem completa..." className="flex-1 bg-[var(--cv-input-bg)] border-[var(--cv-border)] text-[var(--cv-input-text)]" />
+                    <Button 
+                      onClick={() => {
+                        const shortcut = (document.getElementById('newShortcut') as HTMLInputElement).value;
+                        const msg = (document.getElementById('newMessage') as HTMLInputElement).value;
+                        if (shortcut && msg) {
+                          addTemplate(shortcut, msg, isOfficialApiNew);
+                          // Reset state
+                          (document.getElementById('newShortcut') as HTMLInputElement).value = '';
+                          (document.getElementById('newMessage') as HTMLInputElement).value = '';
+                          setIsOfficialApiNew(false);
+                        }
+                      }}
+                      className="bg-[var(--cv-accent)] text-white hover:bg-[var(--cv-accent-hover)]"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Adicionar
+                    </Button>
+                  </div>
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-xs text-[var(--cv-text-muted)]"><AlertCircle className="w-3 h-3 inline mr-1"/> O atalho deve começar com '/'</p>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="isOfficialApi" checked={isOfficialApiNew} onCheckedChange={(checked) => setIsOfficialApiNew(checked as boolean)} />
+                      <label htmlFor="isOfficialApi" className="text-xs font-medium leading-none text-[#1b4332] dark:text-[#a0c49d] bg-[#d8f3dc] dark:bg-[#2d6a4f] px-2 py-0.5 rounded cursor-pointer">
+                        Validado na API Oficial
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-[var(--cv-text)] mb-2">Seus Templates ({templates.length})</h3>
+                {templates.map(t => (
+                  <div key={t.id} className="flex justify-between items-start gap-4 p-3 border border-[var(--cv-border)] rounded-lg hover:bg-[var(--cv-hover)] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20">{t.shortcut}</Badge>
+                        {t.is_official_api && <Badge variant="outline" className="text-[10px] bg-[#d8f3dc] text-[#1b4332] border-[#74c69d] dark:bg-[#1b4332] dark:text-[#d8f3dc]">API Oficial</Badge>}
+                      </div>
+                      <p className="text-sm text-[var(--cv-text-muted)] line-clamp-2">{t.message}</p>
+                    </div>
+                    <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => deleteTemplate(t.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+                {templates.length === 0 && (
+                  <div className="text-center p-6 text-[var(--cv-text-muted)] border border-dashed border-[var(--cv-border)] rounded-lg">
+                    Nenhum template configurado ainda.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-4 border-t border-[var(--cv-border)] flex justify-end">
+              <Button variant="outline" onClick={() => setShowManageTemplatesModal(false)}>
+                Fechar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div >
   );
 }

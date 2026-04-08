@@ -96,6 +96,13 @@ export function useWhatsAppInstances() {
 
       if (!profile) return;
 
+      const isOfficialApi = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
+      if (isOfficialApi) {
+        setInstances([]);
+        setLoading(false);
+        return;
+      }
+
       // Buscar instâncias do endpoint externo
       console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
       

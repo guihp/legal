@@ -6,7 +6,7 @@ export type View =
   | "reports" | "clients" | "clients-crm" | "connections" | "users"
   | "permissions" | "inquilinato" | "disparador" | "conversas"
   | "configurations" | "profile" | "landing" | "marketing" | "marketing-site" | "marketing-lps"
-  | "partnerships";
+  | "partnerships" | "n8n-leads-api";
 
 /**
  * Hook ULTRA-SIMPLIFICADO de navegação
