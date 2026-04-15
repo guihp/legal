@@ -1841,13 +1841,17 @@ export type Database = {
           id: string
           is_active: boolean
           last_activity_at: string
+          lead_count: number
           max_users: number
           name: string
+          phone: string
           plan: string
+          property_count: number
           subscription_expires_at: string
           subscription_status: string
           trial_ends_at: string
           user_count: number
+          whatsapp_ai_phone: string
         }[]
       }
       list_company_users: {

@@ -210,7 +210,21 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { settings } = useCompanySettings();
   const { theme, toggleTheme } = useTheme();
   const { company } = useOwnCompany();
-  const companyPlan = company?.plan || 'essential';
+  const companyPlanRaw = String(company?.plan || 'essential').toLowerCase();
+  const normalizePlan = (plan: string): 'essential' | 'growth' | 'professional' => {
+    // Compatibilidade com legado: "basic" e "enterprise" convergem para os planos atuais
+    if (plan === 'basic' || plan === 'basico' || plan === 'essentials') return 'essential';
+    if (plan === 'pro' || plan === 'enterprise' || plan === 'profissional') return 'professional';
+    if (plan === 'growth') return 'growth';
+    if (plan === 'professional') return 'professional';
+    return 'essential';
+  };
+  const companyPlan = normalizePlan(companyPlanRaw);
+  const planTier: Record<typeof companyPlan, number> = {
+    essential: 1,
+    growth: 2,
+    professional: 3,
+  };
   const {
     isPreviewMode,
     previewName,
@@ -311,7 +325,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
     // Restrições por plano
     // "Usuários" — só Growth e Professional
-    if (item.view === 'users' && companyPlan === 'essential') return false;
+    if (item.view === 'users' && planTier[companyPlan] < 2) return false;
 
     return hasAccess;
   });
@@ -324,14 +338,14 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     const hasAccess = hasPermission(item.permissionKey);
     console.log(`🔍 DEBUG ANALYTICS: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
     // Relatórios — só Growth e Professional
-    if (item.view === 'reports' && companyPlan === 'essential') return false;
+    if (item.view === 'reports' && planTier[companyPlan] < 2) return false;
     return hasAccess;
   });
 
   const filteredDigitalItems = digitalPresenceItems.filter((item) => {
     if (!profile) return false;
-    // Presença Digital (site, marketing, LPs) — APENAS Professional
-    if (companyPlan !== 'professional') return false;
+    // Presença Digital (site, marketing, LPs) — Professional ou superior
+    if (planTier[companyPlan] < 3) return false;
     return hasPermission(item.permissionKey);
   });
 
@@ -341,8 +355,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
     // Verificação especial para o módulo de permissões
     if (item.permissionKey === 'menu_permissions') {
-      // Permissões — só Growth e Professional
-      if (companyPlan === 'essential') return false;
+      // Permissões — só Growth ou superior
+      if (planTier[companyPlan] < 2) return false;
       return canAccessPermissionsModule(profile.role);
     }
 

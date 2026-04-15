@@ -22,7 +22,9 @@ import {
   Sparkles,
   Zap,
   HelpCircle,
-  X
+  X,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { supabase } from '../integrations/supabase/client';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -288,6 +290,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const isLight = theme === 'light';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -610,20 +613,40 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                         <motion.div
                           className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"
                         />
-                        <Input
-                          id="password"
-                          type="password"
-                          placeholder="••••••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className={cn(
-                            'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg',
-                            isLight
-                              ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/25'
-                              : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30'
-                          )}
-                          required
-                        />
+                        <div className="relative">
+                          <Input
+                            id="password"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="••••••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            autoComplete="current-password"
+                            className={cn(
+                              'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg pr-11',
+                              isLight
+                                ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/25'
+                                : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30'
+                            )}
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((v) => !v)}
+                            className={cn(
+                              'absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/40',
+                              isLight
+                                ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                                : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                            )}
+                            aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-5 w-5" aria-hidden />
+                            ) : (
+                              <Eye className="h-5 w-5" aria-hidden />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
 

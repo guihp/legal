@@ -256,9 +256,9 @@ export function AdminCompanyDetailsView({ companyId, onBack }: AdminCompanyDetai
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-700">
-                    <SelectItem value="basic">Basico</SelectItem>
-                    <SelectItem value="professional">Profissional</SelectItem>
-                    <SelectItem value="enterprise">Enterprise</SelectItem>
+                    <SelectItem value="essential">Essential</SelectItem>
+                    <SelectItem value="growth">Growth</SelectItem>
+                    <SelectItem value="professional">Professional</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

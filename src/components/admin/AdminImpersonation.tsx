@@ -59,13 +59,15 @@ export function AdminImpersonation() {
 
   const handleImpersonate = async () => {
     if (!selectedUser) return;
-    
+
     setProcessing(true);
-    await startImpersonation(selectedUser.user_id, reason || undefined);
+    const ok = await startImpersonation(selectedUser.user_id, reason || undefined);
     setProcessing(false);
-    setConfirming(false);
-    setSelectedUser(null);
-    setReason('');
+    if (ok) {
+      setConfirming(false);
+      setSelectedUser(null);
+      setReason('');
+    }
   };
 
   const getRoleBadge = (role: string) => {
@@ -216,8 +218,10 @@ export function AdminImpersonation() {
                       )}
                       {user.is_active && (
                         <Button
+                          type="button"
                           size="sm"
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             setSelectedUser(user);
                             setConfirming(true);
@@ -296,6 +300,7 @@ export function AdminImpersonation() {
           
           <DialogFooter>
             <Button
+              type="button"
               variant="outline"
               onClick={() => {
                 setConfirming(false);
@@ -307,6 +312,7 @@ export function AdminImpersonation() {
               Cancelar
             </Button>
             <Button
+              type="button"
               onClick={handleImpersonate}
               disabled={processing}
               className="bg-amber-600 hover:bg-amber-700"

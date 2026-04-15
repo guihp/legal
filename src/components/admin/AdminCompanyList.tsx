@@ -181,10 +181,11 @@ export function AdminCompanyList({ onViewDetails, onCreateCompany }: AdminCompan
                 <SelectItem value="expired">Expiradas</SelectItem>
               </SelectContent>
             </Select>
-            <Button 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => listCompanies()}
-              className="border-gray-600 text-gray-300 hover:bg-gray-700"
+              className="shrink-0 border-gray-500 bg-gray-800 text-gray-100 hover:bg-gray-700 hover:text-white"
             >
               <RefreshCw className="h-4 w-4" />
             </Button>

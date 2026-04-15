@@ -373,7 +373,11 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                     <p className="text-gray-500 text-xs">Ativar integração com Meta Business API</p>
                   </div>
                 </div>
-                <Switch checked={isOfficialApi} onCheckedChange={setIsOfficialApi} />
+                <Switch
+                  checked={isOfficialApi}
+                  onCheckedChange={setIsOfficialApi}
+                  className="group data-[state=unchecked]:border data-[state=unchecked]:border-gray-400/60 data-[state=unchecked]:bg-white data-[state=checked]:border-green-600 data-[state=checked]:bg-green-500 [&>span]:bg-gray-500 [&>span]:shadow-sm group-data-[state=checked]:[&>span]:bg-white group-data-[state=checked]:[&>span]:shadow-md"
+                />
               </div>
 
               {/* Resumo */}

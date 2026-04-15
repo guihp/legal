@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
 import { useCompanySettings } from './useCompanySettings';
+import { useCompanyApiMode } from './useCompanyApiMode';
 
 export interface WhatsAppInstance {
   id: string;
@@ -77,15 +78,171 @@ export interface WhatsAppMessage {
 }
 
 // Base URL para os endpoints WhatsApp (configurado via variável de ambiente)
-const WHATSAPP_API_BASE = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook';
+const WHATSAPP_API_BASE =
+  import.meta.env.VITE_WHATSAPP_API_BASE ||
+  'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook';
+const FIXED_INSTANCE_WEBHOOK_URL = 'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/imobiliaria';
+
+async function parseWebhookResponse(response: Response) {
+  const raw = await response.text();
+  if (!raw || !raw.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { success: true, message: raw };
+  }
+}
+
+function getUserFriendlyErrorMessage(error: any, fallback: string) {
+  const raw = String(error?.message || '').toLowerCase();
+  if (
+    raw.includes('json') ||
+    raw.includes('endpoint') ||
+    raw.includes('failed to fetch') ||
+    raw.includes('network') ||
+    raw.includes('formato de resposta')
+  ) {
+    return fallback;
+  }
+  return error?.message || fallback;
+}
 
 export function useWhatsAppInstances() {
   const { profile, isManager } = useUserProfile();
   const { settings } = useCompanySettings();
+  const { isOfficialApi } = useCompanyApiMode();
   const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const loadLocalRegistry = async () => {
+    if (!profile?.company_id) return [];
+    const { data } = await supabase
+      .from('company_whatsapp_instances' as any)
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .eq('is_active', true);
+    return Array.isArray(data) ? data : [];
+  };
+
+  const upsertLocalRegistryItem = async (item: {
+    company_id: string;
+    user_id?: string | null;
+    instance_name: string;
+    phone_number?: string | null;
+    api_key?: string | null;
+    webhook_url?: string | null;
+    status?: string;
+    metadata?: any;
+  }) => {
+    await supabase
+      .from('company_whatsapp_instances' as any)
+      .upsert(
+        {
+          company_id: item.company_id,
+          user_id: item.user_id ?? null,
+          instance_name: item.instance_name,
+          phone_number: item.phone_number ?? null,
+          api_key: item.api_key ?? null,
+          webhook_url: item.webhook_url ?? FIXED_INSTANCE_WEBHOOK_URL,
+          status: item.status ?? 'disconnected',
+          is_active: true,
+          metadata: item.metadata ?? {},
+        },
+        { onConflict: 'company_id,instance_name' }
+      );
+  };
+
+  const ensureWebhookConfigured = async (instanceName: string) => {
+    // Tenta reforçar a configuração do webhook após criação.
+    // Alguns provedores ignoram campos no create e exigem update de settings.
+    const webhookPayload = {
+      instanceName,
+      enabled: true,
+      webhookUrl: FIXED_INSTANCE_WEBHOOK_URL,
+      webhook: FIXED_INSTANCE_WEBHOOK_URL,
+      webhookByEvents: false,
+      webhookBase64: true,
+      messagesUpsert: true,
+      url: FIXED_INSTANCE_WEBHOOK_URL,
+      byEvents: false,
+      base64: true,
+      webhook_by_events: false,
+      webhook_base64: true,
+      messages_upsert: true,
+      events: ['MESSAGES_UPSERT'],
+      config: {
+        enabled: true,
+        webhookUrl: FIXED_INSTANCE_WEBHOOK_URL,
+        webhook: FIXED_INSTANCE_WEBHOOK_URL,
+        webhookByEvents: false,
+        webhookBase64: true,
+        messagesUpsert: true,
+        url: FIXED_INSTANCE_WEBHOOK_URL,
+        byEvents: false,
+        base64: true,
+        webhook_by_events: false,
+        webhook_base64: true,
+        messages_upsert: true,
+        events: ['MESSAGES_UPSERT'],
+        webhookSettings: {
+          enabled: true,
+          url: FIXED_INSTANCE_WEBHOOK_URL,
+          byEvents: false,
+          base64: true,
+          events: ['MESSAGES_UPSERT'],
+        },
+      },
+    };
+
+    const tryConfigure = async (route: string) => {
+      const response = await fetch(`${WHATSAPP_API_BASE}/${route}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        mode: 'cors',
+        body: JSON.stringify(webhookPayload),
+      });
+      const body = await parseWebhookResponse(response);
+      return { ok: response.ok, body };
+    };
+
+    try {
+      // Ordem de tentativas: set-settings (Evolution), edit-config, config
+      const attempts = [
+        'set-settings',
+        'set-setting',
+        'edit-config-instancia',
+        'config-instancia',
+      ];
+      let configured = false;
+      for (const route of attempts) {
+        try {
+          const result = await tryConfigure(route);
+          if (result.ok && (result.body == null || result.body?.success !== false)) {
+            configured = true;
+            break;
+          }
+        } catch {
+          // segue para próxima rota
+        }
+      }
+
+      if (!configured) {
+        console.warn('⚠️ Não foi possível confirmar webhook automaticamente para a instância:', instanceName);
+      }
+      return configured;
+    } catch (e) {
+      console.warn('⚠️ Não foi possível confirmar webhook automaticamente:', e);
+      return false;
+    }
+  };
 
   // Carregar instâncias via endpoint externo
   const loadInstances = async () => {
@@ -96,21 +253,38 @@ export function useWhatsAppInstances() {
 
       if (!profile) return;
 
-      const isOfficialApi = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
       if (isOfficialApi) {
         setInstances([]);
         setLoading(false);
         return;
       }
 
-      // Buscar instâncias do endpoint externo
-      console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
-      
-      const url = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
-      url.searchParams.append('company_id', profile.company_id);
-      url.searchParams.append('company_name', settings?.display_name || '');
+      // Carregar registros locais da empresa para garantir isolamento entre clientes
+      const registry = await loadLocalRegistry();
+      const registryByName = new Map(
+        registry.map((r: any) => [String(r.instance_name || '').trim().toLowerCase(), r])
+      );
 
-      const response = await fetch(url.toString(), {
+      // Buscar instâncias do endpoint externo (escopo da empresa)
+      console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
+
+      const buildListFromResponse = (payload: any): any[] => {
+        if (Array.isArray(payload)) return payload;
+        if (payload?.success && Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.items)) return payload.items;
+        if (Array.isArray(payload?.instances)) return payload.instances;
+        if (Array.isArray(payload?.response)) return payload.response;
+        if (payload?.instance && typeof payload.instance === 'object') return [payload.instance];
+        if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return [payload.data];
+        return [];
+      };
+
+      const scopedUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+      scopedUrl.searchParams.append('company_id', profile.company_id);
+      scopedUrl.searchParams.append('company_name', settings?.display_name || '');
+
+      const response = await fetch(scopedUrl.toString(), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -123,44 +297,100 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro no endpoint: ${response.status}`);
       }
 
-      const responseData = await response.json();
+      const responseData = await parseWebhookResponse(response);
       console.log('✅ Resposta recebida do webhook:', responseData);
-      
-      if (!responseData.success || !Array.isArray(responseData.data)) {
-        throw new Error('Formato de resposta inválido do endpoint');
+
+      let externalInstances: any[] = buildListFromResponse(responseData);
+
+      // Fallback: quando o filtro da empresa não retorna, tenta sem filtros
+      // e filtra localmente pelas instâncias vinculadas aos usuários da empresa.
+      if (externalInstances.length === 0) {
+        console.warn('⚠️ Lista vazia com filtro da empresa. Tentando fallback sem filtros...');
+        const rawUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+        const rawResp = await fetch(rawUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          mode: 'cors',
+        });
+
+        if (rawResp.ok) {
+          const rawPayload = await parseWebhookResponse(rawResp);
+          const rawInstances = buildListFromResponse(rawPayload);
+
+          const { data: companyUsers } = await supabase
+            .from('user_profiles')
+            .select('chat_instance')
+            .eq('company_id', profile.company_id)
+            .not('chat_instance', 'is', null);
+
+          const allowedNamesFromUsers = new Set(
+            (companyUsers || [])
+              .map((u: any) => String(u?.chat_instance || '').trim().toLowerCase())
+              .filter(Boolean)
+          );
+
+          const allowedNamesFromRegistry = new Set(
+            (registry || [])
+              .map((r: any) => String(r?.instance_name || '').trim().toLowerCase())
+              .filter(Boolean)
+          );
+
+          const allowedNames = new Set([
+            ...Array.from(allowedNamesFromUsers),
+            ...Array.from(allowedNamesFromRegistry),
+          ]);
+
+          externalInstances = rawInstances.filter((inst: any) =>
+            allowedNames.has(String(inst?.name || '').trim().toLowerCase())
+          );
+        }
       }
 
-      const externalInstances = responseData.data || [];
-      console.log('📊 Total de instâncias no endpoint:', externalInstances.length);
-
-      // Buscar mapeamentos locais para enrichment com dados de usuário
-      const { data: mappings, error: mappingError } = await supabase
-        .from('user_profiles') // Usar tabela conhecida como workaround
-        .select('id')
-        .limit(0); // Query dummy para contornar TypeScript
-
-      // Query SQL direta para buscar mapeamentos
-      const { data: realMappings, error: realMappingError } = await supabase
+      // Segurança: mesmo quando o endpoint retorna dados "escopados", ainda filtramos
+      // pelo vínculo local/usuário para evitar reaparecimento de instâncias removidas localmente.
+      const { data: companyUsersForFilter } = await supabase
         .from('user_profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          role
-        `)
+        .select('chat_instance')
         .eq('company_id', profile.company_id)
-        .limit(0); // Query dummy
+        .not('chat_instance', 'is', null);
 
-      // TODO: Implementar busca de mapeamentos quando disponível
-      const mappingsData: any[] = [];
-      console.log('ℹ️ Mapeamentos serão carregados quando RPC estiver funcionando.');
+      const allowedNamesFromUsers = new Set(
+        (companyUsersForFilter || [])
+          .map((u: any) => String(u?.chat_instance || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      const allowedNamesFromRegistry = new Set(
+        (registry || [])
+          .map((r: any) => String(r?.instance_name || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      const strictAllowedNames = new Set([
+        ...Array.from(allowedNamesFromUsers),
+        ...Array.from(allowedNamesFromRegistry),
+      ]);
+
+      if (strictAllowedNames.size > 0) {
+        externalInstances = externalInstances.filter((inst: any) =>
+          strictAllowedNames.has(String(inst?.name || inst?.instanceName || '').trim().toLowerCase())
+        );
+      } else {
+        // Sem vínculos ativos no sistema: não exibir instâncias externas órfãs.
+        externalInstances = [];
+      }
+
+      console.log('📊 Total de instâncias no endpoint (filtradas pelo sistema):', externalInstances.length);
 
       // Criar map de instância -> usuário para lookup rápido
       const instanceUserMap = new Map();
-      (mappingsData || []).forEach((mapping: any) => {
-        instanceUserMap.set(mapping.instance_name, {
+      (registry || []).forEach((mapping: any) => {
+        instanceUserMap.set(String(mapping.instance_name || '').trim().toLowerCase(), {
           user_id: mapping.user_id,
-          user_profile: mapping.user_profile
+          user_profile: null
         });
       });
 
@@ -175,18 +405,40 @@ export function useWhatsAppInstances() {
         // Mapear status
         const statusMap: Record<string, 'connected' | 'connecting' | 'disconnected'> = {
           open: 'connected',
+          opened: 'connected',
+          connected: 'connected',
+          online: 'connected',
           connecting: 'connecting',
           close: 'disconnected',
-          closed: 'disconnected'
+          closed: 'disconnected',
+          disconnected: 'disconnected',
         };
 
+        const rawStatus = String(
+          externalData?.connectionStatus ??
+          externalData?.status ??
+          externalData?.state ??
+          externalData?.instance?.state ??
+          externalData?.instance?.status ??
+          externalData?.data?.state ??
+          externalData?.data?.status ??
+          ''
+        ).toLowerCase();
+        const boolConnected =
+          externalData?.connected === true ||
+          externalData?.isConnected === true ||
+          externalData?.instance?.connected === true ||
+          externalData?.instance?.isConnected === true ||
+          externalData?.session?.connected === true;
+
         // Buscar dados do usuário se houver mapeamento
-        const userMapping = instanceUserMap.get(externalData.name);
+        const normalizedName = String(externalData?.name || '').trim().toLowerCase();
+        const userMapping = instanceUserMap.get(normalizedName);
         
         return {
           id: externalData.id || externalData.name,
           name: externalData.name,
-          status: statusMap[externalData.connectionStatus] || 'disconnected',
+          status: boolConnected ? 'connected' : (statusMap[rawStatus] || 'disconnected'),
           profile_name: externalData.profileName,
           profile_pic_url: externalData.profilePicUrl,
           message_count: externalData._count?.Message || 0,
@@ -201,7 +453,7 @@ export function useWhatsAppInstances() {
           created_at: externalData.createdAt || new Date().toISOString(),
           updated_at: externalData.updatedAt || new Date().toISOString(),
           // Campos do endpoint
-          connectionStatus: externalData.connectionStatus,
+          connectionStatus: rawStatus || externalData.connectionStatus,
           ownerJid: externalData.ownerJid,
           profileName: externalData.profileName,
           profilePicUrl: externalData.profilePicUrl,
@@ -213,10 +465,75 @@ export function useWhatsAppInstances() {
         };
       });
 
-      setInstances(instancesData);
+      // Isolamento forte: se já existe registro local, usa registro local como fonte principal
+      // e complementa com dados da Evolution quando disponíveis.
+      const externalByName = new Map(
+        instancesData.map((inst: any) => [String(inst.name || '').trim().toLowerCase(), inst])
+      );
+
+      const isolatedInstances = registry.length
+        ? registry.map((row: any) => {
+            const key = String(row.instance_name || '').trim().toLowerCase();
+            const ext = externalByName.get(key);
+            if (ext) {
+              return {
+                ...ext,
+                user_id: row.user_id || ext.user_id || null,
+                api_key: row.api_key || ext.api_key || null,
+                webhook_url: row.webhook_url || ext.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
+              };
+            }
+
+            // Fallback offline: mantém visível mesmo sem retorno da Evolution
+            return {
+              id: String(row.id || row.instance_name),
+              name: String(row.instance_name || ''),
+              status: (String(row.status || 'disconnected') as 'connected' | 'connecting' | 'disconnected'),
+              profile_name: null,
+              profile_pic_url: null,
+              message_count: 0,
+              contact_count: 0,
+              chat_count: 0,
+              last_seen: row.updated_at || row.created_at || new Date().toISOString(),
+              phone_number: row.phone_number || null,
+              api_key: row.api_key || null,
+              webhook_url: row.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
+              created_at: row.created_at || new Date().toISOString(),
+              updated_at: row.updated_at || new Date().toISOString(),
+              connectionStatus: null,
+              ownerJid: null,
+              profileName: null,
+              profilePicUrl: null,
+              token: row.api_key || null,
+              _count: { Message: 0, Contact: 0, Chat: 0 },
+              user_id: row.user_id || null,
+              user_profile: null,
+            } as WhatsAppInstance;
+          })
+        : instancesData;
+
+      // Persistir/atualizar cache local com API key e metadados recebidos
+      for (const inst of isolatedInstances) {
+        await upsertLocalRegistryItem({
+          company_id: profile.company_id,
+          user_id: inst.user_id || profile.id,
+          instance_name: inst.name,
+          phone_number: inst.phone_number || null,
+          api_key: inst.api_key || null,
+          webhook_url: FIXED_INSTANCE_WEBHOOK_URL,
+          status: inst.status,
+          metadata: {
+            connectionStatus: inst.connectionStatus || null,
+            profileName: inst.profile_name || null,
+            ownerJid: inst.ownerJid || null,
+          },
+        });
+      }
+
+      setInstances(isolatedInstances);
       console.log('✅ Carregamento concluído!', {
         role: profile.role,
-        totalInstances: instancesData.length
+        totalInstances: isolatedInstances.length
       });
 
       // Sincronizar mapeamentos após carregar (apenas para gestores)
@@ -226,7 +543,7 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('Erro ao carregar instâncias:', error);
-      setError(error.message);
+      setError(getUserFriendlyErrorMessage(error, 'Não foi possível carregar as conexões no momento. Tente novamente em instantes.'));
     } finally {
       setLoading(false);
     }
@@ -259,6 +576,54 @@ export function useWhatsAppInstances() {
 
       // Definir para qual usuário a instância será atribuída
       const targetUserId = instanceData.assigned_user_id || profile.id;
+
+      // Regra de negócio: cada usuário pode ter apenas 1 instância conectada
+      const { data: targetProfile, error: targetProfileError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, company_id, chat_instance')
+        .eq('id', targetUserId)
+        .eq('company_id', profile.company_id)
+        .single();
+
+      if (targetProfileError || !targetProfile) {
+        throw new Error('Usuário de destino não encontrado para criar instância');
+      }
+
+      if (targetProfile.chat_instance) {
+        // Se apagou direto na Evolution, limpamos o vínculo órfão automaticamente
+        const syncUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+        syncUrl.searchParams.append('company_id', profile.company_id);
+        syncUrl.searchParams.append('company_name', settings?.display_name || '');
+
+        const syncResponse = await fetch(syncUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          mode: 'cors',
+        });
+
+        let instanceStillExists = false;
+        if (syncResponse.ok) {
+          const syncData = await parseWebhookResponse(syncResponse);
+          const listed = Array.isArray(syncData?.data) ? syncData.data : [];
+          instanceStillExists = listed.some(
+            (inst: any) =>
+              String(inst?.name || '').toLowerCase() === String(targetProfile.chat_instance || '').toLowerCase()
+          );
+        }
+
+        if (!instanceStillExists) {
+          await supabase
+            .from('user_profiles')
+            .update({ chat_instance: null })
+            .eq('id', targetUserId)
+            .eq('company_id', profile.company_id);
+        } else {
+          throw new Error(`O usuário ${targetProfile.full_name} já possui um número conectado. Cada usuário pode ter apenas 1 conexão.`);
+        }
+      }
       
       console.log('🔍 Criando instância via endpoint:', {
         currentUser: profile.id,
@@ -316,7 +681,22 @@ export function useWhatsAppInstances() {
         body: JSON.stringify({
           instanceName: instanceData.instance_name,
           phoneNumber: instanceData.phone_number,
-          sessionId: sessionId
+          sessionId: sessionId,
+          webhookUrl: FIXED_INSTANCE_WEBHOOK_URL,
+          webhook: FIXED_INSTANCE_WEBHOOK_URL,
+          options: {
+            webhookUrl: FIXED_INSTANCE_WEBHOOK_URL,
+            webhook: FIXED_INSTANCE_WEBHOOK_URL,
+          },
+          options_Create_instance: {
+            webhook: {
+              webhookSettings: {
+                webhookUrl: FIXED_INSTANCE_WEBHOOK_URL,
+                webhookBase64: true,
+                webhookEvents: ['MESSAGES_UPSERT'],
+              },
+            },
+          },
         }),
       });
 
@@ -325,17 +705,62 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro no endpoint: ${response.status} - ${errorData}`);
       }
 
-      const data = await response.json();
+      let data: any = await parseWebhookResponse(response);
+      if (!data) {
+        data = { success: true, message: 'Instância criada (resposta vazia do servidor)' };
+      }
       console.log('🔗 Instância criada no sistema externo:', data);
 
-      if (!data.success) {
+      if (!data?.success) {
         throw new Error(data.message || 'Falha ao criar instância');
       }
 
       // TODO: Implementar criação de mapeamento quando RPC estiver funcionando
       console.log('✅ Instância criada no endpoint. Mapeamento será implementado quando RPC estiver funcionando.');
 
-      // Recarregar lista de instâncias para incluir a nova
+      // Persistir vínculo da instância no sistema para manter regra de 1 número por usuário
+      const { error: updateChatInstanceError } = await supabase
+        .from('user_profiles')
+        .update({ chat_instance: instanceData.instance_name })
+        .eq('id', targetUserId)
+        .eq('company_id', profile.company_id);
+
+      if (updateChatInstanceError) {
+        console.warn('⚠️ Instância criada no endpoint, mas falhou ao vincular chat_instance no usuário:', updateChatInstanceError);
+      }
+
+      // Fonte de verdade local: salvar vínculo da instância e API key para esta empresa
+      await upsertLocalRegistryItem({
+        company_id: profile.company_id,
+        user_id: targetUserId,
+        instance_name: instanceData.instance_name,
+        phone_number: instanceData.phone_number || null,
+        api_key: data?.data?.token || data?.token || null,
+        webhook_url: FIXED_INSTANCE_WEBHOOK_URL,
+        status: 'disconnected',
+        metadata: {
+          created_from: 'connections_ui',
+        },
+      });
+
+      const webhookConfigured = await ensureWebhookConfigured(instanceData.instance_name);
+
+      await upsertLocalRegistryItem({
+        company_id: profile.company_id,
+        user_id: targetUserId,
+        instance_name: instanceData.instance_name,
+        phone_number: instanceData.phone_number || null,
+        api_key: data?.data?.token || data?.token || null,
+        webhook_url: FIXED_INSTANCE_WEBHOOK_URL,
+        status: 'disconnected',
+        metadata: {
+          created_from: 'connections_ui',
+          webhook_configured: webhookConfigured,
+          webhook_last_check_at: new Date().toISOString(),
+        },
+      });
+
+      // Recarregar lista após persistir registro local para garantir visualização imediata
       await loadInstances();
 
       try { 
@@ -357,18 +782,35 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('Erro ao criar instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível criar a conexão agora. Tente novamente.'));
     }
   };
 
-  // Atualizar status da instância (apenas local)
+  // Atualizar status da instância no estado e no registro local
   const updateInstanceStatus = async (instanceId: string, status: WhatsAppInstance['status']) => {
     try {
+      const currentInstance = instances.find((inst) => inst.id === instanceId);
       setInstances(prev => 
         prev.map(instance => 
           instance.id === instanceId ? { ...instance, status, last_seen: new Date().toISOString() } : instance
         )
       );
+
+      if (profile?.company_id && currentInstance?.name) {
+        await upsertLocalRegistryItem({
+          company_id: profile.company_id,
+          user_id: currentInstance.user_id || profile.id,
+          instance_name: currentInstance.name,
+          phone_number: currentInstance.phone_number || null,
+          api_key: currentInstance.api_key || null,
+          webhook_url: currentInstance.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
+          status,
+          metadata: {
+            connectionStatus: status,
+            status_updated_at: new Date().toISOString(),
+          },
+        });
+      }
       
       try { 
         await logAudit({ 
@@ -385,11 +827,11 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('Erro ao atualizar status:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível atualizar o status da conexão.'));
     }
   };
 
-  // Deletar instância via endpoint
+  // Deletar instância localmente (sem webhook externo)
   const deleteInstance = async (instanceId: string) => {
     try {
       // 1. Buscar dados da instância antes de deletar
@@ -398,45 +840,37 @@ export function useWhatsAppInstances() {
         throw new Error('Instância não encontrada');
       }
 
-      // 2. Deletar do sistema externo
-      console.log('🗑️ Chamando endpoint: POST /webhook/deletar-instancia para', instanceToDelete.name);
-      
-      const response = await fetch(`${WHATSAPP_API_BASE}/deletar-instancia`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        mode: 'cors',
-        body: JSON.stringify({
-          instanceName: instanceToDelete.name
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('❌ Erro HTTP ao deletar instância externa:', response.status, response.statusText);
-        console.warn('📝 Resposta do servidor:', errorText);
-        throw new Error(`Erro no sistema externo (${response.status})`);
-      }
-
-      const responseData = await response.json();
-      console.log(`🗑️ Resposta da deleção externa:`, responseData);
-      
-      if (!responseData.success) {
-        throw new Error(responseData.message || 'Falha ao deletar no sistema externo');
-      }
-
-      // TODO: Implementar remoção de mapeamento quando RPC estiver funcionando
-      console.log('ℹ️ Instância deletada do endpoint. Mapeamento será removido quando RPC estiver funcionando.');
-
-      // 4. Atualizar estado local
+      // 2. Atualizar estado local da tela
       setInstances(prev => prev.filter(instance => instance.id !== instanceId));
+
+      // 3. Marcar registro local como inativo
+      const { error: disableRegistryError } = await supabase
+        .from('company_whatsapp_instances' as any)
+        .update({ is_active: false, status: 'deleted' })
+        .eq('company_id', profile?.company_id || '')
+        .eq('instance_name', instanceToDelete.name);
+      if (disableRegistryError) {
+        throw disableRegistryError;
+      }
+
+      // 4. Limpar vínculo do usuário por nome da instância
+      const { error: clearUserLinkError } = await supabase
+        .from('user_profiles')
+        .update({ chat_instance: null })
+        .eq('chat_instance', instanceToDelete.name)
+        .eq('company_id', profile?.company_id || '');
+      if (clearUserLinkError) {
+        throw clearUserLinkError;
+      }
+
+      // 5. Recarregar para refletir estado real após exclusão
+      await loadInstances();
+
       console.log(`✅ Instância ${instanceToDelete.name} deletada completamente`);
 
     } catch (error: any) {
       console.error('❌ Erro completo ao deletar instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível remover a conexão agora. Tente novamente.'));
     }
   };
 
@@ -469,10 +903,10 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro ao conectar instância (${response.status})`);
       }
 
-      const data = await response.json();
+      const data = await parseWebhookResponse(response);
       console.log(`🔗 Resposta da conexão:`, data);
 
-      if (data.success) {
+      if (data?.success) {
         // Atualizar status local
         await updateInstanceStatus(instanceId, 'connected');
         try { 
@@ -488,7 +922,7 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('❌ Erro ao conectar instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível conectar este número agora.'));
     }
   };
 
@@ -521,10 +955,10 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro ao desconectar instância (${response.status})`);
       }
 
-      const data = await response.json();
+      const data = await parseWebhookResponse(response);
       console.log(`🔌 Resposta da desconexão:`, data);
 
-      if (data.success) {
+      if (data?.success) {
         // Atualizar status local
         await updateInstanceStatus(instanceId, 'disconnected');
         try { 
@@ -540,7 +974,7 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('❌ Erro ao desconectar instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível desconectar este número agora.'));
     }
   };
 
@@ -629,7 +1063,7 @@ export function useWhatsAppInstances() {
       if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
         throw new Error('Erro de conexão com o servidor. Verifique sua internet e tente novamente.');
       }
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível gerar o QR Code agora. Tente novamente.'));
     }
   };
 
@@ -674,7 +1108,7 @@ export function useWhatsAppInstances() {
       // Buscar todos os usuários da empresa
       const { data: allUsers, error } = await supabase
         .from('user_profiles')
-        .select('id, full_name, email, role')
+        .select('id, full_name, email, role, chat_instance')
         .eq('company_id', profile?.company_id)
         .eq('is_active', true)
         .in('role', ['corretor', 'gestor'])
@@ -686,7 +1120,7 @@ export function useWhatsAppInstances() {
       }
 
       // TODO: Filtrar usuários que já têm instâncias quando RPC estiver funcionando
-      const availableUsers = allUsers || [];
+      const availableUsers = (allUsers || []).filter((u: any) => !u.chat_instance);
 
       console.log('✅ Usuários encontrados:', {
         count: availableUsers.length,
@@ -783,14 +1217,14 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro ao configurar instância (${response.status})`);
       }
 
-      const data = await response.json();
+      const data = await parseWebhookResponse(response);
       console.log(`⚙️ Instância ${instanceName} configurada:`, data);
       
       return data;
 
     } catch (error: any) {
       console.error('Erro ao configurar instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível carregar as configurações desta conexão.'));
     }
   };
 
@@ -818,14 +1252,14 @@ export function useWhatsAppInstances() {
         throw new Error(`Erro ao editar configuração (${response.status})`);
       }
 
-      const data = await response.json();
+      const data = await parseWebhookResponse(response);
       console.log(`✏️ Configuração da instância ${instanceName} editada:`, data);
       
       return data;
 
     } catch (error: any) {
       console.error('Erro ao editar configuração da instância:', error);
-      throw error;
+      throw new Error(getUserFriendlyErrorMessage(error, 'Não foi possível salvar as configurações desta conexão.'));
     }
   };
 
@@ -835,7 +1269,7 @@ export function useWhatsAppInstances() {
     if (profile) {
       loadInstances();
     }
-  }, [profile, isManager]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profile, isManager, isOfficialApi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     instances,

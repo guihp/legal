@@ -46,13 +46,65 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useWhatsAppInstances, WhatsAppInstance } from '@/hooks/useWhatsAppInstances';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
+import { supabase } from '@/integrations/supabase/client';
+import { useConversasList } from '@/hooks/useConversasList';
+import { invokeEdge } from '@/integrations/supabase/invoke';
+import { toast } from 'sonner';
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 import { OfficialApiConnectionsView } from "./OfficialApiConnectionsView";
 
+const QR_TIMEOUT_SECONDS = 180;
+
 export function ConnectionsViewSimplified() {
+  const parseInstancesFromPayload = (payload: any): any[] => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.instances)) return payload.instances;
+    if (Array.isArray(payload?.response)) return payload.response;
+    if (payload?.instance && typeof payload.instance === "object") return [payload.instance];
+    if (payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)) return [payload.data];
+    return [];
+  };
+
+  const isInstanceOnline = (instance: any) => {
+    const statusCandidates = [
+      instance?.connectionStatus,
+      instance?.status,
+      instance?.state,
+      instance?.instance?.state,
+      instance?.instance?.status,
+      instance?.data?.state,
+      instance?.data?.status,
+      instance?.session?.status,
+      instance?.session?.state,
+      instance?.connection?.state,
+      instance?.connection?.status,
+    ]
+      .filter(Boolean)
+      .map((v) => String(v).toLowerCase());
+
+    if (statusCandidates.some((s) => ["open", "connected", "online", "opened"].includes(s))) {
+      return true;
+    }
+
+    const boolCandidates = [
+      instance?.connected,
+      instance?.isConnected,
+      instance?.instance?.connected,
+      instance?.instance?.isConnected,
+      instance?.session?.connected,
+      instance?.session?.isConnected,
+      instance?.data?.connected,
+      instance?.data?.isConnected,
+    ];
+    return boolCandidates.some((v) => v === true);
+  };
   const { profile, isManager } = useUserProfile();
   const { settings } = useCompanySettings();
+  const { isOfficialApi, loadingApiMode } = useCompanyApiMode();
   const { createConnectionRequest } = useNotifications();
   const {
     instances,
@@ -74,10 +126,9 @@ export function ConnectionsViewSimplified() {
     resendConnectionRequest
   } = useWhatsAppInstances();
 
-  // Tornar tolerante a diferenças de carregamento entre hooks: habilita criação se qualquer fonte indicar gestor/admin
-  // Mas desabilita se for API Oficial
-  const isOfficialApi = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
   const canCreate = (isManager || canCreateInstances) && !isOfficialApi;
+  const { conversas } = useConversasList(null);
+  const [hasCurrentUserConnection, setHasCurrentUserConnection] = useState(Boolean(profile?.chat_instance));
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -92,6 +143,7 @@ export function ConnectionsViewSimplified() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [showSystemAlert, setShowSystemAlert] = useState(false);
+  const [systemMessagesCount, setSystemMessagesCount] = useState(0);
 
   // Estados para solicitação ao gestor
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -143,6 +195,8 @@ export function ConnectionsViewSimplified() {
   const [qrExpired, setQrExpired] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [connectedInstanceName, setConnectedInstanceName] = useState("");
+  const [instanceToDelete, setInstanceToDelete] = useState<WhatsAppInstance | null>(null);
+  const [deletingInstance, setDeletingInstance] = useState(false);
 
   // Estados para gestão de solicitações pendentes (apenas gestores)
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -201,7 +255,7 @@ export function ConnectionsViewSimplified() {
           phone_number: request.phone_number,
           request_status: 'approved',
           status: 'qr_code', // Pronto para gerar QR
-          webhook_url: `https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/${request.instance_name}`,
+          webhook_url: `https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/imobiliaria`,
           is_active: true
         })
         .select()
@@ -307,6 +361,123 @@ export function ConnectionsViewSimplified() {
 
   // Obter estatísticas
   const stats = getInstanceStats();
+  const systemChatsCount = conversas.length;
+  const buildSafeInstanceName = (fullName?: string | null, email?: string | null) => {
+    const raw = `${fullName || "usuario"}_${email || "sememail"}`.toLowerCase().trim();
+    const noAccents = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const sanitized = noAccents
+      .replace(/\s+/g, "")
+      .replace(/[^a-z0-9._-]/g, "")
+      .replace(/^[._-]+|[._-]+$/g, "");
+    return sanitized || `usuario_${Date.now()}`;
+  };
+  const autoInstanceName = buildSafeInstanceName(profile?.full_name, profile?.email);
+
+  useEffect(() => {
+    const loadSystemMessagesCount = async () => {
+      if (!profile?.company_id) {
+        setSystemMessagesCount(0);
+        return;
+      }
+
+      try {
+        const { data: cData, error: cError } = await supabase
+          .from('companies')
+          .select('phone')
+          .eq('id', profile.company_id)
+          .single();
+
+        if (cError || !cData?.phone) {
+          setSystemMessagesCount(0);
+          return;
+        }
+
+        const cleanPhone = cData.phone.replace(/\D/g, '');
+        const tableName = `imobipro_messages_${cleanPhone}`;
+        const { count } = await supabase
+          .from(tableName as any)
+          .select('*', { count: 'exact', head: true });
+
+        setSystemMessagesCount(count ?? 0);
+      } catch {
+        setSystemMessagesCount(0);
+      }
+    };
+
+    loadSystemMessagesCount();
+  }, [profile?.company_id, instances.length]);
+
+  useEffect(() => {
+    const syncCurrentUserConnectionState = async () => {
+      if (!profile?.id) return;
+
+      try {
+        // Busca estado real salvo no banco
+        const { data: userRow, error: userError } = await supabase
+          .from('user_profiles')
+          .select('chat_instance')
+          .eq('id', profile.id)
+          .maybeSingle();
+
+        if (userError) {
+          setHasCurrentUserConnection(Boolean(profile?.chat_instance));
+          return;
+        }
+
+        const chatInstance = String(userRow?.chat_instance || '').trim();
+        if (!chatInstance) {
+          setHasCurrentUserConnection(false);
+          return;
+        }
+
+        // Se a instância não existe mais na listagem atual, limpa vínculo órfão
+        // (evita ficar travado quando foi apagada manualmente fora da plataforma)
+        const existsInCurrentList = instances.some(
+          (inst) => String(inst?.name || '').trim().toLowerCase() === chatInstance.toLowerCase()
+        );
+
+        if (!existsInCurrentList && !error) {
+          // Confere registro local antes de limpar vínculo do usuário
+          const { data: localRegistryMatch } = await supabase
+            .from('company_whatsapp_instances' as any)
+            .select('id')
+            .eq('company_id', profile.company_id)
+            .eq('instance_name', chatInstance)
+            .eq('is_active', true)
+            .limit(1);
+
+          const hasLocalActiveRegistry = Array.isArray(localRegistryMatch) && localRegistryMatch.length > 0;
+          if (hasLocalActiveRegistry) {
+            setHasCurrentUserConnection(true);
+            return;
+          }
+
+          const { error: clearError } = await supabase
+            .from('user_profiles')
+            .update({ chat_instance: null })
+            .eq('id', profile.id);
+
+          if (!clearError) {
+            setHasCurrentUserConnection(false);
+            return;
+          }
+        }
+
+        setHasCurrentUserConnection(true);
+      } catch {
+        setHasCurrentUserConnection(Boolean(profile?.chat_instance));
+      }
+    };
+
+    syncCurrentUserConnectionState();
+  }, [profile?.id, profile?.chat_instance, instances, error]);
+
+  useEffect(() => {
+    if (showAddModal) {
+      setNewInstanceName(autoInstanceName);
+      setAssignedUserId("self");
+    }
+  }, [showAddModal, autoInstanceName]);
 
   // Carregar usuários quando modal abrir (apenas para gestores/admin)
   useEffect(() => {
@@ -324,12 +495,12 @@ export function ConnectionsViewSimplified() {
     }
   }, [isManager, profile?.company_id, isOfficialApi]);
 
-  // Timer do QR Code (15 segundos)
+  // Timer do QR Code
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
     if (showQrModal && qrCode && !qrExpired) {
-      setQrTimer(15); // Reset timer when modal opens
+      setQrTimer(QR_TIMEOUT_SECONDS); // Reset timer when modal opens
       timerInterval = setInterval(() => {
         setQrTimer((prevTimer) => {
           if (prevTimer <= 1) {
@@ -353,28 +524,27 @@ export function ConnectionsViewSimplified() {
     let intervalId: NodeJS.Timeout | null = null;
 
     if (showQrModal && selectedInstance && !qrExpired) {
-      // Verificar status a cada 3 segundos através do endpoint externo
+      // Verificar status a cada 5 segundos através do endpoint externo
       intervalId = setInterval(async () => {
         try {
           console.log('🔍 Verificando status da instância:', selectedInstance.name);
 
-          // Chamar endpoint para verificar status da instância específica
-          const whatsappApiBase = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook';
-          const url = new URL(`${whatsappApiBase}/whatsapp-instances`);
-          if (profile?.company_id) {
-            url.searchParams.append('company_id', profile.company_id);
-          }
-          if (settings?.display_name) {
-            url.searchParams.append('company_name', settings.display_name);
-          }
+          // Consulta de status conforme fluxo n8n informado:
+          // POST /webhook/config-instancia com body { instanceName }
+          const whatsappApiBase =
+            import.meta.env.VITE_WHATSAPP_API_BASE ||
+            'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook';
 
-          const response = await fetch(url.toString(), {
-            method: 'GET',
+          const response = await fetch(`${whatsappApiBase}/config-instancia`, {
+            method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
             },
             mode: 'cors',
+            body: JSON.stringify({
+              instanceName: selectedInstance.name,
+            }),
           });
 
           if (!response.ok) {
@@ -382,42 +552,53 @@ export function ConnectionsViewSimplified() {
             return;
           }
 
-          const data = await response.json();
-
-          if (data.success && data.data) {
-            // Procurar a instância específica na resposta
-            const updatedInstance = data.data.find((inst: any) =>
-              inst.name === selectedInstance.name ||
-              inst.instanceName === selectedInstance.name
-            );
-
-            if (updatedInstance && updatedInstance.connectionStatus === 'open') {
-              console.log('✅ Instância conectada com sucesso via endpoint:', selectedInstance.name);
-
-              // Fechar modal QR e mostrar sucesso
-              setShowQrModal(false);
-              setQrCode(null);
-              setQrTimer(15);
-              setQrExpired(false);
-              setConnectedInstanceName(updatedInstance.profileName || selectedInstance.name);
-              setShowSuccessModal(true);
-
-              // Atualizar status local
-              await updateInstanceStatus(selectedInstance.id, 'connected');
-
-              // Atualizar lista de instâncias
-              await refreshInstances();
-
-              // Fechar modal de sucesso após 3 segundos
-              setTimeout(() => {
-                setShowSuccessModal(false);
-              }, 3000);
+          const rawText = await response.text();
+          let payload: any = null;
+          if (rawText?.trim()) {
+            try {
+              payload = JSON.parse(rawText);
+            } catch {
+              payload = null;
             }
+          }
+
+          const instanceList = parseInstancesFromPayload(payload);
+          const updatedInstanceFromList = instanceList.find((inst: any) =>
+            String(inst?.name || inst?.instanceName || '').toLowerCase() === String(selectedInstance.name || '').toLowerCase()
+          );
+          const updatedInstance = updatedInstanceFromList || payload?.data || payload;
+          const isOnline = isInstanceOnline(updatedInstance);
+
+          if (isOnline) {
+            console.log('✅ Instância conectada com sucesso via endpoint:', selectedInstance.name);
+
+            // Fechar modal QR e mostrar sucesso
+            setShowQrModal(false);
+            setQrCode(null);
+            setQrTimer(QR_TIMEOUT_SECONDS);
+            setQrExpired(false);
+            setConnectedInstanceName(
+              updatedInstance?.profileName ||
+              updatedInstance?.profile_name ||
+              selectedInstance.name
+            );
+            setShowSuccessModal(true);
+
+            // Atualizar status local
+            await updateInstanceStatus(selectedInstance.id, 'connected');
+
+            // Atualizar lista de instâncias
+            await refreshInstances();
+
+            // Fechar modal de sucesso após 3 segundos
+            setTimeout(() => {
+              setShowSuccessModal(false);
+            }, 3000);
           }
         } catch (error) {
           console.error('Erro ao verificar status da instância via endpoint:', error);
         }
-      }, 3000);
+      }, 5000);
     }
 
     return () => {
@@ -431,10 +612,7 @@ export function ConnectionsViewSimplified() {
   const handleCreateInstance = async () => {
     try {
       setCreating(true);
-
-      if (!newInstanceName.trim()) {
-        throw new Error('Nome da instância é obrigatório');
-      }
+      const safeInstanceName = autoInstanceName;
 
       if (!newInstancePhone.trim()) {
         throw new Error('Número de telefone é obrigatório para criar a instância');
@@ -450,9 +628,9 @@ export function ConnectionsViewSimplified() {
           : `55${phoneNumbersOnly}`;
 
       const result = await createInstance({
-        instance_name: newInstanceName,
+        instance_name: safeInstanceName,
         phone_number: formattedPhone,
-        assigned_user_id: assignedUserId === "self" ? undefined : assignedUserId
+        assigned_user_id: undefined
       });
 
       setNewInstanceName("");
@@ -494,13 +672,22 @@ export function ConnectionsViewSimplified() {
 
   // Deletar instância
   const handleDeleteInstance = async (instanceId: string) => {
-    if (window.confirm('Tem certeza que deseja deletar esta instância?')) {
-      try {
-        await deleteInstance(instanceId);
-      } catch (error: any) {
-        console.error('Erro ao deletar instância:', error);
-        alert(`Erro: ${error.message}`);
-      }
+    const target = instances.find((inst) => inst.id === instanceId) || null;
+    setInstanceToDelete(target);
+  };
+
+  const confirmDeleteInstance = async () => {
+    if (!instanceToDelete) return;
+    try {
+      setDeletingInstance(true);
+      await deleteInstance(instanceToDelete.id);
+      setInstanceToDelete(null);
+      toast.success('Instância removida com sucesso.');
+    } catch (error: any) {
+      console.error('Erro ao deletar instância:', error);
+      toast.error(error?.message || 'Não foi possível remover a instância.');
+    } finally {
+      setDeletingInstance(false);
     }
   };
 
@@ -510,11 +697,19 @@ export function ConnectionsViewSimplified() {
       setGeneratingQr(true);
       setSelectedInstance(instance);
 
+      const { data: googleStatus, error: googleStatusError } = await invokeEdge<any, any>("google-calendar-auth", {
+        body: { action: "status" },
+      });
+
+      if (googleStatusError || !googleStatus?.connected) {
+        toast.warning("Conecte sua Agenda Google para a IA oferecer horarios corretamente.");
+      }
+
       const qrCodeData = await generateQrCode(instance.id);
 
       if (qrCodeData) {
         setQrCode(qrCodeData);
-        setQrTimer(15); // Reset timer
+        setQrTimer(QR_TIMEOUT_SECONDS); // Reset timer
         setQrExpired(false); // Reset expired state
         setShowQrModal(true);
       } else {
@@ -658,7 +853,7 @@ export function ConnectionsViewSimplified() {
     const isApproved = false;
 
     return (
-      <Card className={`p-6 ${isPendingRequest ? 'bg-yellow-900/20 border-yellow-500/50' : 'bg-gray-800 border-gray-700'}`}>
+      <Card className={`p-6 overflow-hidden ${isPendingRequest ? 'bg-yellow-900/20 border-yellow-500/50' : 'bg-gray-800 border-gray-700'}`}>
         {/* Cabeçalho de solicitação pendente */}
         {isPendingRequest && (
           <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
@@ -673,8 +868,8 @@ export function ConnectionsViewSimplified() {
         )}
 
         {/* Header com foto, nome e status */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {/* Foto de perfil */}
             <div className="relative">
               {instance.profile_pic_url ? (
@@ -704,9 +899,9 @@ export function ConnectionsViewSimplified() {
             </div>
 
             {/* Nome e status */}
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-white font-medium">
+                <h3 className="text-white font-medium truncate" title={instance.profile_name || instance.name}>
                   {instance.profile_name || instance.name}
                 </h3>
                 {isPendingRequest ? (
@@ -722,7 +917,7 @@ export function ConnectionsViewSimplified() {
                 ) : null}
               </div>
               <div className="space-y-1">
-                <p className="text-gray-400 text-sm">Instância: {instance.name}</p>
+                <p className="text-gray-400 text-sm truncate" title={instance.name}>Instância: {instance.name}</p>
                 {instance.user_profile && (
                   <p className="text-gray-500 text-xs flex items-center gap-1">
                     <User className="h-3 w-3" />
@@ -734,7 +929,7 @@ export function ConnectionsViewSimplified() {
           </div>
 
           {/* Ações */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button
               size="icon"
               variant="ghost"
@@ -759,9 +954,9 @@ export function ConnectionsViewSimplified() {
         {/* Informações */}
         <div className="space-y-2 mb-4">
           {instance.phone_number && (
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm min-w-0">
               <Phone className="h-4 w-4 text-gray-500" />
-              <span className="text-gray-300">{instance.phone_number}</span>
+              <span className="text-gray-300 truncate" title={instance.phone_number}>{instance.phone_number}</span>
             </div>
           )}
           <div className="text-sm text-gray-500">
@@ -831,6 +1026,17 @@ export function ConnectionsViewSimplified() {
     );
   };
 
+  if (loadingApiMode) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="inline-block">
+          <Smartphone className="h-8 w-8 text-blue-400" />
+        </div>
+        <p className="ml-3 text-gray-400">Carregando tipo de integração...</p>
+      </div>
+    );
+  }
+
   if (isOfficialApi) {
     return <OfficialApiConnectionsView />;
   }
@@ -876,9 +1082,10 @@ export function ConnectionsViewSimplified() {
             <Button
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
               onClick={() => setShowAddModal(true)}
+              disabled={hasCurrentUserConnection}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Nova Conexão
+              {hasCurrentUserConnection ? 'Limite atingido' : 'Nova Conexão'}
             </Button>
           ) : (
             <Button
@@ -926,8 +1133,8 @@ export function ConnectionsViewSimplified() {
         {[
           { title: "Total Instâncias", value: stats.total_instances, icon: Smartphone, color: "text-blue-400" },
           { title: "Conectadas", value: stats.connected_instances, icon: Wifi, color: "text-green-400" },
-          { title: "Chats Ativos", value: stats.total_chats, icon: MessageCircle, color: "text-purple-400" },
-          { title: "Mensagens", value: stats.total_messages, icon: Activity, color: "text-orange-400" }
+          { title: "Chats Ativos", value: systemChatsCount, icon: MessageCircle, color: "text-purple-400" },
+          { title: "Mensagens", value: systemMessagesCount, icon: Activity, color: "text-orange-400" }
         ].map((stat, index) => (
           <div
             key={stat.title}
@@ -1095,7 +1302,7 @@ export function ConnectionsViewSimplified() {
             </DialogTitle>
             <DialogDescription className="text-gray-400">
               {canCreate
-                ? 'Crie uma nova instância e atribua para um corretor'
+                ? 'Conexão exclusiva da IA. A plataforma permite somente 1 número por usuário.'
                 : 'Solicite ao seu gestor para criar uma nova conexão'
               }
             </DialogDescription>
@@ -1107,11 +1314,15 @@ export function ConnectionsViewSimplified() {
               <Input
                 id="instanceName"
                 value={newInstanceName}
-                onChange={(e) => setNewInstanceName(e.target.value)}
-                placeholder="Ex: João - WhatsApp Principal"
+                onChange={() => {}}
+                placeholder="Gerado automaticamente"
                 className="bg-gray-800/50 border-gray-700 text-white placeholder-gray-400"
                 required
+                readOnly
               />
+              <p className="text-xs text-gray-500">
+                Nome gerado automaticamente com base no usuário (nome+email), sem espaços.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -1133,39 +1344,10 @@ export function ConnectionsViewSimplified() {
 
             {canCreate && (
               <div className="space-y-2">
-                <Label htmlFor="assignedUser" className="text-gray-300">Atribuir Para *</Label>
-                <Select
-                  value={assignedUserId}
-                  onValueChange={setAssignedUserId}
-                >
-                  <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
-                    <SelectValue placeholder="Selecionar usuário..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700">
-                    <SelectItem value="self" className="text-gray-300">
-                      <div className="flex items-center gap-2">
-                        <Crown className="h-4 w-4 text-yellow-500" />
-                        Eu mesmo (Gestor)
-                      </div>
-                    </SelectItem>
-                    {availableUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id} className="text-gray-300">
-                        <div className="flex items-center gap-2">
-                          {user.role === 'admin' && <Shield className="h-4 w-4 text-red-500" />}
-                          {user.role === 'gestor' && <Crown className="h-4 w-4 text-yellow-500" />}
-                          {user.role === 'corretor' && <User className="h-4 w-4 text-blue-500" />}
-                          <span className="flex-1">{user.full_name}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {user.role}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500">
-                  A instância será atribuída ao usuário selecionado
-                </p>
+                <Label className="text-gray-300">Atribuição</Label>
+                <div className="rounded-md border border-gray-700 bg-gray-800/50 px-3 py-2 text-sm text-gray-300">
+                  Conexão exclusiva da IA (não atribuível para outros usuários neste momento)
+                </div>
               </div>
             )}
           </div>
@@ -1181,10 +1363,10 @@ export function ConnectionsViewSimplified() {
             {canCreate && (
               <Button
                 onClick={handleCreateInstance}
-                disabled={creating || !newInstanceName.trim() || !newInstancePhone.trim()}
+                disabled={creating || hasCurrentUserConnection || !newInstancePhone.trim()}
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {creating ? 'Criando...' : 'Criar Instância'}
+                {creating ? 'Criando...' : (hasCurrentUserConnection ? 'Você já possui 1 conexão' : 'Criar Instância')}
               </Button>
             )}
           </div>
@@ -1196,7 +1378,7 @@ export function ConnectionsViewSimplified() {
         setShowQrModal(open);
         if (!open) {
           setQrCode(null);
-          setQrTimer(15);
+          setQrTimer(QR_TIMEOUT_SECONDS);
           setQrExpired(false);
           setSelectedInstance(null);
         }
@@ -1218,7 +1400,7 @@ export function ConnectionsViewSimplified() {
                   <XCircle className="h-12 w-12 text-red-400" />
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-2">QR Code Expirado</h3>
-                <p className="text-gray-400 mb-6">O tempo limite foi excedido. Gere um novo QR Code.</p>
+                <p className="text-gray-400 mb-6">O tempo limite de {QR_TIMEOUT_SECONDS} segundos foi excedido. Gere um novo QR Code.</p>
                 <Button
                   onClick={handleRetryQrCode}
                   className="bg-blue-600 hover:bg-blue-700"
@@ -1291,13 +1473,43 @@ export function ConnectionsViewSimplified() {
               onClick={() => {
                 setShowQrModal(false);
                 setQrCode(null);
-                setQrTimer(15);
+                setQrTimer(QR_TIMEOUT_SECONDS);
                 setQrExpired(false);
                 setSelectedInstance(null);
               }}
               className="border-gray-600 text-gray-300 hover:bg-gray-700"
             >
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Exclusão */}
+      <Dialog open={!!instanceToDelete} onOpenChange={(open) => {
+        if (!open && !deletingInstance) setInstanceToDelete(null);
+      }}>
+        <DialogContent className="bg-background border-border text-foreground max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Confirmar exclusão</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Deseja realmente excluir a instância <span className="text-white font-medium">{instanceToDelete?.name}</span>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setInstanceToDelete(null)}
+              disabled={deletingInstance}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteInstance}
+              disabled={deletingInstance}
+            >
+              {deletingInstance ? 'Excluindo...' : 'Excluir'}
             </Button>
           </DialogFooter>
         </DialogContent>

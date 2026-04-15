@@ -76,9 +76,15 @@ export function useImpersonation() {
       });
       
       if (error) throw error;
-      
-      if (data && data.length > 0) {
-        const result = data[0];
+
+      const rows = Array.isArray(data) ? data : data != null ? [data] : [];
+      if (rows.length > 0) {
+        const result = rows[0] as {
+          success: boolean;
+          message: string;
+          user_email?: string;
+          user_name?: string;
+        };
         
         if (!result.success) {
           toast.error(result.message);

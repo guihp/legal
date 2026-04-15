@@ -7,6 +7,7 @@ import { CustomModal } from "./CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { invokeEdge } from "@/integrations/supabase/invoke";
 
 interface Appointment {
   id: number;
@@ -374,30 +375,15 @@ export function AppointmentCalendar({
   // Função que executa a deleção
   const executeDelete = async (appointment: Appointment) => {
     try {
-      // Payload simples para deletar - apenas ID e corretor
-      const payload = {
-        evento_id: appointment.id,
-        corretor: appointment.corretor || "Não especificado"
-      };
-
-      console.log("🗑️ Deletando evento:", payload);
-
-      // Novo contrato: enviar apenas { calendar_id, evento_id }
       const deleteBody = {
         calendar_id: (appointment as any).calendarId || selectedAgenda,
         evento_id: String(appointment.id)
       } as any;
-
-      const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/deletar-evento', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(deleteBody),
+      const { data, error } = await invokeEdge<any, any>("google-calendar-api", {
+        body: { action: "delete_event", ...deleteBody },
       });
-
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || "Erro ao apagar evento no Google");
       }
 
       console.log("✅ Evento deletado com sucesso");
@@ -462,53 +448,33 @@ export function AppointmentCalendar({
     // Mostrar sucesso imediato
     showAlert('✅ Sucesso', `Status alterado para "${newStatus}" localmente!`, 'success');
 
-    // 📡 TENTATIVA DE SINCRONIZAÇÃO COM WEBHOOK (em background)
+    // 📡 TENTATIVA DE SINCRONIZAÇÃO COM GOOGLE (em background)
     try {
-      const payload = {
-        evento_id: selectedAppointmentForStatus.id,
-        status_anterior: selectedAppointmentForStatus.status,
-        status_novo: newStatus,
-        cliente: selectedAppointmentForStatus.client,
-        imovel: selectedAppointmentForStatus.property,
-        data: selectedAppointmentForStatus.date.toISOString(),
-        corretor: selectedAppointmentForStatus.corretor || "Não especificado",
-        timestamp_alteracao: new Date().toISOString(),
-        // Mapeamento para Google Calendar responseStatus
-        google_calendar_status: {
+      const googleStatus = {
           'Aguardando confirmação': 'needsAction',
           'Confirmado': 'accepted', 
           'Cancelado': 'declined',
           'Recusado': 'declined',
           'Talvez': 'tentative'
-        }[newStatus] || 'needsAction'
-      };
+        }[newStatus] || 'needsAction';
 
-      console.log("📡 Tentando sincronizar com webhook...");
-
-      // Timeout de 5 segundos para não travar a interface
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/alterar-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const { data, error } = await invokeEdge<any, any>("google-calendar-api", {
+        body: {
+          action: "update_event_status",
+          calendar_id: (selectedAppointmentForStatus as any).calendarId || (selectedAgenda !== "Todos" ? selectedAgenda : undefined),
+          evento_id: String(selectedAppointmentForStatus.id),
+          response_status: googleStatus,
         },
-        body: JSON.stringify(payload),
-        signal: controller.signal
       });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        console.log("✅ Webhook sincronizado com sucesso!");
+      if (!error && data?.success) {
+        console.log("✅ Evento sincronizado com Google com sucesso!");
         if (onRefreshRequested) onRefreshRequested();
       } else {
-        console.warn("⚠️ Webhook retornou erro, mas alteração local mantida");
+        console.warn("⚠️ Falha ao sincronizar status com Google, alteração local mantida");
       }
       
     } catch (error) {
-      console.warn("⚠️ Falha na sincronização com webhook (alteração mantida localmente):", error);
+      console.warn("⚠️ Falha na sincronização com Google (alteração mantida localmente):", error);
       
       // Não mostrar erro para o usuário, pois a alteração local já foi feita
       // Apenas log silencioso para debug
@@ -562,17 +528,14 @@ export function AppointmentCalendar({
 
       console.log("🔄 Editando evento:", payload);
 
-      // Chamar o webhook
-      const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/editar-evento', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const { data, error } = await invokeEdge<any, any>("google-calendar-api", {
+        body: {
+          action: "update_event",
+          ...payload,
         },
-        body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || "Erro ao editar evento no Google");
       }
 
       console.log("✅ Evento editado com sucesso");

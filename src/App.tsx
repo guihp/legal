@@ -6,6 +6,7 @@ import { LoginPage } from "./components/LoginPage";
 import { UserOnboarding } from "./components/UserOnboarding";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
+import { GoogleCalendarCallbackPage } from "./components/GoogleCalendarCallbackPage";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { Button } from "./components/ui/button";
@@ -195,6 +196,7 @@ function AppContent() {
         <Route path="/s/:companySlug" element={<Suspense fallback={<div>Carregando...</div>}><SiteVitrine /></Suspense>} />
         <Route path="/imovel/:slug" element={<Suspense fallback={<div>Carregando...</div>}><PropertyLandingPage /></Suspense>} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/google/callback" element={<GoogleCalendarCallbackPage />} />
         <Route path="/" element={<Index />} />
         <Route path="/dashboard" element={<Index />} />
         <Route path="/properties" element={<Index />} />

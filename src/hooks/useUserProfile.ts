@@ -8,6 +8,7 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
+  chat_instance?: string | null;
   role: 'corretor' | 'gestor' | 'admin' | 'super_admin';
   company_id: string | null;
   department?: string;
@@ -26,7 +27,7 @@ export interface Company {
   phone?: string;
   email?: string;
   logo_url?: string;
-  plan: 'basico' | 'profissional' | 'enterprise';
+  plan: 'essential' | 'growth' | 'professional' | 'basic' | 'enterprise' | 'basico' | 'profissional';
   max_users: number;
   is_active: boolean;
 }
@@ -38,7 +39,9 @@ export function useUserProfile() {
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+  /** Quando true, `profile` reflete o usuário impersonado (JWT continua sendo o super_admin). */
+  const [impersonationActive, setImpersonationActive] = useState(false);
+
   // Refs para controle de estado
   const isLoadingRef = useRef(false);
   const lastLoadTimeRef = useRef(0);
@@ -119,6 +122,7 @@ export function useUserProfile() {
         setUser(null);
         setProfile(null);
         setCompany(null);
+        setImpersonationActive(false);
         return;
       }
 
@@ -163,12 +167,35 @@ export function useUserProfile() {
         setUser(null);
         setProfile(null);
         setCompany(null);
+        setImpersonationActive(false);
         setError('Seu acesso está desativado.');
         return;
       }
 
-      setProfile(profileData as UserProfile);
+      const baseProfile = profileData as UserProfile;
+      setProfile(baseProfile);
       setCompany(null);
+      setImpersonationActive(false);
+
+      // Super admin com impersonação ativa: usar perfil do usuário alvo para UI e rotas (tenant), não AdminLayout.
+      if (baseProfile.role === 'super_admin') {
+        const { data: impData, error: impErr } = await supabase.rpc('get_active_impersonation');
+        if (!impErr && impData) {
+          const impRow = Array.isArray(impData) ? impData[0] : impData;
+          const targetId = (impRow as { impersonated_user_id?: string })?.impersonated_user_id;
+          if (targetId) {
+            const { data: impProf, error: impProfErr } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', targetId)
+              .single();
+            if (!impProfErr && impProf && impProf.is_active !== false) {
+              setProfile(impProf as UserProfile);
+              setImpersonationActive(true);
+            }
+          }
+        }
+      }
 
     } catch (error: any) {
       if (mountedRef.current) {
@@ -440,8 +467,11 @@ export function useUserProfile() {
   useEffect(() => {
     if (session?.user) {
       setUser(session.user);
-      // Só carregar perfil se não temos um ou se o usuário mudou
-      if (!profile || profile.id !== session.user.id) {
+      // Com impersonação, profile.id !== auth.uid() é esperado; não disparar reload em loop.
+      const needsLoad =
+        !profile ||
+        (profile.id !== session.user.id && !impersonationActive);
+      if (needsLoad) {
         loadUserData(true);
       }
     } else {
@@ -450,9 +480,10 @@ export function useUserProfile() {
       setProfile(null);
       setCompany(null);
       setError(null);
+      setImpersonationActive(false);
       setLoading(false);
     }
-  }, [session]);
+  }, [session, impersonationActive, profile, loadUserData]);
 
   // Carregamento inicial
   useEffect(() => {
@@ -507,6 +538,7 @@ export function useUserProfile() {
     error,
     isManager,
     isAdmin,
+    impersonationActive,
     updateProfile,
     createProfile,
     getCompanyUsers,

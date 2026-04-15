@@ -8,8 +8,115 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
-/** Planos com vitrine pública automática (site em /s/{slug}) */
-const PLANS_WITH_PUBLIC_SITE = new Set(['professional', 'enterprise'])
+/** Plano com vitrine pública automática (site em /s/{slug}) */
+const PLANS_WITH_PUBLIC_SITE = new Set(['professional'])
+
+type SignupPaymentPayload = {
+  cardNumber: string
+  cardHolderName: string
+  cardExpiry: string // MM/YY
+  cardCvv: string
+  billingCycle: 'monthly' | 'annual'
+  valueMonthly: number
+  valueTotal: number
+  cpfCnpj?: string | null
+  email?: string | null
+  phone?: string | null
+  postalCode?: string | null
+  addressNumber?: string | null
+}
+
+function getTrialDueDate(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + Math.max(1, days))
+  return d.toISOString().slice(0, 10)
+}
+
+function parseExpiry(expiry: string): { month: string; year: string } {
+  const clean = String(expiry || '').replace(/\s/g, '')
+  const [mm = '', yy = ''] = clean.split('/')
+  const month = mm.padStart(2, '0').slice(0, 2)
+  const year = `20${yy.padStart(2, '0').slice(-2)}`
+  return { month, year }
+}
+
+async function callAsaas(path: string, payload: Record<string, any>) {
+  const baseUrl = (Deno.env.get('ASAAS_API_BASE_URL') || 'https://api-sandbox.asaas.com').replace(/\/$/, '')
+  const apiKey = Deno.env.get('ASAAS_API_KEY')
+  if (!apiKey) throw new Error('ASAAS_API_KEY não configurada')
+
+  const res = await fetch(`${baseUrl}/v3${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      access_token: apiKey,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = json?.errors?.[0]?.description || json?.message || `Erro ASAAS (${res.status})`
+    throw new Error(msg)
+  }
+  return json
+}
+
+async function sendWelcomeEmailWithResend(params: {
+  to: string
+  companyName: string
+  loginEmail: string
+  temporaryPassword: string
+}) {
+  const enabled = String(Deno.env.get('RESEND_ENABLED') || 'false').toLowerCase() === 'true'
+  if (!enabled) return { sent: false, reason: 'RESEND_ENABLED=false' }
+
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  const from = Deno.env.get('RESEND_FROM_EMAIL') || 'onboarding@iafeimobi.com.br'
+  const appUrl = Deno.env.get('PUBLIC_APP_URL') || 'https://app.iafeimobi.com.br'
+  const apiBase = (Deno.env.get('RESEND_API_BASE_URL') || 'https://api.resend.com').replace(/\/$/, '')
+
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY não configurada')
+  }
+
+  const subject = 'Bem-vindo(a) ao IAFÉ IMOBI - Credenciais de acesso'
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+      <h2 style="margin-bottom: 8px;">Cadastro concluído com sucesso</h2>
+      <p>Olá, <strong>${params.companyName}</strong>!</p>
+      <p>Sua conta foi criada e já está pronta para uso.</p>
+      <p><strong>Email de acesso:</strong> ${params.loginEmail}</p>
+      <p><strong>Senha temporária:</strong> ${params.temporaryPassword}</p>
+      <p>Acesse a plataforma em: <a href="${appUrl}">${appUrl}</a></p>
+      <p style="margin-top: 18px; font-size: 12px; color: #6b7280;">
+        Por segurança, altere sua senha no primeiro acesso.
+      </p>
+    </div>
+  `
+
+  const res = await fetch(`${apiBase}/emails`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from,
+      to: [params.to],
+      subject,
+      html,
+    }),
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = json?.message || json?.error || `Erro ao enviar email (${res.status})`
+    throw new Error(msg)
+  }
+
+  return { sent: true, id: json?.id || null }
+}
 
 function slugifyCompanySite(input: string): string {
   const s = String(input || '')
@@ -37,7 +144,7 @@ serve(async (req) => {
   }
 
   try {
-    // Create Supabase client with user's auth token
+    // Create Supabase client with user's auth token (quando existir)
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -48,33 +155,11 @@ serve(async (req) => {
       }
     )
 
-    // Get the user from the JWT token
+    // Usuário autenticado é opcional (fluxo público por token também é aceito)
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-
-    if (userError || !user) {
-      console.error('❌ Erro na autenticação:', userError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Unauthorized: ' + (userError?.message || 'No user found')
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 401,
-        }
-      )
+    if (!userError && user) {
+      console.log('✅ Usuário autenticado:', user.id, user.email);
     }
-
-    console.log('✅ Usuário autenticado:', user.id, user.email);
-
-    // Verificar perfil do usuário antes de continuar
-    const { data: userProfileCheck, error: profileCheckError } = await supabaseClient
-      .from('user_profiles')
-      .select('id, role, company_id')
-      .eq('id', user.id)
-      .single();
-
-    console.log('👤 Perfil do usuário:', { userProfileCheck, profileCheckError });
 
     // Get request body
     let body: any;
@@ -108,7 +193,7 @@ serve(async (req) => {
       }
     }
 
-    const {
+    let {
       name,
       whatsapp_ai_phone,
       login_email,
@@ -118,8 +203,30 @@ serve(async (req) => {
       address,
       plan = 'essential',
       trial_days = 14,
-      max_users = 10
+      max_users = 10,
+      payment = null,
+      signup_token = null,
     } = body;
+
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!serviceRoleKey) {
+      console.error('❌ SUPABASE_SERVICE_ROLE_KEY não configurada');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Configuração do servidor incompleta'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      )
+    }
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      serviceRoleKey,
+    )
 
     // Validações
     if (!whatsapp_ai_phone || whatsapp_ai_phone.replace(/\D/g, '').length < 10) {
@@ -148,24 +255,88 @@ serve(async (req) => {
       )
     }
 
-    // Verificar se é super_admin
-    const { data: profile, error: profileError } = await supabaseClient
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    // Fluxo A: autenticado (super_admin). Fluxo B: público via signup_token.
+    if (user) {
+      const { data: profile, error: profileError } = await supabaseClient
+        .from('user_profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-    if (profileError || profile?.role !== 'super_admin') {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Apenas super_admin pode criar empresas'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      )
+      if (profileError || profile?.role !== 'super_admin') {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Apenas super_admin pode criar empresas'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 403,
+          }
+        )
+      }
+    } else {
+      if (!signup_token) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Token de cadastro obrigatório'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 401,
+          }
+        )
+      }
+
+      const { data: linkData, error: linkError } = await supabaseAdmin
+        .from('signup_links')
+        .select('*')
+        .eq('token', signup_token)
+        .single()
+
+      if (linkError || !linkData) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Link de cadastro inválido'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          }
+        )
+      }
+
+      if (linkData.status !== 'pending') {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Link de cadastro já utilizado ou expirado'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          }
+        )
+      }
+
+      if (new Date(linkData.expires_at).getTime() < Date.now()) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Link de cadastro expirado'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          }
+        )
+      }
+
+      // No fluxo público, forçar dados de plano/limites vindos do link gerado pelo admin.
+      plan = linkData.plan || plan
+      max_users = Number(linkData.max_users || max_users)
     }
 
     // Limpar telefone (apenas números)
@@ -200,7 +371,20 @@ serve(async (req) => {
     if (cnpj) rpcParams.p_cnpj = cnpj;
     if (phone) rpcParams.p_phone = phone;
     if (address) rpcParams.p_address = address;
-    if (plan) rpcParams.p_plan = plan;
+    // Compatibilidade com legados e aliases de plano
+    const normalizedPlan = String(plan || 'essential').toLowerCase();
+    const finalPlan =
+      normalizedPlan === 'basic' || normalizedPlan === 'basico' || normalizedPlan === 'essentials'
+        ? 'essential'
+        : normalizedPlan === 'enterprise' || normalizedPlan === 'pro' || normalizedPlan === 'profissional'
+          ? 'professional'
+          : normalizedPlan === 'growth'
+            ? 'growth'
+            : normalizedPlan === 'professional'
+              ? 'professional'
+              : 'essential';
+
+    if (finalPlan) rpcParams.p_plan = finalPlan;
     if (trial_days) rpcParams.p_trial_days = trial_days;
     if (max_users) rpcParams.p_max_users = max_users;
 
@@ -248,26 +432,6 @@ serve(async (req) => {
     console.log('✅ Empresa criada:', companyId);
 
     // 2. Criar usuário usando Admin API (service_role)
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!serviceRoleKey) {
-      console.error('❌ SUPABASE_SERVICE_ROLE_KEY não configurada');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Configuração do servidor incompleta'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
-        }
-      )
-    }
-
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      serviceRoleKey,
-    )
-
     console.log('👤 Criando usuário em auth.users...');
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -407,7 +571,7 @@ serve(async (req) => {
         .insert({
           company_id: companyId,
           action: 'created',
-          performed_by: user.id,
+          performed_by: user?.id || null,
           new_status: 'trial',
           reason: 'Usuário gestor criado junto com a empresa',
           meta: {
@@ -417,6 +581,85 @@ serve(async (req) => {
         });
     } catch (logError) {
       console.warn('⚠️ Erro ao registrar log (não crítico):', logError);
+    }
+
+    // 6. Processar cobrança no ASAAS (opcional por env)
+    const asaasEnabled = String(Deno.env.get('ASAAS_ENABLED') || 'false').toLowerCase() === 'true'
+    const paymentPayload = payment as SignupPaymentPayload | null
+    let asaasResult: { customerId?: string; subscriptionId?: string } | null = null
+
+    if (asaasEnabled && paymentPayload) {
+      try {
+        const customer = await callAsaas('/customers', {
+          name: name || `Empresa ${phoneClean}`,
+          email: login_email?.trim()?.toLowerCase() || null,
+          mobilePhone: String(whatsapp_ai_phone || '').replace(/\D/g, ''),
+          cpfCnpj: String(cnpj || paymentPayload.cpfCnpj || '').replace(/\D/g, '') || undefined,
+          postalCode: String(paymentPayload.postalCode || '').replace(/\D/g, '') || undefined,
+          addressNumber: paymentPayload.addressNumber || undefined,
+          address: address || undefined,
+          notificationDisabled: false,
+        })
+
+        const { month, year } = parseExpiry(paymentPayload.cardExpiry)
+        const chargeValue =
+          paymentPayload.billingCycle === 'annual'
+            ? Number(paymentPayload.valueTotal || 0)
+            : Number(paymentPayload.valueMonthly || 0)
+
+        const subscription = await callAsaas('/subscriptions', {
+          customer: customer.id,
+          billingType: 'CREDIT_CARD',
+          value: chargeValue,
+          nextDueDate: getTrialDueDate(Number(trial_days || 7)),
+          cycle: paymentPayload.billingCycle === 'annual' ? 'YEARLY' : 'MONTHLY',
+          description: `Plano ${finalPlan} - IAFÉ IMOBI`,
+          creditCard: {
+            holderName: paymentPayload.cardHolderName,
+            number: String(paymentPayload.cardNumber || '').replace(/\D/g, ''),
+            expiryMonth: month,
+            expiryYear: year,
+            ccv: String(paymentPayload.cardCvv || '').replace(/\D/g, ''),
+          },
+          creditCardHolderInfo: {
+            name: paymentPayload.cardHolderName,
+            email: paymentPayload.email || login_email,
+            cpfCnpj: String(cnpj || paymentPayload.cpfCnpj || '').replace(/\D/g, '') || undefined,
+            postalCode: String(paymentPayload.postalCode || '').replace(/\D/g, '') || undefined,
+            addressNumber: paymentPayload.addressNumber || undefined,
+            phone: String(paymentPayload.phone || whatsapp_ai_phone || '').replace(/\D/g, ''),
+          },
+          remoteIp: req.headers.get('x-forwarded-for') || '127.0.0.1',
+        })
+
+        asaasResult = { customerId: customer.id, subscriptionId: subscription.id }
+      } catch (asaasError: any) {
+        console.error('❌ Erro ao processar cobrança ASAAS:', asaasError)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: asaasError?.message || 'Falha ao processar pagamento no ASAAS'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          }
+        )
+      }
+    }
+
+    // 7. Enviar email de boas-vindas com credenciais (opcional por env)
+    let resendStatus: { sent: boolean; id?: string | null; reason?: string } | null = null
+    try {
+      resendStatus = await sendWelcomeEmailWithResend({
+        to: login_email.trim().toLowerCase(),
+        companyName: name || 'Gestor da Empresa',
+        loginEmail: login_email.trim().toLowerCase(),
+        temporaryPassword: generatedPassword,
+      })
+    } catch (emailErr: any) {
+      console.error('⚠️ Falha ao enviar email de boas-vindas:', emailErr)
+      resendStatus = { sent: false, reason: emailErr?.message || 'erro_desconhecido' }
     }
 
     // Retornar sucesso com credenciais
@@ -429,6 +672,8 @@ serve(async (req) => {
         password: generatedPassword,
         site_slug,
         plan,
+        asaas: asaasResult,
+        email_delivery: resendStatus,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -61,7 +61,7 @@ serve(async (req) => {
     const body = await req.json();
     console.log('📦 Request body:', body);
     
-    const { email, role = 'corretor', full_name, phone, department } = body
+    const { email, role = 'corretor', full_name, phone, department, company_id } = body
 
     if (!email) {
       return new Response(
@@ -81,6 +81,85 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           error: 'Full name is required'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        }
+      )
+    }
+
+    // Obter perfil do solicitante para validar escopo e permissões
+    const { data: requesterProfile, error: requesterProfileError } = await supabaseClient
+      .from('user_profiles')
+      .select('id, role, company_id')
+      .eq('id', user.id)
+      .single()
+
+    if (requesterProfileError || !requesterProfile) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Perfil do solicitante não encontrado'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      )
+    }
+
+    // Apenas gestor, admin ou super_admin podem criar usuários
+    if (!['gestor', 'admin', 'super_admin'].includes(requesterProfile.role)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Sem permissão para criar usuários'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      )
+    }
+
+    // Regras de hierarquia
+    if (requesterProfile.role === 'gestor' && role !== 'corretor') {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Gestor pode criar apenas usuários com role corretor'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      )
+    }
+
+    if (requesterProfile.role === 'admin' && role === 'super_admin') {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Admin não pode criar super_admin'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      )
+    }
+
+    const targetCompanyId =
+      requesterProfile.role === 'super_admin'
+        ? (company_id || requesterProfile.company_id || null)
+        : requesterProfile.company_id;
+
+    if (!targetCompanyId) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Company ID não definido para criação do usuário'
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -138,7 +217,7 @@ serve(async (req) => {
         email: email,
         full_name: full_name,
         role: role,
-        company_id: '047e534b-5212-43c5-b704-94fe6007775f', // Company ID fixo para teste
+        company_id: targetCompanyId,
         phone: phone || null,
         department: department || null,
         is_active: true,

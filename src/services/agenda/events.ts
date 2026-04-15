@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { invokeEdge } from "@/integrations/supabase/invoke";
+import { supabase } from "@/integrations/supabase/client";
 
 // Tipagem compartilhada com AgendaView
 export interface AgendaEvent {
@@ -13,6 +15,26 @@ export interface AgendaEvent {
 }
 
 const WebhookResponseSchema = z.any();
+
+async function resolveCalendarIds(selectedAgenda: string): Promise<string[]> {
+	if (selectedAgenda !== "Todos") return [selectedAgenda];
+
+	try {
+		const { data: edgeData, error: edgeError } = await invokeEdge<any, any>("google-calendar-api", {
+			body: { action: "list_calendars" },
+		});
+		if (!edgeError) {
+			const list = Array.isArray(edgeData?.calendars) ? edgeData.calendars : [];
+			return list.map((c: any) => c.id).filter(Boolean);
+		}
+	} catch {}
+
+	// fallback local
+	const { data: schedules } = await supabase
+		.from("oncall_schedules")
+		.select("calendar_id");
+	return (schedules || []).map((s: any) => s.calendar_id).filter(Boolean);
+}
 
 function toLocalMonthRange(reference: Date) {
 	const year = reference.getFullYear();
@@ -111,29 +133,17 @@ function mapWebhookItemToAgendaEvent(event: any, index: number, selectedAgenda?:
 
 export async function fetchAgendaMonth(reference: Date, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
 	const { startIso, endIso } = toLocalMonthRange(reference);
-
-	const body = {
-		data_inicial: startIso,
-		data_final: endIso,
-		mes: reference.getMonth() + 1,
-		ano: reference.getFullYear(),
-		data_inicial_formatada: "",
-		data_final_formatada: "",
-		periodo: "",
-		agenda: selectedAgenda
-	};
-
-	const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/ver-agenda', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
+	const calendar_ids = await resolveCalendarIds(selectedAgenda);
+	const { data: edgeData, error } = await invokeEdge<any, any>("google-calendar-api", {
+		body: {
+			action: "list_events",
+			calendar_ids,
+			time_min: startIso,
+			time_max: endIso,
+		},
 	});
-
-	if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
-	const json = await response.json();
-	const _ = WebhookResponseSchema.parse(json);
-
-	const data = Array.isArray(json) ? json : [];
+	if (error) throw new Error(error.message || "Erro ao buscar agenda");
+	const data = Array.isArray(edgeData?.events) ? edgeData.events : [];
 	const processed: AgendaEvent[] = data
 		.map((item, idx) => mapWebhookItemToAgendaEvent(item, idx, selectedAgenda))
 		.filter((e): e is AgendaEvent => Boolean(e));
@@ -211,39 +221,21 @@ async function fetchOncallEvents(startDate: Date, endDate: Date): Promise<Agenda
 	}
 }
 
-// Função para buscar eventos próximos diretamente do endpoint ver-agenda
+// Função para buscar eventos próximos direto da Edge Function
 async function fetchAgendaFromEndpoint(startDate: Date, endDate: Date, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
 	const startIso = startDate.toISOString();
 	const endIso = endDate.toISOString();
-
-	const body = {
-		data_inicial: startIso,
-		data_final: endIso,
-		mes: startDate.getMonth() + 1,
-		ano: startDate.getFullYear(),
-		data_inicial_formatada: "",
-		data_final_formatada: "",
-		periodo: "",
-		agenda: selectedAgenda
-	};
-
-	console.log('📤 Chamando endpoint ver-agenda com período específico:', {
-		data_inicial: startIso,
-		data_final: endIso,
-		agenda: selectedAgenda
+	const calendar_ids = await resolveCalendarIds(selectedAgenda);
+	const { data: edgeData, error } = await invokeEdge<any, any>("google-calendar-api", {
+		body: {
+			action: "list_events",
+			calendar_ids,
+			time_min: startIso,
+			time_max: endIso,
+		},
 	});
-
-	const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/ver-agenda', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-
-	if (!response.ok) throw new Error(`Erro na API ver-agenda: ${response.status}`);
-	const json = await response.json();
-	const _ = WebhookResponseSchema.parse(json);
-
-	const data = Array.isArray(json) ? json : [];
+	if (error) throw new Error(error.message || "Erro na API google-calendar-api");
+	const data = Array.isArray(edgeData?.events) ? edgeData.events : [];
 	const processed: AgendaEvent[] = data
 		.map((item, idx) => mapWebhookItemToAgendaEvent(item, idx, selectedAgenda))
 		.filter((e): e is AgendaEvent => Boolean(e));

@@ -132,7 +132,21 @@ const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
   const { hasPermission } = usePermissions();
   const { company } = useOwnCompany();
-  const companyPlan = company?.plan || 'essential';
+  const companyPlanRaw = String(company?.plan || 'essential').toLowerCase();
+  const normalizePlan = (plan: string): 'essential' | 'growth' | 'professional' => {
+    // Compatibilidade com legado: "basic" e "enterprise" convergem para os planos atuais
+    if (plan === 'basic' || plan === 'basico' || plan === 'essentials') return 'essential';
+    if (plan === 'pro' || plan === 'enterprise' || plan === 'profissional') return 'professional';
+    if (plan === 'growth') return 'growth';
+    if (plan === 'professional') return 'professional';
+    return 'essential';
+  };
+  const companyPlan = normalizePlan(companyPlanRaw);
+  const planTier: Record<typeof companyPlan, number> = {
+    essential: 1,
+    growth: 2,
+    professional: 3,
+  };
 
   const PlanBlockedScreen = ({ feature, requiredPlan }: { feature: string; requiredPlan: string }) => (
     <div className="p-8 text-center">
@@ -161,7 +175,7 @@ const Index = () => {
           />
         );
       case "reports":
-        if (companyPlan === 'essential') {
+        if (planTier[companyPlan] < 2) {
           return <PlanBlockedScreen feature="Relatórios" requiredPlan="Growth ou Professional" />;
         }
         return <ReportsView />;
@@ -181,7 +195,7 @@ const Index = () => {
         return <ConnectionsViewSimplified />;
       case "users":
         // Plano Essential não tem gestão de usuários
-        if (companyPlan === 'essential') {
+        if (planTier[companyPlan] < 2) {
           return <PlanBlockedScreen feature="Gestão de Usuários" requiredPlan="Growth ou Professional" />;
         }
         // Verificar permissão de acesso ao módulo de Usuários
@@ -226,7 +240,7 @@ const Index = () => {
       case "conversas":
         return <ConversasView />;
       case "marketing":
-        if (companyPlan !== 'professional') {
+        if (planTier[companyPlan] < 3) {
           return <PlanBlockedScreen feature="Presença Digital" requiredPlan="Professional" />;
         }
         if (!hasPermission('menu_marketing')) {
@@ -239,7 +253,7 @@ const Index = () => {
         }
         return <MarketingView section="overview" />;
       case "marketing-site":
-        if (companyPlan !== 'professional') {
+        if (planTier[companyPlan] < 3) {
           return <PlanBlockedScreen feature="Site Vitrine" requiredPlan="Professional" />;
         }
         if (!hasPermission('menu_marketing')) {
@@ -252,7 +266,7 @@ const Index = () => {
         }
         return <MarketingView section="website" />;
       case "marketing-lps":
-        if (companyPlan !== 'professional') {
+        if (planTier[companyPlan] < 3) {
           return <PlanBlockedScreen feature="Landing Pages" requiredPlan="Professional" />;
         }
         if (!hasPermission('menu_marketing')) {

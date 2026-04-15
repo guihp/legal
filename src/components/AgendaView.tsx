@@ -3,12 +3,14 @@ import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AddEventModal } from "@/components/AddEventModal";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Calendar } from "lucide-react";
+import { Plus, Calendar, Link2Off } from "lucide-react";
 import { useProperties } from "@/hooks/useProperties";
 import { logAudit } from "@/lib/audit/logger";
 import { useClients } from "@/hooks/useClients";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { invokeEdge } from "@/integrations/supabase/invoke";
+import { toast } from "sonner";
 
 interface AgendaEvent {
   id: number | string;
@@ -72,11 +74,13 @@ export function AgendaView() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date()); // Controlar mês atual
   const [isConnected, setIsConnected] = useState(false);
+  const [connectedGoogleEmail, setConnectedGoogleEmail] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [selectedAgenda, setSelectedAgenda] = useState<string>("Todos"); // ID do calendário selecionado ou 'Todos'
   const [selectedAgendaName, setSelectedAgendaName] = useState<string>("Todos os calendários");
-  const [corretores, setCorretores] = useState<{ id: string; full_name: string }[]>([]);
+  const [corretores, setCorretores] = useState<{ id: string; full_name: string; accessRole?: string; canWrite?: boolean }[]>([]);
   const [loadingCorretores, setLoadingCorretores] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -84,6 +88,67 @@ export function AgendaView() {
   const { properties } = useProperties();
   const { clients } = useClients();
   const { getCompanyUsers, profile } = useUserProfile();
+
+  const checkGoogleConnectionStatus = async () => {
+    try {
+      const { data: integration } = await supabase
+        .from("company_google_calendar_integrations")
+        .select("google_email")
+        .maybeSingle();
+
+      const connected = !!integration;
+      setIsConnected(connected);
+      setConnectedGoogleEmail(integration?.google_email || null);
+
+      if (!connected) {
+        setCorretores([]);
+      }
+    } catch {
+      setIsConnected(false);
+      setConnectedGoogleEmail(null);
+      setCorretores([]);
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    try {
+      setConnectingGoogle(true);
+      const redirectUri = `${window.location.origin}/auth/google/callback`;
+      const { data, error } = await invokeEdge<any, any>("google-calendar-auth", {
+        body: { action: "get_auth_url", redirect_uri: redirectUri },
+      });
+      if (error) throw new Error(error.message || "Falha ao iniciar conexão Google");
+      if (!data?.auth_url) throw new Error("URL de autorização não retornada");
+      window.location.href = data.auth_url;
+    } catch (e: any) {
+      toast.error(e?.message || "Não foi possível conectar Google Calendar");
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    try {
+      setConnectingGoogle(true);
+      const { data, error } = await invokeEdge<any, any>("google-calendar-auth", {
+        body: { action: "disconnect" },
+      });
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || "Falha ao desconectar Google Calendar");
+      }
+
+      setIsConnected(false);
+      setConnectedGoogleEmail(null);
+      setCorretores([]);
+      setSelectedAgenda("Todos");
+      setSelectedAgendaName("Todos os calendários");
+      toast.success("Google Calendar desconectado com sucesso");
+    } catch (e: any) {
+      toast.error(e?.message || "Não foi possível desconectar Google Calendar");
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
 
   // Função para carregar calendários (mesma fonte do Plantão > Calendários)
   const loadCorretores = async () => {
@@ -106,59 +171,20 @@ export function AgendaView() {
         userRole = profile?.role;
       }
 
-      // 2. Fazer requisição ao Webhook com company_id
-      const resp = await fetch("https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/id_agendas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          funcao: "leitura",
-          company_id: companyId,
-          user_id: user?.id
-        }),
+      const { data: edgeData, error: edgeError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: { action: "list_calendars" },
       });
-
-      if (!resp.ok) {
-        throw new Error(`Erro na API: ${resp.status} - ${resp.statusText}`);
-      }
-
-      const data = await resp.json();
-      let list: any[] = [];
-      
-      // Novo formato: array de objetos com { calendars: [...], assigned_user_id: "..." }
-      if (Array.isArray(data)) {
-        // Verificar se é o novo formato (objetos com propriedade "calendars")
-        if (data.length > 0 && Array.isArray((data[0] as any)?.calendars)) {
-          // Novo formato: extrair calendários e preservar assigned_user_id
-          list = (data as any[]).flatMap((item: any) => {
-            const calendars = item.calendars || [];
-            // Adicionar assigned_user_id a cada calendário para facilitar filtragem
-            return calendars.map((cal: any) => ({
-              ...cal,
-              _assigned_user_id: item.assigned_user_id // Prefixo _ para indicar campo auxiliar
-            }));
-          });
-        }
-        // Formato antigo: lista de wrappers com chave "Calendars" (maiúscula)
-        else if (data.length > 0 && Array.isArray((data[0] as any)?.Calendars)) {
-          list = (data as any[]).flatMap((item: any) => item.Calendars || []);
-        }
-        // Formato antigo: array direto de calendários
-        else {
-          list = data;
-        }
-      } else if (Array.isArray((data as any)?.Calendars) || Array.isArray((data as any)?.calendars)) {
-        list = (data as any).Calendars || (data as any).calendars;
-      } else if (Array.isArray((data as any)?.events)) {
-        list = (data as any).events;
-      } else {
-        list = [];
-      }
+      if (edgeError) throw new Error(edgeError.message || "Falha ao carregar calendários Google");
+      const list: any[] = Array.isArray(edgeData?.calendars) ? edgeData.calendars : [];
+      setIsConnected(true);
+      setConnectedGoogleEmail(edgeData?.google_email || null);
 
       const normalized = list.map((item: any) => ({
-        id: item?.["Calendar ID"] ?? item?.id ?? "",
-        full_name: item?.["Calendar Name"] ?? item?.name ?? "Sem nome",
-        // Preservar assigned_user_id se vier do novo formato
-        _assigned_user_id: item?._assigned_user_id,
+        id: item?.id ?? "",
+        full_name: item?.name ?? "Sem nome",
+        accessRole: item?.accessRole || "",
+        canWrite: ["owner", "writer"].includes(String(item?.accessRole || "").toLowerCase()),
+        _assigned_user_id: null,
       }));
 
       console.log(`✅ Encontrados ${normalized.length} calendários.`);
@@ -382,7 +408,7 @@ export function AgendaView() {
   };
 
   // REMOVIDO: leitura e mescla de eventos locais (oncall_events) para simplificar a Agenda
-  // Conforme solicitado, manteremos apenas a consulta ao endpoint ver-agenda
+  // Consulta de eventos exclusivamente via Edge Function google-calendar-api
 
   // REMOVIDO: leitura de eventos a partir de notas locais para simplificação
 
@@ -415,53 +441,21 @@ export function AgendaView() {
         ? corretores.map(c => c.id)
         : [selectedAgenda];
 
-      // Novo contrato de payload
-      const requestBody = isTodos ? {
-        tipo_busca: 'todos',
-        calendar_ids: agendaIds,
-        data_inicial: dataInicialFormatada,
-        data_final: dataFinalFormatada,
-        mes: month + 1,
-        ano: year,
-        data_inicial_formatada: dataInicial.toLocaleDateString('pt-BR') + ' 00:01',
-        data_final_formatada: dataFinal.toLocaleDateString('pt-BR') + ' 23:59',
-        periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`
-      } : {
-        tipo_busca: 'individual',
-        calendar_id: selectedAgenda,
-        calendar_ids: [selectedAgenda], // Garantir que até busca individual envie array
-        data_inicial: dataInicialFormatada,
-        data_final: dataFinalFormatada,
-        mes: month + 1,
-        ano: year,
-        data_inicial_formatada: dataInicial.toLocaleDateString('pt-BR') + ' 00:01',
-        data_final_formatada: dataFinal.toLocaleDateString('pt-BR') + ' 23:59',
-        periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`
-      } as any;
-
       if (!isAutoUpdate) {
-        console.log('📤 Buscando eventos via webhook para:', requestBody.periodo);
+        console.log("📤 Buscando eventos via google-calendar-api");
       }
-
-      const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/ver-agenda', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const { data: edgeData, error: edgeError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: {
+          action: "list_events",
+          calendar_ids: agendaIds,
+          time_min: dataInicialFormatada,
+          time_max: dataFinalFormatada,
         },
-        body: JSON.stringify(requestBody)
       });
-
+      if (edgeError) throw new Error(edgeError.message || "Falha ao listar eventos do Google");
+      const data = edgeData?.events || [];
       if (!isAutoUpdate) {
-        console.log('📡 Status resposta:', response.status);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (!isAutoUpdate) {
-        console.log('✅ Dados da agenda recebidos:', Array.isArray(data) ? data.length : 'formato não reconhecido');
+        console.log("✅ Dados da agenda recebidos:", Array.isArray(data) ? data.length : "formato não reconhecido");
       }
 
       // Processar os dados recebidos do Google Calendar
@@ -817,12 +811,11 @@ export function AgendaView() {
       setEvents(validEvents);
       setIsConnected(true);
       setLastUpdate(new Date());
-      if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso (ver-agenda)');
+      if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso (google-calendar-api)');
 
     } catch (error) {
       console.log('⚠️ Webhook indisponível, mantendo dados de exemplo:', error);
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      setIsConnected(false);
       // Manter os dados mock que já estão carregados
     } finally {
       setLoading(false);
@@ -830,6 +823,10 @@ export function AgendaView() {
   };
 
   // UseEffect para carregamento inicial dos corretores
+  useEffect(() => {
+    checkGoogleConnectionStatus();
+  }, []);
+
   useEffect(() => {
     console.log('🚀 Carregando corretores na inicialização...');
     loadCorretores();
@@ -1086,108 +1083,89 @@ export function AgendaView() {
         console.log(`👤 Corretor selecionado manualmente: ${corretorAssignado}`);
       }
 
-      // Preparar payload para o webhook
-      const webhookPayload = {
-        calendar_id: selectedAgenda !== 'Todos' ? selectedAgenda : undefined,
+      const writableCalendars = corretores.filter(c => c.canWrite);
+      let targetCalendarId =
+        selectedAgenda !== "Todos"
+          ? selectedAgenda
+          : (writableCalendars[0]?.id || "");
+
+      if (selectedAgenda !== "Todos") {
+        const selectedCalendar = corretores.find(c => c.id === selectedAgenda);
+        if (selectedCalendar && !selectedCalendar.canWrite) {
+          throw new Error("Você não tem permissão de escrita neste calendário. Selecione um calendário com permissão de edição.");
+        }
+      }
+
+      // Fallback: se a lista local ainda não carregou, consulta direto no Google API
+      if (!targetCalendarId) {
+        const { data: calendarsData, error: calendarsError } = await invokeEdge<any, any>("google-calendar-api", {
+          body: { action: "list_calendars" },
+        });
+        if (calendarsError) {
+          throw new Error(calendarsError.message || "Falha ao carregar calendários para criação do evento");
+        }
+        const calendars = Array.isArray(calendarsData?.calendars) ? calendarsData.calendars : [];
+        const writable = calendars.filter((c: any) =>
+          ["owner", "writer"].includes(String(c?.accessRole || "").toLowerCase())
+        );
+        const preferred = writable.find((c: any) => c?.primary) || writable[0];
+        targetCalendarId = preferred?.id || "";
+      }
+
+      if (!targetCalendarId) {
+        throw new Error("Selecione um calendário para criar o evento");
+      }
+
+      const googleEventPayload = {
         summary: `${eventData.type} ao ${propertyTitle}`,
         description: `${eventData.type} agendada para o imóvel ${propertyTitle} (${propertyAddress}) com o cliente ${client.name}. Corretor responsável: ${corretorAssignado}`,
         start: {
           dateTime: eventData.date.toISOString(),
-          timeZone: 'America/Sao_Paulo'
+          timeZone: "America/Sao_Paulo",
         },
         end: {
           dateTime: endDateTime.toISOString(),
-          timeZone: 'America/Sao_Paulo'
+          timeZone: "America/Sao_Paulo",
         },
         attendees: [
           {
             email: eventData.email,
-            displayName: client.name
-          }
+            displayName: client.name,
+          },
         ],
         location: propertyAddress,
-        // Dados adicionais para contexto
-        imovel: {
-          id: eventData.listingId || eventData.propertyId,
-          titulo: propertyTitle,
-          endereco: propertyAddress,
-          preco: property?.price || 0,
-          listing_id: eventData.listingId
-        },
-        cliente: {
-          id: client.id,
-          nome: client.name,
-          email: eventData.email,
-          telefone: client.phone
-        },
-        corretor: {
-          nome: corretorAssignado,
-          selecionado_como: eventData.corretor, // "aleatorio", "Isis", ou "Arthur"
-          atribuido_automaticamente: eventData.corretor === 'aleatorio'
-        },
-        tipo_evento: eventData.type,
-        data_evento: eventData.date.toISOString(),
-        hora_evento: eventData.time
       };
 
-      console.log('📤 ENVIANDO EVENTO PARA WEBHOOK');
-      console.log('🌐 URL:', 'https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/criar_evento');
-      console.log('📝 Method: POST');
-      console.log('📋 Payload:', JSON.stringify(webhookPayload, null, 2));
-
-      // Chamar o webhook para criar o evento
-      const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/criar_evento', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const { data: createdData, error: createdError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: {
+          action: "create_event",
+          calendar_id: targetCalendarId,
+          event: googleEventPayload,
         },
-        body: JSON.stringify(webhookPayload)
       });
-
-      console.log('📡 RESPOSTA DO WEBHOOK');
-      console.log('✅ Status:', response.status);
-      console.log('✅ Status Text:', response.statusText);
-
-      if (!response.ok) {
-        throw new Error(`Erro ao criar evento: ${response.status} - ${response.statusText}`);
+      if (createdError || !createdData?.success) {
+        throw new Error(createdError?.message || createdData?.error || "Erro ao criar evento no Google Calendar");
       }
 
-      // Verificar se há conteúdo na resposta antes de tentar fazer parse JSON
-      let responseData = null;
-      const responseText = await response.text();
-
-      if (responseText && responseText.trim().length > 0) {
-        try {
-          responseData = JSON.parse(responseText);
-          console.log('📊 Resposta do webhook:', JSON.stringify(responseData, null, 2));
-        } catch (parseError) {
-          console.log('⚠️ Resposta não é JSON válido:', responseText);
-          // Continuar mesmo assim, pois status 200 indica sucesso
-        }
-      } else {
-        console.log('⚠️ Webhook retornou resposta vazia, mas status 200 - considerando sucesso');
-      }
-
-      // Gerar ID do evento para audit log
-      const eventId = responseData?.id || `local_${Date.now()}`;
+      const eventId = createdData?.event?.id || `local_${Date.now()}`;
 
       // Salvar evento no banco local para persistência
       try {
         await saveEventToDatabase({
           event_id: eventId,
-          summary: webhookPayload.summary,
-          description: webhookPayload.description,
-          start_time: webhookPayload.start.dateTime,
-          end_time: webhookPayload.end.dateTime,
-          location: webhookPayload.location,
-          attendee_email: webhookPayload.attendees[0]?.email,
-          attendee_name: webhookPayload.attendees[0]?.displayName,
-          property_id: webhookPayload.imovel.id,
-          property_title: webhookPayload.imovel.titulo,
-          client_id: webhookPayload.cliente.id,
-          client_name: webhookPayload.cliente.nome,
-          corretor_name: webhookPayload.corretor.nome,
-          event_type: webhookPayload.tipo_evento,
+          summary: googleEventPayload.summary,
+          description: googleEventPayload.description,
+          start_time: googleEventPayload.start.dateTime,
+          end_time: googleEventPayload.end.dateTime,
+          location: googleEventPayload.location,
+          attendee_email: googleEventPayload.attendees[0]?.email,
+          attendee_name: googleEventPayload.attendees[0]?.displayName,
+          property_id: eventData.listingId || eventData.propertyId,
+          property_title: propertyTitle,
+          client_id: client.id,
+          client_name: client.name,
+          corretor_name: corretorAssignado,
+          event_type: eventData.type,
           status: 'Confirmado'
         });
         console.log('✅ Evento salvo no banco local com ID:', eventId);
@@ -1201,11 +1179,11 @@ export function AgendaView() {
           resource: 'agenda_event',
           resourceId: eventId,
           meta: {
-            summary: webhookPayload.summary,
-            date: webhookPayload.start.dateTime,
-            property: webhookPayload.imovel.titulo,
-            client: webhookPayload.cliente.nome,
-            corretor: webhookPayload.corretor.nome
+            summary: googleEventPayload.summary,
+            date: googleEventPayload.start.dateTime,
+            property: propertyTitle,
+            client: client.name,
+            corretor: corretorAssignado
           }
         });
       } catch (auditError) {
@@ -1213,9 +1191,9 @@ export function AgendaView() {
       }
       console.log('✅ EVENTO CRIADO COM SUCESSO NO GOOGLE CALENDAR');
 
-      // Criar o evento localmente após sucesso do webhook
+      // Criar o evento localmente após sucesso no Google
       const newEvent: AgendaEvent = {
-        id: responseData?.id || Date.now(), // Usar ID do Google Calendar se disponível
+        id: createdData?.event?.id || Date.now(), // Usar ID do Google Calendar se disponível
         date: eventData.date,
         client: client.name,
         property: propertyTitle,
@@ -1223,7 +1201,7 @@ export function AgendaView() {
         type: eventData.type,
         status: 'confirmada', // Confirmada porque foi criada no Google Calendar
         corretor: corretorAssignado, // Usar o corretor efetivamente atribuído
-        calendarId: selectedAgenda !== 'Todos' ? selectedAgenda : undefined
+        calendarId: targetCalendarId
       };
 
       // Adicionar o evento localmente
@@ -1234,7 +1212,7 @@ export function AgendaView() {
     } catch (error) {
       console.error('❌ Erro ao criar evento:', error);
 
-      // Se o webhook falhar, ainda assim criar localmente como backup
+      // Se o Google falhar, ainda assim criar localmente como backup
       if (propertyTitle && client) {
         // Processar corretor para backup também
         let corretorBackup = eventData.corretor;
@@ -1322,16 +1300,48 @@ export function AgendaView() {
                   Última atualização: {lastUpdate.toLocaleTimeString('pt-BR')}
                 </span>
               )}
+              {isConnected && connectedGoogleEmail && (
+                <span className="text-emerald-400">
+                  Google: {connectedGoogleEmail}
+                </span>
+              )}
             </div>
           </div>
-
-          <Button
-            onClick={() => setIsAddEventModalOpen(true)}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center gap-2 px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
-          >
-            <Plus className="h-5 w-5" />
-            Novo Evento
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setIsAddEventModalOpen(true)}
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center gap-2 px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+            >
+              <Plus className="h-5 w-5" />
+              Novo Evento
+            </Button>
+            {isConnected ? (
+              <Button
+                onClick={handleDisconnectGoogle}
+                variant="outline"
+                className="border-red-500/30 text-red-300 hover:bg-red-500/10"
+                disabled={connectingGoogle}
+              >
+                <Link2Off className="h-4 w-4 mr-2" />
+                {connectingGoogle ? "Desconectando..." : "Desconectar Google"}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleConnectGoogle}
+                variant="outline"
+                className="border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                disabled={connectingGoogle}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 mr-2" aria-hidden="true">
+                  <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 6.9 2.4 2.7 6.6 2.7 11.7S6.9 21 12 21c6.9 0 8.6-4.8 8.6-7.3 0-.5-.1-.9-.1-1.2H12z" />
+                  <path fill="#34A853" d="M3.7 7.8l3.2 2.3c.9-1.8 2.8-3 5.1-3 1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4c-3.9 0-7.2 2.2-8.9 5.4z" />
+                  <path fill="#4A90E2" d="M12 21c2.6 0 4.8-.9 6.4-2.4l-3-2.5c-.8.6-1.9 1.1-3.4 1.1-3.8 0-5.2-2.6-5.5-3.8l-3.2 2.5C5 18.9 8.2 21 12 21z" />
+                  <path fill="#FBBC05" d="M3.5 13.4c-.2-.6-.3-1.1-.3-1.7s.1-1.2.3-1.7L.3 7.8C-.4 9.1-.8 10.4-.8 11.7c0 1.3.3 2.6 1.1 3.9l3.2-2.2z" />
+                </svg>
+                {connectingGoogle ? "Conectando..." : "Conectar Google"}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

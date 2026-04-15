@@ -96,8 +96,13 @@ export function useAdminCompanies() {
       }
 
       console.log('Empresas retornadas pela função SQL:', data);
-      
-      const companiesList = (data || []) as AdminCompany[];
+
+      const companiesList = (data || []).map((row: Record<string, unknown>) => ({
+        ...row,
+        user_count: Number(row.user_count ?? 0),
+        property_count: Number(row.property_count ?? 0),
+        lead_count: Number(row.lead_count ?? 0),
+      })) as AdminCompany[];
       console.log('Empresas processadas:', companiesList);
       setCompanies(companiesList);
       return companiesList;
@@ -253,7 +258,7 @@ export function useAdminCompanies() {
         cnpj: data.cnpj || null,
         phone: data.phone || null,
         address: data.address || null,
-        plan: data.plan || 'basic',
+        plan: data.plan || 'essential',
         trial_days: data.trial_days || 14,
         max_users: data.max_users || 10,
       });

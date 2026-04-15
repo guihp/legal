@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { invokeEdge } from "@/integrations/supabase/invoke";
 
 type TimePickerProps = {
   value: string;
@@ -131,65 +132,20 @@ const PlantaoView = () => {
         companyId = profile?.company_id;
       }
 
-      // 2. Enviar request com company_id
-      const resp = await fetch("https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/id_agendas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          funcao: "leitura",
-          company_id: companyId,
-          user_id: user?.id
-        }),
+      const { data: edgeData, error: edgeError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: { action: "list_calendars" },
       });
-
-      if (!resp.ok) {
-        throw new Error(`Erro na API: ${resp.status} - ${resp.statusText}`);
-      }
-
-      const data = await resp.json();
-      let list: any[] = [];
-      
-      // Novo formato: array de objetos com { calendars: [...], assigned_user_id: "..." }
-      if (Array.isArray(data)) {
-        // Verificar se é o novo formato (objetos com propriedade "calendars")
-        if (data.length > 0 && Array.isArray((data[0] as any)?.calendars)) {
-          // Novo formato: extrair calendários e preservar assigned_user_id
-          list = (data as any[]).flatMap((item: any) => {
-            const calendars = item.calendars || [];
-            // Adicionar assigned_user_id a cada calendário para facilitar filtragem
-            return calendars.map((cal: any) => ({
-              ...cal,
-              _assigned_user_id: item.assigned_user_id // Prefixo _ para indicar campo auxiliar
-            }));
-          });
-        }
-        // Formato antigo: lista de wrappers com chave "Calendars" (maiúscula)
-        else if (data.length > 0 && Array.isArray((data[0] as any)?.Calendars)) {
-          list = (data as any[]).flatMap((item: any) => item.Calendars || []);
-        }
-        // Formato antigo: array direto de calendários
-        else {
-          list = data;
-        }
-      } else if (Array.isArray((data as any)?.Calendars) || Array.isArray((data as any)?.calendars)) {
-        list = (data as any).Calendars || (data as any).calendars;
-      } else if (Array.isArray((data as any)?.events)) {
-        list = (data as any).events;
-      } else {
-        list = [];
-      }
+      if (edgeError) throw new Error(edgeError.message || "Falha ao carregar calendários Google");
+      const list = Array.isArray(edgeData?.calendars) ? edgeData.calendars : [];
 
       const normalized = list.map((item: any) => ({
-        name: item?.["Calendar Name"] ?? item?.name ?? "Sem nome",
-        id: item?.["Calendar ID"] ?? item?.id ?? "",
-        timeZone: item?.["Time Zone"] ?? item?.timeZone ?? "",
-        accessRole: item?.["Access Role"] ?? item?.accessRole ?? "",
-        color: item?.["Color"] ?? item?.color ?? "#6b7280",
-        primary: item?.["Primary Calendar"] ?? item?.primary ?? "No",
-        defaultReminders: item?.["Default Reminders"],
-        conferenceAllowed: item?.["Conference Allowed"],
-        // Preservar assigned_user_id se vier do novo formato
-        _assigned_user_id: item?._assigned_user_id,
+        name: item?.name ?? "Sem nome",
+        id: item?.id ?? "",
+        timeZone: item?.timeZone ?? "",
+        accessRole: item?.accessRole ?? "",
+        color: item?.color ?? "#6b7280",
+        primary: item?.primary ? "Yes" : "No",
+        _assigned_user_id: null,
       }));
 
       console.log(`✅ Encontrados ${normalized.length} calendários.`);
@@ -270,6 +226,7 @@ const PlantaoView = () => {
     setIsAddAgendaOpen(true);
   };
 
+
   const submitAddAgenda = async () => {
     const name = newAgendaName.trim();
     if (!name) {
@@ -297,22 +254,11 @@ const PlantaoView = () => {
 
     try {
       setAddingAgenda(true);
-      const resp = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/id_agendas', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          funcao: 'adicionar',
-          nome: name,
-          company_id: currentProfile?.company_id,
-          user_id: currentUser?.id
-        }),
+      const { data: createdData, error: createError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: { action: "create_calendar", name },
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-      const createdData = await resp.json().catch(() => null);
-      let createdId = createdData?.id || createdData?.["Calendar ID"];
+      if (createError) throw new Error(createError.message || "Falha ao criar agenda");
+      const createdId = createdData?.calendar?.id;
 
       // Se não retornou ID, tentar buscar na lista atualizada
       if (!createdId) {
@@ -374,19 +320,10 @@ const PlantaoView = () => {
     try {
       setDeletingAgenda(true);
 
-      // 1. Primeiro, excluir a agenda via API externa com company_id
-      const resp = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/id_agendas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          funcao: 'apagar',
-          id: deleteTargetId,
-          company_id: currentProfile?.company_id,
-          user_id: currentUser?.id
-        }),
+      const { error: deleteApiError } = await invokeEdge<any, any>("google-calendar-api", {
+        body: { action: "delete_calendar", calendar_id: deleteTargetId },
       });
-
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (deleteApiError) throw new Error(deleteApiError.message || "Falha ao remover agenda no Google");
 
       // 2. Depois, excluir o registro da tabela oncall_schedules
       try {
@@ -1161,7 +1098,12 @@ const PlantaoView = () => {
                     ))}
                   </div>
                 ) : filteredCalendars.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum calendário para exibir.</p>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Nenhum calendário para exibir.</p>
+                    {status && (
+                      <p className="text-xs text-amber-400">{status}</p>
+                    )}
+                  </div>
                 ) : (
                   <TooltipProvider>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">

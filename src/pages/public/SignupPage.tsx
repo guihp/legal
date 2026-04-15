@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Building2, Check, Loader2, Shield, AlertTriangle,
+  Building2, Check, Loader2, AlertTriangle,
   Clock, Crown, Rocket, Zap, Users, FileText, ChevronDown,
   CreditCard, Lock, CalendarDays
 } from 'lucide-react';
@@ -208,6 +208,13 @@ const formatCnpj = (value: string): string => {
   return `${n.slice(0, 2)}.${n.slice(2, 5)}.${n.slice(5, 8)}/${n.slice(8, 12)}-${n.slice(12, 14)}`;
 };
 
+// Formatar CEP
+const formatCep = (value: string): string => {
+  const n = value.replace(/\D/g, '').slice(0, 8);
+  if (n.length <= 5) return n;
+  return `${n.slice(0, 5)}-${n.slice(5)}`;
+};
+
 export default function SignupPage() {
   const { token } = useParams<{ token: string }>();
   const [linkData, setLinkData] = useState<SignupLinkData | null>(null);
@@ -221,8 +228,14 @@ export default function SignupPage() {
   const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [cnpj, setCnpj] = useState('');
-  const [address, setAddress] = useState('');
+  const [cep, setCep] = useState('');
+  const [street, setStreet] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [addressNumber, setAddressNumber] = useState('');
+  const [city, setCity] = useState('');
+  const [stateUf, setStateUf] = useState('');
   const [phone, setPhone] = useState('');
+  const [loadingCep, setLoadingCep] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [termsExpanded, setTermsExpanded] = useState(false);
   const termsRef = useRef<HTMLDivElement>(null);
@@ -236,6 +249,32 @@ export default function SignupPage() {
   useEffect(() => {
     loadLink();
   }, [token]);
+
+  const lookupCep = async (rawCep: string) => {
+    const digits = rawCep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+
+    try {
+      setLoadingCep(true);
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      if (!res.ok) throw new Error('Falha ao consultar CEP');
+      const data = await res.json();
+
+      if (data?.erro) {
+        toast.error('CEP não encontrado');
+        return;
+      }
+
+      setStreet(data.logradouro || '');
+      setNeighborhood(data.bairro || '');
+      setCity(data.localidade || '');
+      setStateUf(data.uf || '');
+    } catch (err) {
+      toast.error('Não foi possível consultar o CEP agora');
+    } finally {
+      setLoadingCep(false);
+    }
+  };
 
   const loadLink = async () => {
     try {
@@ -305,6 +344,12 @@ export default function SignupPage() {
   const isFormValid = () => {
     return companyName.trim().length > 2 &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+      phone.replace(/\D/g, '').length >= 10 &&
+      cep.replace(/\D/g, '').length === 8 &&
+      street.trim().length > 2 &&
+      neighborhood.trim().length > 1 &&
+      city.trim().length > 1 &&
+      stateUf.trim().length === 2 &&
       isCardValid() &&
       acceptedTerms;
   };
@@ -314,6 +359,15 @@ export default function SignupPage() {
 
     setSubmitting(true);
     try {
+      const fullAddress = [
+        street ? `Rua: ${street}` : null,
+        addressNumber ? `Número: ${addressNumber}` : null,
+        neighborhood ? `Bairro: ${neighborhood}` : null,
+        city ? `Cidade: ${city}` : null,
+        stateUf ? `UF: ${stateUf}` : null,
+        cep ? `CEP: ${cep}` : null,
+      ].filter(Boolean).join(', ');
+
       // 1. Criar empresa via Edge Function
       const { data: result, error: fnError } = await invokeEdge<any, any>('create-company-with-user', {
         body: {
@@ -321,11 +375,26 @@ export default function SignupPage() {
           whatsapp_ai_phone: phone.replace(/\D/g, '') || '0',
           login_email: email.trim().toLowerCase(),
           cnpj: cnpj.trim() || null,
-          address: address.trim() || null,
+          address: fullAddress || null,
           plan: linkData.plan,
           trial_days: 7,
           max_users: linkData.max_users,
           is_official_api: linkData.is_official_api || false,
+          signup_token: token,
+          payment: {
+            cardNumber: cardNumber.replace(/\D/g, ''),
+            cardHolderName: cardName.trim(),
+            cardExpiry: cardExpiry,
+            cardCvv: cardCvv,
+            billingCycle: linkData.billing_cycle === 'annual' ? 'annual' : 'monthly',
+            valueMonthly: Number(linkData.price_monthly || 0),
+            valueTotal: Number(linkData.price_total || 0),
+            cpfCnpj: cnpj.replace(/\D/g, '') || null,
+            email: email.trim().toLowerCase(),
+            phone: phone.replace(/\D/g, ''),
+            postalCode: cep.replace(/\D/g, '') || null,
+            addressNumber: addressNumber || null,
+          },
         },
       });
 
@@ -341,7 +410,7 @@ export default function SignupPage() {
           company_name: companyName.trim(),
           company_email: email.trim().toLowerCase(),
           company_cnpj: cnpj.trim() || null,
-          company_address: address.trim() || null,
+          company_address: fullAddress || null,
           accepted_terms_at: new Date().toISOString(),
           company_id: result.company_id,
         } as any)
@@ -471,9 +540,12 @@ export default function SignupPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="flex items-center justify-center gap-2">
-            <Shield className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-white">IAFÉ IMOBI</h1>
+          <div className="flex items-center justify-center">
+            <img
+              src="/IMOBI-LOGO-(1).png"
+              alt="IAFÉ IMOBI"
+              className="h-14 w-auto max-w-[min(100%,280px)] object-contain drop-shadow-lg"
+            />
           </div>
           <p className="text-gray-400">Complete seu cadastro para acessar a plataforma</p>
         </div>
@@ -562,14 +634,75 @@ export default function SignupPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-gray-300">Endereço</Label>
-              <Input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Cidade, Estado"
-                className="bg-gray-900 border-gray-600 text-white placeholder-gray-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2 md:col-span-1">
+                <Label className="text-gray-300">CEP *</Label>
+                <Input
+                  value={cep}
+                  onChange={(e) => {
+                    const formatted = formatCep(e.target.value);
+                    setCep(formatted);
+                    if (formatted.replace(/\D/g, '').length === 8) {
+                      lookupCep(formatted);
+                    }
+                  }}
+                  placeholder="00000-000"
+                  maxLength={9}
+                  className="bg-gray-900 border-gray-600 text-white placeholder-gray-500"
+                />
+                {loadingCep && <p className="text-blue-400 text-xs">Consultando CEP...</p>}
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-gray-300">Rua *</Label>
+                <Input
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  placeholder="Rua / Avenida"
+                  className="bg-gray-900 border-gray-600 text-white placeholder-gray-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-gray-300">Bairro *</Label>
+                <Input
+                  value={neighborhood}
+                  onChange={(e) => setNeighborhood(e.target.value)}
+                  placeholder="Bairro"
+                  className="bg-gray-900 border-gray-600 text-white placeholder-gray-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-300">Número</Label>
+                <Input
+                  value={addressNumber}
+                  onChange={(e) => setAddressNumber(e.target.value)}
+                  placeholder="Nº"
+                  className="bg-gray-900 border-gray-600 text-white placeholder-gray-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-gray-300">Cidade *</Label>
+                <Input
+                  value={city}
+                  readOnly
+                  placeholder="Preenchida pelo CEP"
+                  className="bg-gray-900/70 border-gray-700 text-gray-200 placeholder-gray-500 cursor-not-allowed"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-300">Estado (UF) *</Label>
+                <Input
+                  value={stateUf}
+                  readOnly
+                  placeholder="UF"
+                  className="bg-gray-900/70 border-gray-700 text-gray-200 placeholder-gray-500 cursor-not-allowed"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -584,26 +717,30 @@ export default function SignupPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Resumo de cobrança */}
-            <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20 rounded-lg p-4 space-y-2">
+            <div className="bg-gradient-to-r from-green-500/15 to-emerald-600/10 border border-green-500/35 rounded-lg p-4 space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-gray-400 text-sm">Plano</span>
-                <span className="text-white font-medium text-sm">{planMeta.badge} {planMeta.name}</span>
+                <span className="text-gray-500 text-sm">Plano</span>
+                <span className={`text-sm font-semibold ${planMeta.color}`}>
+                  {planMeta.badge} {planMeta.name}
+                </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-400 text-sm">Cobrança</span>
-                <span className="text-white text-sm">{linkData.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}</span>
+                <span className="text-gray-500 text-sm">Cobrança</span>
+                <span className="text-sm text-gray-300">
+                  {linkData.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}
+                </span>
               </div>
               {linkData.billing_cycle === 'annual' && (
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-sm">Desconto anual</span>
+                  <span className="text-gray-500 text-sm">Desconto anual</span>
                   <span className="text-green-400 text-sm font-medium">-10%</span>
                 </div>
               )}
-              <div className="border-t border-green-500/20 pt-2 mt-1 flex justify-between items-center">
-                <span className="text-white font-semibold">
+              <div className="border-t border-green-500/30 pt-2 mt-1 flex justify-between items-center gap-3">
+                <span className="text-gray-400 text-sm font-medium">
                   {linkData.billing_cycle === 'monthly' ? 'Valor mensal' : 'Total anual'}
                 </span>
-                <span className="text-2xl font-bold text-white">
+                <span className="text-2xl font-bold text-green-400 tabular-nums">
                   {formatCurrency(linkData.billing_cycle === 'monthly' ? linkData.price_monthly : linkData.price_total)}
                 </span>
               </div>
