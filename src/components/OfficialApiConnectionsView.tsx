@@ -4,6 +4,7 @@ import { MessageCircle, CheckCircle, Calendar, MessageSquare } from "lucide-reac
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useConversasList } from '@/hooks/useConversasList';
 import { supabase } from '@/integrations/supabase/client';
+import { CompanyInstagramConnectionsSection } from '@/components/CompanyInstagramConnectionsSection';
 
 export function OfficialApiConnectionsView() {
   const { profile } = useUserProfile();
@@ -110,6 +111,8 @@ export function OfficialApiConnectionsView() {
           </p>
         </div>
       </div>
+
+      <CompanyInstagramConnectionsSection />
 
       {/* Status Card */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   MessageSquare,
@@ -34,6 +34,7 @@ import { useConversasList } from '@/hooks/useConversasList';
 import { useConversaMessages } from '@/hooks/useConversaMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
+import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
@@ -622,6 +623,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showLeadModal, setShowLeadModal] = useState(false);
+  const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
 
   // Hook e estados de Templates de Chat
   const { templates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useChatTemplates();
@@ -722,6 +724,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   // Determinar restrição de API Oficial (24 horas)
   const isApiOficialUser = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
   const activeMessages = selectedLead ? leadMessages : messages;
+  const messagesForChatSearch = useMemo(
+    () => (selectedLead ? leadMessages : messages) as Array<{ id: string; message?: { content?: unknown } }>,
+    [selectedLead, leadMessages, messages]
+  );
   const lastHumanMessage = activeMessages.slice().reverse().find((m: any) => m.message?.type === 'human');
     
   const lastHumanDate = lastHumanMessage ? new Date(lastHumanMessage.data) : null;
@@ -1416,10 +1422,20 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-4 text-[var(--cv-icon)]">
-                <Search className="h-5 w-5 cursor-pointer" />
+              <div className="flex gap-1 items-center text-[var(--cv-icon)]">
+                <ChatConversationTextSearchTrigger
+                  messages={messagesForChatSearch}
+                  scrollRootRef={messagesContainerRef}
+                  onActiveMatchChange={setChatSearchHighlightId}
+                  triggerButtonClassName="h-9 w-9 shrink-0 text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)]"
+                />
                 {currentConversation && (
-                  <ConversationActionsMenu conversation={currentConversation} onGenerateSummary={handleGenerateSummary} onFollowUp={handleFollowUp} />
+                  <ConversationActionsMenu
+                    conversation={currentConversation}
+                    onGenerateSummary={handleGenerateSummary}
+                    onFollowUp={handleFollowUp}
+                    triggerClassName="text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)] h-9 w-9 p-0"
+                  />
                 )}
               </div>
             </div>
@@ -1433,9 +1449,17 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               <div className="space-y-2 pb-2">
                 {/* LEAD MESSAGES */}
                 {selectedLead && leadMessages.map((msg: any) => {
-                  // Adapt lead msg to row format if needed, assuming match
+                  const isHit = chatSearchHighlightId === String(msg.id);
                   return (
-                    <motion.div key={msg.id} variants={bubble} layout initial="hidden" animate="visible">
+                    <motion.div
+                      key={msg.id}
+                      data-chat-message-id={msg.id}
+                      variants={bubble}
+                      layout
+                      initial="hidden"
+                      animate="visible"
+                      className={isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}
+                    >
                       <MessageBubble row={msg} />
                     </motion.div>
                   );
@@ -1450,17 +1474,17 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   const msgType = row.message?.type;
                   const isMe = msgType === 'ai' || msgType === 'assistant';
 
+                  const isHit = chatSearchHighlightId === String(row.id);
                   return (
                     <motion.div
                       key={row.id}
+                      data-chat-message-id={row.id}
                       variants={bubble}
                       layout
                       initial="hidden"
                       animate="visible"
-                      // Se for AI/Agent (isMe), justify-end (Direita). Se for Lead (User), justify-start (Esquerda).
-                      className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}
+                      className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
                     >
-                      {/* Passar isMe/isAI explicitamente se MessageBubble precisar, mas o flex container já posiciona */}
                       <MessageBubble row={row} />
                     </motion.div>
                   );

@@ -1,7 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
 import { LoginPage } from "./components/LoginPage";
 import { UserOnboarding } from "./components/UserOnboarding";
 import { SessionRecovery } from "./components/SessionRecovery";
@@ -20,6 +19,7 @@ import { useCompanyAccess } from './hooks/useCompanyAccess';
 import { BlockedAccessScreen, GracePeriodBanner } from './components/shared/SubscriptionAlert';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { Toaster } from './components/ui/sonner';
+import { useCustomDomain } from './hooks/useCustomDomain';
 
 // Paginas Publicas
 const SiteVitrine = lazy(() => import("@/pages/public/SiteVitrine"));
@@ -197,29 +197,16 @@ function AppContent() {
         <Route path="/imovel/:slug" element={<Suspense fallback={<div>Carregando...</div>}><PropertyLandingPage /></Suspense>} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/google/callback" element={<GoogleCalendarCallbackPage />} />
-        <Route path="/" element={<Index />} />
-        <Route path="/dashboard" element={<Index />} />
-        <Route path="/properties" element={<Index />} />
-        <Route path="/contracts" element={<Index />} />
-        <Route path="/agenda" element={<Index />} />
-        <Route path="/plantao" element={<Index />} />
-        <Route path="/reports" element={<Index />} />
-        <Route path="/clients" element={<Index />} />
-        <Route path="/clients-crm" element={<Index />} />
-        <Route path="/connections" element={<Index />} />
-        <Route path="/users" element={<Index />} />
-        <Route path="/permissions" element={<Index />} />
-        <Route path="/inquilinato" element={<Index />} />
-        <Route path="/marketing" element={<Index />} />
-        <Route path="/marketing-site" element={<Index />} />
-        <Route path="/marketing-lps" element={<Index />} />
-        <Route path="/partnerships" element={<Index />} />
-        <Route path="/n8n-leads-api" element={<Index />} />
-        <Route path="/disparador" element={<Index />} />
-        <Route path="/conversas" element={<Index />} />
-        <Route path="/configurations" element={<Index />} />
-        <Route path="/profile" element={<Index />} />
-        <Route path="*" element={<NotFound />} />
+        {/*
+          Catchall único para todas as views internas do app. Antes havia uma
+          <Route /> por view (/dashboard, /properties, /contracts, …) — como
+          cada <Route> é um match distinto, o React Router desmontava e
+          remontava o <Index /> a cada troca de página, refazendo lazy-loads
+          e refetches dos hooks. Com um único catchall, a mesma instância
+          de <Index /> permanece montada e apenas a URL muda; o
+          useBasicNavigation já lê location.pathname para decidir a view.
+        */}
+        <Route path="*" element={<Index />} />
       </Routes>
 
       <Dialog open={mustChangePassword} onOpenChange={() => { }}>
@@ -262,6 +249,9 @@ function AppContent() {
 }
 
 function App() {
+  // Detecta custom domain ANTES de checar sessão — o site público white-label
+  // deve responder mesmo sem usuário logado.
+  const customDomain = useCustomDomain();
   const { session, loading } = useAuthManager();
   const [sessionError, setSessionError] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
@@ -282,7 +272,29 @@ function App() {
     setSessionError(false);
   };
 
-  if (loading) {
+  // Custom domain (white-label) — renderiza o site vitrine da empresa
+  // correspondente, sem exigir login, sem catchall de /s/:slug.
+  if (customDomain.isCustomDomain && customDomain.siteSlug) {
+    return (
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Suspense
+          fallback={
+            <div className="min-h-screen bg-black flex items-center justify-center">
+              <div className="text-white">Carregando...</div>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/imovel/:slug" element={<PropertyLandingPage />} />
+            <Route path="*" element={<SiteVitrine companySlug={customDomain.siteSlug} />} />
+          </Routes>
+        </Suspense>
+      </Router>
+    );
+  }
+
+  // Aguarda tanto o loading da sessão quanto o lookup do custom domain
+  if (loading || customDomain.loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center">
         <div className="text-white">Carregando...</div>

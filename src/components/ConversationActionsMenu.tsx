@@ -1,6 +1,7 @@
 import React from 'react';
 import { MoreVertical, FileText, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,17 +13,23 @@ interface ConversationActionsMenuProps {
   conversation: any;
   onGenerateSummary: (conversation: any) => void;
   onFollowUp: (conversation: any) => void;
+  triggerClassName?: string;
 }
 
 export function ConversationActionsMenu({ 
   conversation, 
   onGenerateSummary, 
-  onFollowUp 
+  onFollowUp,
+  triggerClassName,
 }: ConversationActionsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn('text-gray-400 hover:text-white', triggerClassName)}
+        >
           <MoreVertical className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

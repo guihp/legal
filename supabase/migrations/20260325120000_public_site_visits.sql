@@ -22,6 +22,8 @@ CREATE INDEX IF NOT EXISTS idx_public_site_visits_company_kind
 
 ALTER TABLE public.public_site_visits ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "public_site_visits_select_company" ON public.public_site_visits;
+
 -- Leitura apenas para usuários da mesma empresa
 CREATE POLICY "public_site_visits_select_company"
     ON public.public_site_visits

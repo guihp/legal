@@ -59,7 +59,13 @@ function bucketLabel(key: string, mode: 'day' | 'week' | 'month'): string {
   return format(d, 'MMM yyyy', { locale: ptBR });
 }
 
-export function MarketingTrafficSection({ companyId }: { companyId: string | null }) {
+export function MarketingTrafficSection({
+  companyId,
+  onOpenFullPage,
+}: {
+  companyId: string | null;
+  onOpenFullPage?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<VisitRow[]>([]);
@@ -180,7 +186,7 @@ export function MarketingTrafficSection({ companyId }: { companyId: string | nul
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => (onOpenFullPage ? onOpenFullPage() : setOpen(true))}
         className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left w-full transition hover:border-emerald-700/50 hover:bg-gray-900/90 focus:outline-none focus:ring-2 focus:ring-emerald-600/40"
       >
         <TrendingUp className="h-8 w-8 text-emerald-500 mb-4" />
@@ -195,7 +201,7 @@ export function MarketingTrafficSection({ companyId }: { companyId: string | nul
           </span>
           <span className="inline-flex items-center gap-1 text-xs text-gray-500">
             <MousePointerClick className="h-4 w-4" />
-            Clique para analisar
+            {onOpenFullPage ? 'Abrir painel completo' : 'Clique para analisar'}
           </span>
         </div>
       </button>

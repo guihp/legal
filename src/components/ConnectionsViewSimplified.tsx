@@ -54,6 +54,7 @@ import { toast } from 'sonner';
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 import { OfficialApiConnectionsView } from "./OfficialApiConnectionsView";
+import { CompanyInstagramConnectionsSection } from "./CompanyInstagramConnectionsSection";
 
 const QR_TIMEOUT_SECONDS = 180;
 
@@ -1054,6 +1055,8 @@ export function ConnectionsViewSimplified() {
 
   return (
     <div className="space-y-6 min-h-0 bg-background text-foreground">
+      <CompanyInstagramConnectionsSection />
+
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>

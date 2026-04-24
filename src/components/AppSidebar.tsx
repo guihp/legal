@@ -130,6 +130,12 @@ const digitalPresenceItems = [
     icon: Layers,
     permissionKey: 'menu_marketing',
   },
+  {
+    title: 'Visitas ao site',
+    view: 'marketing-visitas' as const,
+    icon: TrendingUp,
+    permissionKey: 'menu_marketing',
+  },
 ];
 
 const analyticsItems = [
@@ -195,6 +201,7 @@ interface AppSidebarProps {
       | 'marketing'
       | 'marketing-site'
       | 'marketing-lps'
+      | 'marketing-visitas'
       | 'partnerships'
       | 'n8n-leads-api'
   ) => void;

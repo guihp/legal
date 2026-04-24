@@ -44,7 +44,7 @@ export async function logPublicSiteVisit(params: {
       params.path ??
       (typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : null);
 
-    await supabase.rpc('log_public_site_visit', {
+    const { error } = await supabase.rpc('log_public_site_visit', {
       p_visit_kind: params.kind,
       p_site_slug: params.kind === 'vitrine' ? params.siteSlug ?? null : null,
       p_lp_slug: params.kind === 'landing' ? params.lpSlug ?? null : null,
@@ -54,6 +54,12 @@ export async function logPublicSiteVisit(params: {
       p_utm_source: utm.utm_source,
       p_utm_medium: utm.utm_medium,
     });
+    if (error) {
+      // O cliente Supabase não lança em erro de RPC — sem isto as visitas somem em silêncio.
+      if (import.meta.env.DEV) {
+        console.warn('[logPublicSiteVisit]', error.message, error);
+      }
+    }
   } catch {
     // analytics não deve quebrar a página pública
   }

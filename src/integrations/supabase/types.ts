@@ -99,6 +99,7 @@ export type Database = {
           address: string | null
           admin_notes: string | null
           APIOficial: boolean | null
+          arroba_instagram_empresa: string | null
           billing_email: string | null
           block_reason: string | null
           blocked_at: string | null
@@ -107,6 +108,7 @@ export type Database = {
           email: string | null
           grace_period_days: number | null
           id: string
+          id_instagram: string | null
           is_active: boolean | null
           last_activity_at: string | null
           logo_url: string | null
@@ -116,6 +118,7 @@ export type Database = {
           plan: string | null
           subscription_expires_at: string | null
           subscription_status: string | null
+          token_instagram: string | null
           trial_ends_at: string | null
           updated_at: string | null
           whatsapp_ai_phone: string | null
@@ -124,6 +127,7 @@ export type Database = {
           address?: string | null
           admin_notes?: string | null
           APIOficial?: boolean | null
+          arroba_instagram_empresa?: string | null
           billing_email?: string | null
           block_reason?: string | null
           blocked_at?: string | null
@@ -132,6 +136,7 @@ export type Database = {
           email?: string | null
           grace_period_days?: number | null
           id?: string
+          id_instagram?: string | null
           is_active?: boolean | null
           last_activity_at?: string | null
           logo_url?: string | null
@@ -141,6 +146,7 @@ export type Database = {
           plan?: string | null
           subscription_expires_at?: string | null
           subscription_status?: string | null
+          token_instagram?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
           whatsapp_ai_phone?: string | null
@@ -149,6 +155,7 @@ export type Database = {
           address?: string | null
           admin_notes?: string | null
           APIOficial?: boolean | null
+          arroba_instagram_empresa?: string | null
           billing_email?: string | null
           block_reason?: string | null
           blocked_at?: string | null
@@ -157,6 +164,7 @@ export type Database = {
           email?: string | null
           grace_period_days?: number | null
           id?: string
+          id_instagram?: string | null
           is_active?: boolean | null
           last_activity_at?: string | null
           logo_url?: string | null
@@ -166,6 +174,7 @@ export type Database = {
           plan?: string | null
           subscription_expires_at?: string | null
           subscription_status?: string | null
+          token_instagram?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
           whatsapp_ai_phone?: string | null
@@ -433,6 +442,7 @@ export type Database = {
           title: string
           title_color: string | null
           updated_at: string | null
+          vitrine_extras: Json
         }
         Insert: {
           analytics_google?: string | null
@@ -449,6 +459,7 @@ export type Database = {
           title: string
           title_color?: string | null
           updated_at?: string | null
+          vitrine_extras?: Json
         }
         Update: {
           analytics_google?: string | null
@@ -465,6 +476,7 @@ export type Database = {
           title?: string
           title_color?: string | null
           updated_at?: string | null
+          vitrine_extras?: Json
         }
         Relationships: [
           {
@@ -1166,6 +1178,10 @@ export type Database = {
       }
       leads: {
         Row: {
+          arroba_instagram_cliente: string | null
+          instagram_id_cliente: string | null
+          profile_pic_url_instagram: string | null
+          last_profile_sync_instagram: string | null
           company_id: string | null
           cpf: string | null
           created_at: string | null
@@ -1187,6 +1203,10 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          arroba_instagram_cliente?: string | null
+          instagram_id_cliente?: string | null
+          profile_pic_url_instagram?: string | null
+          last_profile_sync_instagram?: string | null
           company_id?: string | null
           cpf?: string | null
           created_at?: string | null
@@ -1208,6 +1228,10 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          arroba_instagram_cliente?: string | null
+          instagram_id_cliente?: string | null
+          profile_pic_url_instagram?: string | null
+          last_profile_sync_instagram?: string | null
           company_id?: string | null
           cpf?: string | null
           created_at?: string | null
@@ -1823,6 +1847,19 @@ export type Database = {
       get_user_company_id: { Args: never; Returns: string }
       get_user_role: { Args: never; Returns: string }
       increment_page_view: { Args: { page_id: string }; Returns: undefined }
+      log_public_site_visit: {
+        Args: {
+          p_lp_slug?: string | null
+          p_path?: string | null
+          p_referrer?: string | null
+          p_referrer_kind?: string | null
+          p_site_slug?: string | null
+          p_utm_medium?: string | null
+          p_utm_source?: string | null
+          p_visit_kind: string
+        }
+        Returns: undefined
+      }
       is_admin_user: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       list_all_companies: {

@@ -1,13 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { supabase } from "@/integrations/supabase/client";
-import { Megaphone, Globe, Layers, Save, ExternalLink } from "lucide-react";
+import { Megaphone, Globe, Layers, Save, ExternalLink, Upload, Image as ImageIcon, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { slugifyForUrl } from '@/lib/slugify';
 import { MarketingTrafficSection } from '@/components/MarketingTrafficSection';
+import { CustomDomainsSection } from '@/components/CustomDomainsSection';
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useBasicNavigation } from "@/hooks/useBasicNavigation";
+import { Checkbox } from "@/components/ui/checkbox";
+import { mergeVitrineExtras, parseVitrineExtras } from "@/lib/vitrineSiteExtras";
+
+type VitrineExtrasForm = ReturnType<typeof mergeVitrineExtras>;
 
 export type CompanyWebsite = {
   id: string;
@@ -22,6 +28,7 @@ export type CompanyWebsite = {
   logo_url?: string | null;
   title_color?: string | null;
   hero_images?: string[] | null;
+  vitrine_extras?: unknown;
 };
 
 type MarketingSection = 'overview' | 'website';
@@ -46,9 +53,15 @@ async function ensureUniqueWebsiteSlug(base: string, excludeId?: string): Promis
 
 export function MarketingView({ section = 'overview' }: { section?: MarketingSection }) {
   const { profile } = useUserProfile();
+  const { changeView } = useBasicNavigation();
   const [companyName, setCompanyName] = useState<string | null>(null);
   const defaultsAppliedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'website'>(section);
+  const [dirty, setDirty] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const hero1InputRef = useRef<HTMLInputElement | null>(null);
+  const hero2InputRef = useRef<HTMLInputElement | null>(null);
+  const hero3InputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setActiveTab(section);
@@ -72,6 +85,8 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
   const [heroImage3, setHeroImage3] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingHero, setUploadingHero] = useState<1 | 2 | 3 | null>(null);
+  const [extrasForm, setExtrasForm] = useState<VitrineExtrasForm>(() => mergeVitrineExtras({}));
+  const [settingsFontHint, setSettingsFontHint] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCompanyName() {
@@ -89,6 +104,20 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
   useEffect(() => {
     defaultsAppliedRef.current = false;
   }, [profile?.company_id]);
+
+  useEffect(() => {
+    async function loadFontHint() {
+      if (!profile?.company_id || activeTab !== "website") return;
+      const { data } = await supabase
+        .from("company_settings")
+        .select("company_name_font_family")
+        .eq("company_id", profile.company_id)
+        .maybeSingle();
+      const row = data as { company_name_font_family?: string | null } | null;
+      setSettingsFontHint(row?.company_name_font_family?.trim() || "Inter");
+    }
+    loadFontHint();
+  }, [profile?.company_id, activeTab]);
 
   useEffect(() => {
     async function loadWebsite() {
@@ -118,6 +147,7 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
           setHeroImage1(imgs[0] || "");
           setHeroImage2(imgs[1] || "");
           setHeroImage3(imgs[2] || "");
+          setExtrasForm(mergeVitrineExtras(parseVitrineExtras((data as any).vitrine_extras)));
           defaultsAppliedRef.current = true;
         } else if (companyName && !defaultsAppliedRef.current) {
           const base = slugifyForUrl(companyName);
@@ -125,6 +155,7 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
           setTitle(companyName);
           setSlug(unique);
           setTitleColor("#FFFFFF");
+          setExtrasForm(mergeVitrineExtras({}));
           defaultsAppliedRef.current = true;
         }
       } catch (err: any) {
@@ -162,7 +193,8 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
         pixel_facebook: pixel,
         analytics_google: analytics,
         logo_url: logoUrl.trim() || null,
-        hero_images: [heroImage1, heroImage2, heroImage3].map((s) => s.trim()).filter(Boolean)
+        hero_images: [heroImage1, heroImage2, heroImage3].map((s) => s.trim()).filter(Boolean),
+        vitrine_extras: extrasForm as unknown as Record<string, unknown>,
       };
 
       if (website?.id) {
@@ -185,6 +217,7 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
         setWebsite(data as unknown as CompanyWebsite);
         toast.success("Site criado com sucesso!");
       }
+      setDirty(false);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Erro ao salvar o site. Verifique se o link já está em uso.");
@@ -236,7 +269,8 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
       const url = await uploadAsset(file, 'logo');
       if (url) {
         setLogoUrl(url);
-        toast.success('Logo enviada com sucesso.');
+        setDirty(true);
+        toast.success('Logo enviada. Clique em "Salvar alterações" para publicar.');
       }
     } finally {
       setUploadingLogo(false);
@@ -252,10 +286,24 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
       if (slot === 1) setHeroImage1(url);
       if (slot === 2) setHeroImage2(url);
       if (slot === 3) setHeroImage3(url);
-      toast.success(`Capa ${slot} enviada com sucesso.`);
+      setDirty(true);
+      toast.success(`Capa ${slot} enviada. Clique em "Salvar alterações" para publicar.`);
     } finally {
       setUploadingHero(null);
     }
+  };
+
+  const clearLogo = () => {
+    setLogoUrl('');
+    setDirty(true);
+    if (logoInputRef.current) logoInputRef.current.value = '';
+  };
+
+  const clearHero = (slot: 1 | 2 | 3) => {
+    if (slot === 1) { setHeroImage1(''); if (hero1InputRef.current) hero1InputRef.current.value = ''; }
+    if (slot === 2) { setHeroImage2(''); if (hero2InputRef.current) hero2InputRef.current.value = ''; }
+    if (slot === 3) { setHeroImage3(''); if (hero3InputRef.current) hero3InputRef.current.value = ''; }
+    setDirty(true);
   };
 
   return (
@@ -319,7 +367,10 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
             </Button>
           </div>
 
-          <MarketingTrafficSection companyId={profile?.company_id ?? null} />
+          <MarketingTrafficSection
+            companyId={profile?.company_id ?? null}
+            onOpenFullPage={() => changeView('marketing-visitas', 'Abrir página de visitas')}
+          />
         </div>
       )}
 
@@ -342,23 +393,23 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">Título do Site</label>
-                  <Input 
-                    value={title} 
-                    onChange={e => setTitle(e.target.value)} 
+                  <Input
+                    value={title}
+                    onChange={e => { setTitle(e.target.value); setDirty(true); }}
                     placeholder="Ex: Minha Imobiliária"
                     className="bg-gray-800 border-gray-700 text-white"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">Link Personalizado (Slug)</label>
                   <div className="flex">
                     <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-700 bg-gray-800 text-gray-400 sm:text-sm">
                       imobi.iafeoficial.com/s/
                     </span>
-                    <Input 
-                      value={slug} 
-                      onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} 
+                    <Input
+                      value={slug}
+                      onChange={e => { setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); setDirty(true); }}
                       placeholder="minha-imobiliaria"
                       className="rounded-l-none bg-gray-800 border-gray-700 text-white flex-1"
                     />
@@ -368,9 +419,9 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-300">Descrição Breve</label>
-                <Textarea 
-                  value={description} 
-                  onChange={e => setDescription(e.target.value)} 
+                <Textarea
+                  value={description}
+                  onChange={e => { setDescription(e.target.value); setDirty(true); }}
                   placeholder="Os melhores imóveis da região..."
                   className="bg-gray-800 border-gray-700 text-white min-h-[100px]"
                 />
@@ -380,15 +431,15 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">Cor Principal</label>
                   <div className="flex items-center gap-3">
-                    <input 
-                      type="color" 
-                      value={themeColor} 
-                      onChange={e => setThemeColor(e.target.value)}
+                    <input
+                      type="color"
+                      value={themeColor}
+                      onChange={e => { setThemeColor(e.target.value); setDirty(true); }}
                       className="h-10 w-10 rounded border border-gray-700 cursor-pointer bg-gray-800 p-1"
                     />
-                    <Input 
-                      value={themeColor} 
-                      onChange={e => setThemeColor(e.target.value)} 
+                    <Input
+                      value={themeColor}
+                      onChange={e => { setThemeColor(e.target.value); setDirty(true); }}
                       className="bg-gray-800 border-gray-700 text-white"
                     />
                   </div>
@@ -400,12 +451,12 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
                     <input
                       type="color"
                       value={titleColor}
-                      onChange={e => setTitleColor(e.target.value)}
+                      onChange={e => { setTitleColor(e.target.value); setDirty(true); }}
                       className="h-10 w-10 rounded border border-gray-700 cursor-pointer bg-gray-800 p-1"
                     />
                     <Input
                       value={titleColor}
-                      onChange={e => setTitleColor(e.target.value)}
+                      onChange={e => { setTitleColor(e.target.value); setDirty(true); }}
                       className="bg-gray-800 border-gray-700 text-white"
                     />
                   </div>
@@ -413,9 +464,9 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">Meta Pixel (ID)</label>
-                  <Input 
-                    value={pixel} 
-                    onChange={e => setPixel(e.target.value)} 
+                  <Input
+                    value={pixel}
+                    onChange={e => { setPixel(e.target.value); setDirty(true); }}
                     placeholder="Ex: 123456789"
                     className="bg-gray-800 border-gray-700 text-white"
                   />
@@ -423,73 +474,366 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">Google Analytics (G-XXXX)</label>
-                  <Input 
-                    value={analytics} 
-                    onChange={e => setAnalytics(e.target.value)} 
+                  <Input
+                    value={analytics}
+                    onChange={e => { setAnalytics(e.target.value); setDirty(true); }}
                     placeholder="Ex: G-XXXXXXXXXX"
                     className="bg-gray-800 border-gray-700 text-white"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">Logo da imobiliária</label>
-                  <div className="flex flex-col gap-2 rounded-lg border border-gray-800 bg-gray-900/30 p-3">
-                    <Input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      onChange={(e) => onLogoFileChange(e.target.files?.[0])}
-                      className="bg-gray-800 border-gray-700 text-white file:text-gray-200"
-                    />
-                    <p className="text-xs text-gray-400">
-                      Limite: {LOGO_MAX_MB}MB. Recomendado: PNG/WEBP com fundo transparente, 512x512px (mínimo 320x320).
-                    </p>
-                    {logoUrl && <p className="text-xs text-green-400 break-all">Logo carregada.</p>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4">
-                <h3 className="text-sm font-semibold text-gray-200 mb-3">Capas do Hero (até 3 imagens)</h3>
-                <div className="grid grid-cols-1 gap-3">
-                  <Input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => onHeroFileChange(1, e.target.files?.[0])}
-                    disabled={uploadingHero === 1}
-                    className="bg-gray-800 border-gray-700 text-white file:text-gray-200"
-                  />
-                  <Input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => onHeroFileChange(2, e.target.files?.[0])}
-                    disabled={uploadingHero === 2}
-                    className="bg-gray-800 border-gray-700 text-white file:text-gray-200"
-                  />
-                  <Input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => onHeroFileChange(3, e.target.files?.[0])}
-                    disabled={uploadingHero === 3}
-                    className="bg-gray-800 border-gray-700 text-white file:text-gray-200"
-                  />
-                  <p className="text-xs text-gray-400">
-                    Limite por imagem: {HERO_MAX_MB}MB. Recomendado: 1920x900px (mínimo 1440x720), formato horizontal 16:9.
+              <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4 space-y-5">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-200">Menu fixo (topo público)</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Cores sólidas para o cabeçalho em <code className="text-blue-300">/s/seu-slug</code> — contraste legível sobre o hero.
                   </p>
-                  <div className="text-xs text-gray-500">
-                    {heroImage1 && <div>Capa 1 carregada</div>}
-                    {heroImage2 && <div>Capa 2 carregada</div>}
-                    {heroImage3 && <div>Capa 3 carregada</div>}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Fundo do menu</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={extrasForm.header_bg}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_bg: e.target.value }); setDirty(true); }}
+                        className="h-9 w-9 rounded border border-gray-700 cursor-pointer bg-gray-800 p-0.5"
+                      />
+                      <Input
+                        value={extrasForm.header_bg}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_bg: e.target.value }); setDirty(true); }}
+                        className="bg-gray-800 border-gray-700 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Texto principal</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={extrasForm.header_fg}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_fg: e.target.value }); setDirty(true); }}
+                        className="h-9 w-9 rounded border border-gray-700 cursor-pointer bg-gray-800 p-0.5"
+                      />
+                      <Input
+                        value={extrasForm.header_fg}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_fg: e.target.value }); setDirty(true); }}
+                        className="bg-gray-800 border-gray-700 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Texto secundário / links</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={extrasForm.header_muted}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_muted: e.target.value }); setDirty(true); }}
+                        className="h-9 w-9 rounded border border-gray-700 cursor-pointer bg-gray-800 p-0.5"
+                      />
+                      <Input
+                        value={extrasForm.header_muted}
+                        onChange={(e) => { setExtrasForm({ ...extrasForm, header_muted: e.target.value }); setDirty(true); }}
+                        className="bg-gray-800 border-gray-700 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Subtítulo sob o nome (ex.: Imóveis selecionados)</label>
+                  <Input
+                    value={extrasForm.header_tagline}
+                    onChange={(e) => { setExtrasForm({ ...extrasForm, header_tagline: e.target.value }); setDirty(true); }}
+                    className="bg-gray-800 border-gray-700 text-white"
+                  />
+                </div>
+                <div className="flex items-start gap-3 rounded-md border border-gray-700/80 bg-gray-950/50 px-3 py-3">
+                  <Checkbox
+                    id="sv-use-company-font"
+                    checked={extrasForm.use_company_display_font}
+                    onCheckedChange={(v) => {
+                      setExtrasForm({ ...extrasForm, use_company_display_font: v === true });
+                      setDirty(true);
+                    }}
+                    className="mt-0.5 border-gray-500 data-[state=checked]:bg-blue-600"
+                  />
+                  <div>
+                    <label htmlFor="sv-use-company-font" className="text-sm font-medium text-gray-200 cursor-pointer">
+                      Usar tipografia do nome da imobiliária nos títulos do site
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Fonte atual nas configurações: <span className="text-gray-300">{settingsFontHint ?? "…"}</span>. Ajuste em{" "}
+                      <span className="text-gray-300">Configurações → Aparência</span> (famílias carregadas incluem Inter, Playfair, etc.).
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-800 flex items-center justify-between">
+              <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-200">Textos — Sobre e contato (página pública)</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Seção no fim do vitrine (<code className="text-blue-300">#sobre</code> / <code className="text-blue-300">#contato</code>). Instagram aparece no contato quando a empresa tem{" "}
+                    <span className="text-gray-300">id_instagram</span> e <span className="text-gray-300">arroba_instagram_empresa</span> preenchidos.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Selo da coluna Sobre</label>
+                    <Input
+                      value={extrasForm.about_kicker}
+                      onChange={(e) => { setExtrasForm({ ...extrasForm, about_kicker: e.target.value }); setDirty(true); }}
+                      className="bg-gray-800 border-gray-700 text-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Título Sobre (vazio = nome da empresa)</label>
+                    <Input
+                      value={extrasForm.about_title}
+                      onChange={(e) => { setExtrasForm({ ...extrasForm, about_title: e.target.value }); setDirty(true); }}
+                      placeholder="Ex.: Jastelo Empreendimentos"
+                      className="bg-gray-800 border-gray-700 text-white"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Parágrafo Sobre (vazio = descrição breve do site acima)</label>
+                  <Textarea
+                    value={extrasForm.about_paragraph}
+                    onChange={(e) => { setExtrasForm({ ...extrasForm, about_paragraph: e.target.value }); setDirty(true); }}
+                    rows={3}
+                    className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {([1, 2, 3] as const).map((n) => (
+                    <div key={n} className="space-y-2">
+                      <label className="text-sm font-medium text-gray-300">Destaque {n}</label>
+                      <Input
+                        value={n === 1 ? extrasForm.about_bullet1 : n === 2 ? extrasForm.about_bullet2 : extrasForm.about_bullet3}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (n === 1) setExtrasForm({ ...extrasForm, about_bullet1: v });
+                          else if (n === 2) setExtrasForm({ ...extrasForm, about_bullet2: v });
+                          else setExtrasForm({ ...extrasForm, about_bullet3: v });
+                          setDirty(true);
+                        }}
+                        className="bg-gray-800 border-gray-700 text-white text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-gray-800">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Selo contato</label>
+                    <Input
+                      value={extrasForm.contact_kicker}
+                      onChange={(e) => { setExtrasForm({ ...extrasForm, contact_kicker: e.target.value }); setDirty(true); }}
+                      className="bg-gray-800 border-gray-700 text-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Título contato</label>
+                    <Input
+                      value={extrasForm.contact_title}
+                      onChange={(e) => { setExtrasForm({ ...extrasForm, contact_title: e.target.value }); setDirty(true); }}
+                      className="bg-gray-800 border-gray-700 text-white"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-1">
+                    <label className="text-sm font-medium text-gray-300">Intro contato</label>
+                    <Textarea
+                      value={extrasForm.contact_intro}
+                      onChange={(e) => { setExtrasForm({ ...extrasForm, contact_intro: e.target.value }); setDirty(true); }}
+                      rows={2}
+                      className="bg-gray-800 border-gray-700 text-white min-h-[72px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* LOGO */}
+              <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-200">Logo da imobiliária</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      PNG/WEBP com fundo transparente · mín. 320×320px · máx. {LOGO_MAX_MB}MB
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="relative shrink-0 w-28 h-28 rounded-xl border border-dashed border-gray-700 bg-gray-950 flex items-center justify-center overflow-hidden">
+                    {uploadingLogo ? (
+                      <Loader2 className="h-6 w-6 text-blue-400 animate-spin" />
+                    ) : logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt="Logo"
+                        className="w-full h-full object-contain bg-white/5"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="text-center px-2">
+                        <ImageIcon className="h-7 w-7 text-gray-600 mx-auto mb-1" />
+                        <span className="text-[10px] text-gray-500">Sem logo</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingLogo}
+                        onClick={() => logoInputRef.current?.click()}
+                        className="border-gray-700 bg-gray-800 text-gray-100 hover:bg-gray-700"
+                      >
+                        <Upload className="w-3.5 h-3.5 mr-2" />
+                        {logoUrl ? 'Trocar logo' : 'Enviar logo'}
+                      </Button>
+                      {logoUrl && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={clearLogo}
+                          className="border-red-900/60 bg-red-950/40 text-red-300 hover:bg-red-900/40"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-2" />
+                          Remover
+                        </Button>
+                      )}
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          onLogoFileChange(f);
+                        }}
+                      />
+                    </div>
+                    {logoUrl && (
+                      <p className="text-[11px] text-emerald-400 break-all">
+                        ✓ {logoUrl.split('/').pop()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* HERO */}
+              <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-200">Capas do Hero (até 3 imagens)</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Formato 16:9 · recomendado 1920×900px · máx. {HERO_MAX_MB}MB cada
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-gray-500">
+                    {[heroImage1, heroImage2, heroImage3].filter(Boolean).length}/3 preenchidas
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {([
+                    { slot: 1 as const, url: heroImage1, ref: hero1InputRef },
+                    { slot: 2 as const, url: heroImage2, ref: hero2InputRef },
+                    { slot: 3 as const, url: heroImage3, ref: hero3InputRef },
+                  ]).map(({ slot, url, ref }) => (
+                    <div key={slot} className="space-y-2">
+                      <div
+                        className={`relative aspect-video rounded-lg border overflow-hidden bg-gray-950 flex items-center justify-center transition-all ${
+                          url ? 'border-gray-700' : 'border-dashed border-gray-700 hover:border-blue-700'
+                        }`}
+                      >
+                        {uploadingHero === slot ? (
+                          <Loader2 className="h-7 w-7 text-blue-400 animate-spin" />
+                        ) : url ? (
+                          <>
+                            <img
+                              src={url}
+                              alt={`Capa ${slot}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => clearHero(slot)}
+                              className="absolute top-2 right-2 rounded-md bg-black/70 hover:bg-red-600/80 text-white p-1.5 shadow-lg transition"
+                              title={`Remover capa ${slot}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="absolute bottom-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600/90 text-white">
+                              Capa {slot}
+                            </span>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => ref.current?.click()}
+                            className="flex flex-col items-center justify-center text-gray-500 hover:text-blue-400 transition w-full h-full"
+                          >
+                            <Upload className="h-6 w-6 mb-1" />
+                            <span className="text-xs font-medium">Enviar capa {slot}</span>
+                            <span className="text-[10px] text-gray-600 mt-0.5">Clique para escolher</span>
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingHero === slot}
+                          onClick={() => ref.current?.click()}
+                          className="flex-1 border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700 h-8 text-xs"
+                        >
+                          <Upload className="w-3 h-3 mr-1.5" />
+                          {url ? 'Trocar' : 'Selecionar'}
+                        </Button>
+                        <input
+                          ref={ref}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            onHeroFileChange(slot, f);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* DOMÍNIO PRÓPRIO (white-label) */}
+              <CustomDomainsSection companyId={profile?.company_id ?? null} />
+
+              {dirty && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-amber-200">
+                  <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <strong className="font-semibold">Alterações não salvas.</strong>{' '}
+                    Clique em <span className="underline decoration-amber-400/60">Salvar alterações</span> para aplicar no site público.
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div 
+                  <div
                     className={`w-12 h-6 rounded-full flex items-center cursor-pointer transition-colors px-1 ${isPublished ? 'bg-green-500' : 'bg-gray-600'}`}
-                    onClick={() => setIsPublished(!isPublished)}
+                    onClick={() => { setIsPublished(!isPublished); setDirty(true); }}
                   >
                     <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${isPublished ? 'translate-x-6' : 'translate-x-0'}`}></div>
                   </div>
@@ -498,14 +842,27 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
                   </span>
                 </div>
 
-                <Button 
-                  onClick={handleSaveWebsite} 
-                  disabled={saving || uploadingLogo || uploadingHero !== null}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {saving ? 'Salvando...' : 'Salvar alterações'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {isPublished && slug && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.open(`/s/${slug}`, '_blank')}
+                      className="border-gray-700 bg-gray-800 text-gray-100 hover:bg-gray-700"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Abrir site
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleSaveWebsite}
+                    disabled={saving || uploadingLogo || uploadingHero !== null}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {saving ? 'Salvando...' : 'Salvar alterações'}
+                  </Button>
+                </div>
               </div>
 
             </div>

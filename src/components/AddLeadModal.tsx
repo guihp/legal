@@ -351,22 +351,22 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
               transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 30 }}
               className="relative"
             >
-              {/* Background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900/95 via-gray-800/95 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl" />
+              {/* Painel: claro/escuro via tokens do tema */}
+              <div className="absolute inset-0 rounded-2xl border border-border bg-card/95 shadow-xl backdrop-blur-sm dark:bg-gradient-to-br dark:from-gray-900/95 dark:via-gray-900/90 dark:to-gray-950/95 dark:border-gray-700/50 dark:shadow-2xl" />
 
               {/* Conteúdo principal */}
-              <div className="relative z-10 p-8">
+              <div className="relative z-10 p-8 text-foreground">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 backdrop-blur-sm border border-white/10 flex items-center justify-center">
-                      <User className="w-5 h-5 text-blue-400" />
+                    <div className="w-10 h-10 rounded-xl border border-border bg-primary/10 flex items-center justify-center dark:border-white/10 dark:from-blue-500/20 dark:to-purple-500/20 dark:bg-gradient-to-br">
+                      <User className="w-5 h-5 text-primary dark:text-blue-400" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                      <h2 className="text-2xl font-bold text-foreground dark:bg-gradient-to-r dark:from-white dark:to-gray-300 dark:bg-clip-text dark:text-transparent">
                         {leadToEdit ? 'Editar Cliente' : 'Adicionar Novo Cliente'}
                       </h2>
-                      <p className="text-sm text-gray-400">
+                      <p className="text-sm text-muted-foreground">
                         {leadToEdit ? 'Atualize as informações do cliente' : 'Preencha os dados do novo cliente'}
                       </p>
                     </div>
@@ -376,7 +376,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                     variant="ghost"
                     size="icon"
                     onClick={onClose}
-                    className="text-gray-400 hover:text-white hover:bg-gray-800/50 rounded-xl"
+                    className="rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-gray-800/50 dark:hover:text-white"
                   >
                     <X className="w-5 h-5" />
                   </Button>
@@ -386,13 +386,13 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Informações Básicas */}
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-white border-b border-gray-600 pb-2">
+                    <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2 dark:border-gray-600 dark:text-white">
                       Informações Básicas
                     </h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="nome" className="text-gray-300 flex items-center gap-2">
+                        <Label htmlFor="nome" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                           <User className="w-4 h-4" />
                           Nome Completo *
                         </Label>
@@ -401,13 +401,13 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           value={formData.nome}
                           onChange={(e) => handleChange('nome', e.target.value)}
                           placeholder="Nome completo do cliente"
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                          className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                           required
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="email" className="text-gray-300 flex items-center gap-2">
+                        <Label htmlFor="email" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                           <Mail className="w-4 h-4" />
                           Email
                         </Label>
@@ -417,12 +417,12 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           value={formData.email}
                           onChange={(e) => handleChange('email', e.target.value)}
                           placeholder="email@exemplo.com"
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                          className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="telefone" className="text-gray-300 flex items-center gap-2">
+                        <Label htmlFor="telefone" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                           <Phone className="w-4 h-4" />
                           Telefone/WhatsApp
                         </Label>
@@ -431,7 +431,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           value={formData.telefone}
                           onChange={(e) => handleChange('telefone', e.target.value)}
                           placeholder="(11) 99999-9999"
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                          className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
 
@@ -439,7 +439,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       {true && (
                         <>
                           <div className="space-y-2">
-                            <Label htmlFor="cpf" className="text-gray-300 flex items-center gap-2">
+                            <Label htmlFor="cpf" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                               <CreditCard className="w-4 h-4" />
                               CPF
                             </Label>
@@ -448,22 +448,22 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               value={formData.cpf}
                               onChange={(e) => handleChange('cpf', e.target.value)}
                               placeholder="000.000.000-00"
-                              className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                              className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                             />
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="estado_civil" className="text-gray-300 flex items-center gap-2">
+                            <Label htmlFor="estado_civil" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                               <Heart className="w-4 h-4" />
                               Estado Civil
                             </Label>
                             <Select value={formData.estado_civil} onValueChange={(value) => handleChange('estado_civil', value)}>
-                              <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
+                              <SelectTrigger className="border-input bg-background text-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white">
                                 <SelectValue placeholder="Selecione o estado civil" />
                               </SelectTrigger>
-                              <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
+                              <SelectContent className="border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-700" style={{ zIndex: 10000 }}>
                                 {estadosCivis.map((estado) => (
-                                  <SelectItem key={estado} value={estado} className="text-white hover:bg-gray-700">
+                                  <SelectItem key={estado} value={estado} className="dark:text-white dark:focus:bg-gray-700 dark:focus:text-white">
                                     {estado}
                                   </SelectItem>
                                 ))}
@@ -472,7 +472,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           </div>
 
                           <div className="md:col-span-2 space-y-2">
-                            <Label htmlFor="endereco" className="text-gray-300 flex items-center gap-2">
+                            <Label htmlFor="endereco" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                               <MapPin className="w-4 h-4" />
                               Endereço Completo
                             </Label>
@@ -481,7 +481,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               value={formData.endereco}
                               onChange={(e) => handleChange('endereco', e.target.value)}
                               placeholder="Rua, número, bairro, cidade, estado, CEP"
-                              className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                              className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                             />
                           </div>
                         </>
@@ -491,20 +491,20 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 
                   {/* Informações de Lead */}
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-white border-b border-gray-600 pb-2">
+                    <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2 dark:border-gray-600 dark:text-white">
                       Informações de Lead
                     </h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="source" className="text-gray-300">Origem</Label>
+                        <Label htmlFor="source" className="text-foreground dark:text-gray-300">Origem</Label>
                         <Select value={formData.source} onValueChange={(value) => handleChange('source', value)}>
-                          <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
+                          <SelectTrigger className="border-input bg-background text-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white">
                             <SelectValue placeholder="Como nos conheceu?" />
                           </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
+                          <SelectContent className="border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-700" style={{ zIndex: 10000 }}>
                             {leadSources.map((source) => (
-                              <SelectItem key={source} value={source} className="text-white hover:bg-gray-700">
+                              <SelectItem key={source} value={source} className="dark:text-white dark:focus:bg-gray-700 dark:focus:text-white">
                                 {source}
                               </SelectItem>
                             ))}
@@ -513,14 +513,14 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="stage" className="text-gray-300">Estágio</Label>
+                        <Label htmlFor="stage" className="text-foreground dark:text-gray-300">Estágio</Label>
                         <Select value={formData.stage} onValueChange={(value) => handleChange('stage', value as LeadStage)}>
-                          <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
+                          <SelectTrigger className="border-input bg-background text-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white">
                             <SelectValue placeholder="Estágio atual" />
                           </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
+                          <SelectContent className="border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-700" style={{ zIndex: 10000 }}>
                             {leadStages.map((stage) => (
-                              <SelectItem key={stage} value={stage} className="text-white hover:bg-gray-700">
+                              <SelectItem key={stage} value={stage} className="dark:text-white dark:focus:bg-gray-700 dark:focus:text-white">
                                 {stage}
                               </SelectItem>
                             ))}
@@ -529,30 +529,30 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="estimated_value" className="text-gray-300">Valor Estimado (R$)</Label>
+                        <Label htmlFor="estimated_value" className="text-foreground dark:text-gray-300">Valor Estimado (R$)</Label>
                         <Input
                           id="estimated_value"
                           type="number"
                           value={formData.estimated_value}
                           onChange={(e) => handleChange('estimated_value', e.target.value)}
                           placeholder="850000"
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                          className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
 
                       <div className="md:col-span-2 space-y-2">
-                        <Label htmlFor="interest" className="text-gray-300">Interesse</Label>
+                        <Label htmlFor="interest" className="text-foreground dark:text-gray-300">Interesse</Label>
                         <Input
                           id="interest"
                           value={formData.interest}
                           onChange={(e) => handleChange('interest', e.target.value)}
                           placeholder="Ex: Casa 3 quartos, apartamento centro"
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+                          className="border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
 
                       <div className="space-y-2 relative">
-                        <Label htmlFor="imovel_interesse" className="text-gray-300 flex items-center gap-2 mt-[2px]">
+                        <Label htmlFor="imovel_interesse" className="text-foreground flex items-center gap-2 mt-[2px] dark:text-gray-300">
                           <Building2 className="w-4 h-4" />
                           ID do imóvel de Interesse
                         </Label>
@@ -560,14 +560,14 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="mt-1 inline-flex w-full items-center justify-between rounded-md border border-gray-700 bg-gray-800/50 px-3 py-2 text-left text-white"
+                              className="mt-1 inline-flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-foreground dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
                               aria-label="Selecione o ID do imóvel"
                             >
                               <span className="truncate">{listingId || 'Selecione o ID do imóvel ou digite'}</span>
                               <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-gray-800 border-gray-600" style={{ zIndex: 10000 }}>
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-600" style={{ zIndex: 10000 }}>
                             <Command>
                               <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
                               <CommandList>
@@ -583,11 +583,11 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                                         setListingOpen(false);
                                       }}
                                     >
-                                      <div className="flex flex-col text-white">
+                                      <div className="flex flex-col text-foreground dark:text-white">
                                         <span className="font-medium">{opt.listing_id} - {(opt.endereco || opt.cidade || '-')}</span>
                                       </div>
                                       {listingId === opt.listing_id && (
-                                        <Check className="ml-auto h-4 w-4 text-white" />
+                                        <Check className="ml-auto h-4 w-4 text-primary dark:text-white" />
                                       )}
                                     </CommandItem>
                                   ))}
@@ -597,20 +597,20 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           </PopoverContent>
                         </Popover>
                         {listingPreview && (
-                          <div className="pointer-events-auto absolute left-0 right-0 top-full mt-2 z-20 rounded-lg border border-gray-700 bg-gray-900/90 backdrop-blur-sm p-3 shadow-xl">
-                            <div className="text-sm text-gray-300"><span className="font-medium">Tipo do imóvel:</span> {listingPreview.tipo_imovel || '-'}</div>
-                            <div className="text-sm text-gray-300 mt-1">
-                              <span className="font-medium">Início da descrição:</span> {(listingPreview.descricao || '').slice(0, 160)}{(listingPreview.descricao || '').length > 160 ? '…' : ''}
+                          <div className="pointer-events-auto absolute left-0 right-0 top-full mt-2 z-20 rounded-lg border border-border bg-muted/80 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/90">
+                            <div className="text-sm text-muted-foreground dark:text-gray-300"><span className="font-medium text-foreground dark:text-gray-200">Tipo do imóvel:</span> {listingPreview.tipo_imovel || '-'}</div>
+                            <div className="text-sm text-muted-foreground mt-1 dark:text-gray-300">
+                              <span className="font-medium text-foreground dark:text-gray-200">Início da descrição:</span> {(listingPreview.descricao || '').slice(0, 160)}{(listingPreview.descricao || '').length > 160 ? '…' : ''}
                             </div>
                           </div>
                         )}
                       </div>
                   {/* Atribuição de Corretor */}
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-white border-b border-gray-600 pb-2">Atribuição</h3>
+                    <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2 dark:border-gray-600 dark:text-white">Atribuição</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="corretor" className="text-gray-300 flex items-center gap-2">
+                        <Label htmlFor="corretor" className="text-foreground flex items-center gap-2 dark:text-gray-300">
                           <UserCheck className="w-4 h-4" />
                           Corretor Responsável
                         </Label>
@@ -618,7 +618,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex w-full items-center justify-between rounded-md border border-gray-700 bg-gray-800/50 px-3 py-2 text-left text-white min-w-[260px]"
+                              className="inline-flex w-full min-w-[260px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-foreground dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
                               aria-label="Selecione um Corretor"
                             >
                               <span className="truncate">{
@@ -627,7 +627,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-gray-800 border-gray-600" style={{ zIndex: 10000 }}>
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-600" style={{ zIndex: 10000 }}>
                             <Command>
                               <CommandInput placeholder="Digite o nome do corretor..." value={corretorQuery} onValueChange={setCorretorQuery} />
                               <CommandList>
@@ -643,9 +643,9 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                                         console.log('Corretor selecionado:', c.id, c.full_name); // Debug
                                       }}
                                     >
-                                      <span className="text-white font-medium">{c.full_name}</span>
+                                      <span className="font-medium text-foreground dark:text-white">{c.full_name}</span>
                                       {selectedCorretor === c.id && (
-                                        <Check className="ml-auto h-4 w-4 text-white" />
+                                        <Check className="ml-auto h-4 w-4 text-primary dark:text-white" />
                                       )}
                                     </CommandItem>
                                   ))}
@@ -655,10 +655,10 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           </PopoverContent>
                         </Popover>
                         {selectedCorretor && (
-                          <p className="text-xs text-green-400">Corretor selecionado: {corretores.find(c => c.id === selectedCorretor)?.full_name}</p>
+                          <p className="text-xs text-emerald-600 dark:text-green-400">Corretor selecionado: {corretores.find(c => c.id === selectedCorretor)?.full_name}</p>
                         )}
                         {!selectedCorretor && (
-                          <p className="text-xs text-gray-400">Deixe vazio para que o corretor seja<br />escolhido aleatoriamente.</p>
+                          <p className="text-xs text-muted-foreground dark:text-gray-400">Deixe vazio para que o corretor seja<br />escolhido aleatoriamente.</p>
                         )}
                       </div>
                     </div>
@@ -667,24 +667,24 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="message" className="text-gray-300">Mensagem Inicial</Label>
+                        <Label htmlFor="message" className="text-foreground dark:text-gray-300">Mensagem Inicial</Label>
                         <Textarea
                           id="message"
                           value={formData.message}
                           onChange={(e) => handleChange('message', e.target.value)}
                           placeholder="Primeira mensagem ou contato do cliente..."
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400 min-h-[80px]"
+                          className="min-h-[80px] border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="notes" className="text-gray-300">Observações</Label>
+                        <Label htmlFor="notes" className="text-foreground dark:text-gray-300">Observações</Label>
                         <Textarea
                           id="notes"
                           value={formData.notes}
                           onChange={(e) => handleChange('notes', e.target.value)}
                           placeholder="Observações internas sobre o cliente..."
-                          className="bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400 min-h-[80px]"
+                          className="min-h-[80px] border-input bg-background text-foreground placeholder:text-muted-foreground dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400"
                         />
                       </div>
                     </div>
@@ -696,7 +696,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       type="button"
                       variant="outline"
                       onClick={onClose}
-                      className="flex-1 border-gray-600 text-red-500 hover:bg-gray-700"
+                      className="flex-1 border-border text-destructive hover:bg-muted dark:border-gray-600 dark:text-red-400 dark:hover:bg-gray-700"
                       disabled={loading}
                     >
                       Cancelar

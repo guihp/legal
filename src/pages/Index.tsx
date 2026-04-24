@@ -5,6 +5,17 @@ import React from "react";
 import { AddImovelModal } from "@/components/AddImovelModal";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
+import NotFound from "@/pages/NotFound";
+
+// Views válidas do app. Usado para decidir se uma URL desconhecida
+// cai no fallback (dashboard) ou renderiza NotFound.
+const VALID_VIEWS: ReadonlyArray<string> = [
+  "dashboard", "properties", "contracts", "agenda", "plantao", "reports",
+  "clients", "clients-crm", "connections", "users", "permissions",
+  "inquilinato", "disparador", "conversas", "configurations", "profile",
+  "landing", "marketing", "marketing-site", "marketing-lps", "marketing-visitas",
+  "partnerships", "n8n-leads-api",
+];
 
 // Função helper para lazy loading com tratamento de erro
 const createLazyComponent = (importFn: () => Promise<any>, componentName: string) => {
@@ -98,7 +109,7 @@ const ConfigurationsView = createLazyComponent(
   "ConfigurationsView"
 );
 const ConversasView = createLazyComponent(
-  () => import("@/components/ConversasViewPremium").then(m => ({ default: m.ConversasViewPremium })),
+  () => import("@/components/ConversasPage").then(m => ({ default: m.ConversasPage })),
   "ConversasView"
 );
 const LandingPage = createLazyComponent(
@@ -112,6 +123,10 @@ const MarketingView = createLazyComponent(
 const MarketingLandingPagesView = createLazyComponent(
   () => import("@/components/MarketingLandingPagesView").then(m => ({ default: m.MarketingLandingPagesView })),
   "MarketingLandingPagesView"
+);
+const MarketingVisitasView = createLazyComponent(
+  () => import("@/components/MarketingVisitasView").then(m => ({ default: m.MarketingVisitasView })),
+  "MarketingVisitasView"
 );
 const PartnershipsView = createLazyComponent(
   () => import("@/components/PartnershipsView").then(m => ({ default: m.PartnershipsView })),
@@ -278,6 +293,19 @@ const Index = () => {
           );
         }
         return <MarketingLandingPagesView />;
+      case "marketing-visitas":
+        if (planTier[companyPlan] < 3) {
+          return <PlanBlockedScreen feature="Visitas ao site" requiredPlan="Professional" />;
+        }
+        if (!hasPermission('menu_marketing')) {
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <p className="text-gray-400 text-sm">Você não tem permissão para o módulo Presença digital.</p>
+            </div>
+          );
+        }
+        return <MarketingVisitasView />;
       case "partnerships":
         return <PartnershipsView />;
       case "n8n-leads-api":
@@ -317,6 +345,10 @@ const Index = () => {
       case "profile":
         return <UserProfileView />;
       default:
+        // URL desconhecida → NotFound (substituindo a antiga <Route path="*" /> do App.tsx)
+        if (!VALID_VIEWS.includes(currentView as string)) {
+          return <NotFound />;
+        }
         return <DashboardContent properties={[]} loading={false} onNavigateToAgenda={() => changeView("agenda", "default-fallback")} />;
     }
   };
