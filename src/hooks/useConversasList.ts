@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
+import { mediaPreviewPrefix } from '@/lib/conversaMedia';
 
 /** Rótulo quando não há nome (evita texto genérico longo; RPC já envia nome para corretor quando permitido). */
 function conversaFallbackLabel(sessionId: string): string {
@@ -119,7 +120,6 @@ export function useConversasList(selectedInstance?: string | null) {
         const sid = String(r.session_id);
 
         // preview/mídia
-        const hasMedia = !!(r.media && String(r.media).trim() && String(r.media).toLowerCase() !== 'null');
         let parsedMessage: any = r.message;
         if (typeof parsedMessage === 'string') {
           try { parsedMessage = JSON.parse(parsedMessage); } catch { parsedMessage = { content: parsedMessage, type: 'human' }; }
@@ -127,10 +127,12 @@ export function useConversasList(selectedInstance?: string | null) {
         // Extrair conteúdo limpo (remove prefixos como "[MENSAGEM DE TEXTO ENVIADA]: ()")
         const rawContent = String(parsedMessage?.content || '');
         const cleanContent = extractMessageContent(rawContent);
-        // Quando houver mídia (imagem/áudio), exibir o content com ícone correspondente
-        const isImageMedia = hasMedia && (String(r.media).startsWith('/9j/') || String(r.media).startsWith('iVBORw0'));
-        const mediaPrefix = hasMedia ? (isImageMedia ? '🖼️ ' : '🎧 ') : '';
-        const lastContent = `${mediaPrefix}${cleanContent}`;
+        // Texto curto antes do conteúdo quando houver mídia. Sem emoji — usa
+        // detector que cobre URL, JSON stringificado e base64 (ver
+        // src/lib/conversaMedia.ts). Antes mostrava "🎧" pra qualquer mídia
+        // que não fosse base64 puro de JPEG/PNG, daí o bug visual reportado.
+        const mediaPrefix = mediaPreviewPrefix(r.media);
+        const lastContent = `${mediaPrefix}${cleanContent}`.trim();
         const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
 
         const fromRpc = String((r as any).lead_display_name ?? '').trim();

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
+import { mediaPreviewPrefix } from '@/lib/conversaMedia';
 
 function instagramListaFallbackLabel(sessionId: string): string {
   const id = String(sessionId || '').trim();
@@ -82,16 +83,15 @@ export function useInstagramConversasList(
 
       const list: InstagramConversa[] = ((rows as any[]) || []).map((r: any) => {
         const sid = String(r.session_id ?? '').trim();
-        const hasMedia = !!(r.media && String(r.media).trim() && String(r.media).toLowerCase() !== 'null');
         let parsedMessage: any = r.message;
         if (typeof parsedMessage === 'string') {
           try { parsedMessage = JSON.parse(parsedMessage); } catch { parsedMessage = { content: parsedMessage, type: 'human' }; }
         }
         const rawContent = String(parsedMessage?.content || '');
         const cleanContent = extractMessageContent(rawContent);
-        const isImageMedia = hasMedia && (String(r.media).startsWith('/9j/') || String(r.media).startsWith('iVBORw0'));
-        const mediaPrefix = hasMedia ? (isImageMedia ? '🖼️ ' : '📎 ') : '';
-        const lastContent = `${mediaPrefix}${cleanContent}`;
+        // Sem emoji — texto curto via helper compartilhado (mesmo do WhatsApp).
+        const mediaPrefix = mediaPreviewPrefix(r.media);
+        const lastContent = `${mediaPrefix}${cleanContent}`.trim();
         const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
 
         const rpcName = String((r as any).lead_display_name ?? '').trim();

@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useChatInstancesFromMessages } from '@/hooks/useChatInstancesFromMessages';
+import { mediaPreviewLabel, inferMediaKind } from '@/lib/conversaMedia';
 import { useConversasList } from '@/hooks/useConversasList';
 import { useConversaMessages } from '@/hooks/useConversaMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
@@ -331,15 +332,24 @@ function buildDataUrlFromMedia(raw: unknown): string | null {
   return result;
 }
 
-// Preview da última mensagem (prioridade para media)
+// Preview da última mensagem (prioridade para media). Sem emoji — devolve
+// rótulo curto em texto puro ("[Imagem]", "[Áudio]" etc.) para que a UI
+// fique uniforme com o que o WhatsApp/Instagram mostram nativamente.
 function previewFromLast(last_media: any, last_message: any): string {
   const dataUrl = buildDataUrlFromMedia(last_media);
   if (dataUrl) {
-    // Detectar tipo de mídia pelo MIME
-    if (dataUrl.includes('image/')) return '🖼️ Imagem';
-    if (dataUrl.includes('audio/')) return '🎧 Áudio';
-    if (dataUrl.includes('video/')) return '🎥 Vídeo';
-    return '📎 Mídia'; // fallback genérico
+    // dataUrl já tem MIME — confiável.
+    if (dataUrl.includes('image/')) return mediaPreviewLabel('data:image/');
+    if (dataUrl.includes('audio/')) return mediaPreviewLabel('data:audio/');
+    if (dataUrl.includes('video/')) return mediaPreviewLabel('data:video/');
+    return mediaPreviewLabel(null); // genérico
+  }
+
+  // Sem data URL válido: tenta classificar pelo conteúdo bruto (URL,
+  // JSON stringificado, base64). Se reconhecer alguma mídia, devolve rótulo.
+  if (last_media != null && String(last_media).trim() !== '' && String(last_media).toLowerCase() !== 'null') {
+    const kind = inferMediaKind(last_media);
+    if (kind !== 'unknown') return mediaPreviewLabel(last_media);
   }
 
   const raw = last_message;
@@ -572,9 +582,9 @@ function MessageBubble({ row }: { row: any }) {
           ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
           : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
           <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
-            🖼️ Mídia corrompida
+            Mídia indisponível
             <br />
-            <small className="text-xs text-zinc-500">Base64 inválido ou incompleto</small>
+            <small className="text-xs text-zinc-500">Conteúdo da mensagem não pôde ser carregado</small>
           </div>
         </div>
       </div>
