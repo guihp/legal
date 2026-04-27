@@ -25,6 +25,25 @@ export function useInstagramMessages(
   const rtChannelRef = useRef<RealtimeChannel | null>(null);
   const rtDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * Defesa contra duplicação no n8n: às vezes o flow pai dispara o
+   * sub-workflow `evo_saida_b` 2x, e a tabela `imobipro_messages_*_instagram`
+   * recebe 2 inserts idênticos (mesmo type + content + data). A RPC do IG
+   * não tem dedup interno, então filtramos aqui no client. Critério: mesmo
+   * type + content + timestamp exato (ms) → considera duplicata.
+   */
+  const dedupeRows = useCallback((rows: ConversaMessage[]): ConversaMessage[] => {
+    const seen = new Set<string>();
+    const out: ConversaMessage[] = [];
+    for (const r of rows) {
+      const key = `${r.message?.type ?? ''}|${r.message?.content ?? ''}|${String(r.data ?? '')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
+  }, []);
+
   const mapRows = useCallback((data: any[]): ConversaMessage[] => {
     return (data || []).map((row: any) => {
       let parsedMessage: any;
@@ -84,7 +103,7 @@ export function useInstagramMessages(
         if (rpcErr) throw rpcErr;
 
         if (latestSessionRef.current !== sessionId) return;
-        setMessages(mapRows(data ?? []));
+        setMessages(dedupeRows(mapRows(data ?? [])));
       } catch (e: any) {
         console.error('[useInstagramMessages] erro:', e);
         setError(e?.message ?? 'Erro ao carregar conversa');
