@@ -3,6 +3,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 
+/** Rótulo quando não há nome (evita texto genérico longo; RPC já envia nome para corretor quando permitido). */
+function conversaFallbackLabel(sessionId: string): string {
+  const id = String(sessionId || '').trim();
+  if (id.length >= 8) return `Cliente · ${id.slice(0, 8)}…`;
+  return 'Cliente';
+}
+
 export interface Conversa {
   sessionId: string;
   instancia: string;
@@ -36,23 +43,30 @@ export function useConversasList(selectedInstance?: string | null) {
       }
 
       try {
+        // IMPORTANTE: usar `whatsapp_ai_phone` (e não `phone`) — esse é o número
+        // que nomeia a tabela dinâmica `crm_whatsapp_messages_{phone}` onde o
+        // n8n grava as mensagens. `companies.phone` é apenas o telefone comercial
+        // (endereço/contato) e NÃO tem relação com as tabelas de mensagens.
+        // Se trocar, a RPC `list_conversations_by_phone` não acha a tabela e
+        // a lista aparece vazia pra todos os perfis.
         const { data, error: fetchError } = await supabase
           .from('companies')
-          .select('phone') // Alterado de whatsapp_ai_phone para phone
+          .select('whatsapp_ai_phone')
           .eq('id', profile.company_id)
           .single();
 
         if (fetchError) throw fetchError;
 
-        if (data && data.phone) {
+        const raw = (data as any)?.whatsapp_ai_phone;
+        if (raw) {
           // Remover tudo que não for número
-          const cleanPhone = data.phone.replace(/\D/g, '');
-          setCompanyPhone(cleanPhone);
+          const cleanPhone = String(raw).replace(/\D/g, '');
+          setCompanyPhone(cleanPhone || null);
         } else {
           setCompanyPhone(null);
         }
       } catch (err) {
-        console.error('Erro ao buscar phone da empresa:', err);
+        console.error('Erro ao buscar whatsapp_ai_phone da empresa:', err);
         setCompanyPhone(null);
       }
     };
@@ -119,10 +133,12 @@ export function useConversasList(selectedInstance?: string | null) {
         const lastContent = `${mediaPrefix}${cleanContent}`;
         const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
 
+        const fromRpc = String((r as any).lead_display_name ?? '').trim();
+
         return {
           sessionId: sid,
           instancia: String(r.instancia || effectiveInstance),
-          displayName: sid, // substituído abaixo por nome do lead se existir
+          displayName: fromRpc,
           leadPhone: null,
           leadStage: null,
           lastMessageDate: String(r.data),
@@ -132,22 +148,27 @@ export function useConversasList(selectedInstance?: string | null) {
         };
       });
 
-      // 4) Trazer nomes de leads
+      // 4) Complementar com leads visíveis ao usuário (RLS); RPC já preenche lead_display_name para corretor
       if (list.length > 0) {
         const sids = list.map(l => l.sessionId);
         const { data: leadRows } = await supabase
           .from('leads')
-          .select('id, name')
+          .select('id, name, phone')
           .in('id', sids as any);
         const leadMap = new Map<string, string>();
         (leadRows || []).forEach((lr: any) => {
-          if (lr && lr.id && lr.name) leadMap.set(String(lr.id), String(lr.name));
+          if (!lr?.id) return;
+          const id = String(lr.id);
+          const nm = lr.name != null ? String(lr.name).trim() : '';
+          const ph = lr.phone != null ? String(lr.phone).trim() : '';
+          const label = nm || ph;
+          if (label) leadMap.set(id, label);
         });
 
         list.forEach(item => {
           const nm = leadMap.get(item.sessionId);
           if (nm) item.displayName = nm;
-          else item.displayName = 'Aguardando nome do lead...';
+          else if (!item.displayName) item.displayName = conversaFallbackLabel(item.sessionId);
         });
       }
 

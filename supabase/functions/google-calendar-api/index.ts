@@ -50,6 +50,49 @@ async function refreshGoogleAccessToken(refreshToken: string) {
   };
 }
 
+// Resolve nome de exibição do lead, com fallback Instagram.
+// Retorna { displayName, handle, phone, email, raw } onde:
+//  - displayName: leads.name OU leads.nome_instagram_cliente (sem @)
+//  - handle:      leads.arroba_instagram_cliente (com @ se existir)
+async function resolveLeadInfo(
+  service: ReturnType<typeof createClient>,
+  leadId: string,
+  companyId: string,
+) {
+  const empty = { displayName: "", handle: "", phone: "", email: "", raw: null as any };
+  if (!leadId) return empty;
+
+  const { data, error } = await service
+    .from("leads")
+    .select("id, name, phone, email, nome_instagram_cliente, arroba_instagram_cliente, company_id")
+    .eq("id", leadId)
+    .maybeSingle();
+
+  if (error || !data) {
+    console.warn("resolveLeadInfo: lead não encontrado", { leadId, error: error?.message });
+    return empty;
+  }
+
+  // Guard: lead precisa pertencer à mesma empresa do agendamento
+  if (companyId && (data as any).company_id && (data as any).company_id !== companyId) {
+    console.warn("resolveLeadInfo: lead de outra empresa", { leadId, companyId, lead_company: (data as any).company_id });
+    return empty;
+  }
+
+  const nameRaw = String((data as any).name || "").trim();
+  const igName = String((data as any).nome_instagram_cliente || "").trim();
+  const igHandleRaw = String((data as any).arroba_instagram_cliente || "").trim();
+  const phone = String((data as any).phone || "").trim();
+  const email = String((data as any).email || "").trim();
+
+  const displayName = nameRaw || igName || "";
+  const handle = igHandleRaw
+    ? (igHandleRaw.startsWith("@") ? igHandleRaw : `@${igHandleRaw}`)
+    : "";
+
+  return { displayName, handle, phone, email, raw: data };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -57,12 +100,14 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
     const service = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
+
     const bearerToken = getBearerToken(req);
     const jwtRole = getJwtRole(bearerToken);
     const isServiceRoleRequest = jwtRole === "service_role";
     const internalKey = req.headers.get("x-n8n-secret") || "";
     const isInternalRequest = !!internalKey && internalKey === env("N8N_INTERNAL_API_KEY");
     const isInternalAllowed = isInternalRequest || isServiceRoleRequest;
+
     let profile: { id: string | null; role: string; company_id: string } | null = null;
 
     if (isInternalAllowed) {
@@ -129,8 +174,7 @@ serve(async (req) => {
             expires_at: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString(),
           })
           .eq("company_id", profile.company_id);
-      } catch (refreshError) {
-        // Mantém token atual para tentar uma chamada direta e retornar erro mais claro
+      } catch {
         console.warn("Falha ao renovar token Google, tentando token atual");
       }
     }
@@ -145,13 +189,16 @@ serve(async (req) => {
             ...(init?.headers || {}),
           },
         });
-        const json = await res.json().catch(() => ({}));
+        // DELETE retorna 204 No Content; não forçar parse JSON
+        const text = await res.text().catch(() => "");
+        let json: any = {};
+        if (text) {
+          try { json = JSON.parse(text); } catch { json = { raw: text }; }
+        }
         return { res, json };
       };
 
       let { res, json } = await run(accessToken);
-
-      // Retry once on unauthorized by forcing refresh
       if (res.status === 401 && refreshToken) {
         try {
           const refreshed = await refreshGoogleAccessToken(refreshToken);
@@ -166,7 +213,7 @@ serve(async (req) => {
             .eq("company_id", profile.company_id);
           ({ res, json } = await run(accessToken));
         } catch {
-          // keep original error flow below
+          // mantém erro original
         }
       }
 
@@ -195,9 +242,13 @@ serve(async (req) => {
       });
     }
 
+    // Cria uma nova agenda SECUNDÁRIA na conta Google conectada.
+    // Google retorna o calendário criado, e o calendarList é automaticamente
+    // atualizado para a conta dona — após o next list_calendars a agenda aparece.
+    // Só admin/gestor/super_admin podem criar.
     if (action === "create_calendar") {
-      if (!["admin", "gestor", "super_admin"].includes(profile.role)) {
-        return new Response(JSON.stringify({ success: false, error: "Sem permissão para criar calendário" }), {
+      if (profile.role !== "system" && !["admin", "gestor", "super_admin"].includes(profile.role)) {
+        return new Response(JSON.stringify({ success: false, error: "Sem permissão para criar agenda" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -205,41 +256,63 @@ serve(async (req) => {
 
       const name = String(body?.name || "").trim();
       if (!name) {
-        return new Response(JSON.stringify({ success: false, error: "Nome do calendário é obrigatório" }), {
+        return new Response(JSON.stringify({ success: false, error: "name é obrigatório" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const json = await gFetch("https://www.googleapis.com/calendar/v3/calendars", {
+
+      const timeZone = String(body?.timeZone || body?.time_zone || "America/Sao_Paulo");
+
+      // 1) Cria o calendário secundário (dono = conta Google conectada da empresa)
+      const created = await gFetch("https://www.googleapis.com/calendar/v3/calendars", {
         method: "POST",
-        body: JSON.stringify({
-          summary: name,
-          description: `Calendário de ${name}`,
-          timeZone: "America/Sao_Paulo",
-        }),
+        body: JSON.stringify({ summary: name, timeZone }),
       });
-      return new Response(JSON.stringify({ success: true, calendar: json }), {
+      const calendarId = String(created?.id || "");
+
+      // 2) Garante que já apareça no "Minhas agendas" do dono (calendarList.insert).
+      //    Para o dono, calendars.insert já adiciona automaticamente; mas fazemos isso
+      //    de forma idempotente para evitar cenário de propagação atrasada.
+      if (calendarId) {
+        try {
+          await gFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
+            method: "POST",
+            body: JSON.stringify({ id: calendarId }),
+          });
+        } catch (e) {
+          // Se já estiver na lista, o Google devolve 409 — tudo bem, seguimos.
+          console.warn("calendarList.insert retornou erro (provavelmente já existe):", (e as Error).message);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, calendar: { id: calendarId, name, timeZone } }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Remove uma agenda SECUNDÁRIA da conta Google conectada.
+    // Não é possível deletar calendário primário; Google retorna 403/400.
     if (action === "delete_calendar") {
-      if (!["admin", "gestor", "super_admin"].includes(profile.role)) {
-        return new Response(JSON.stringify({ success: false, error: "Sem permissão para excluir calendário" }), {
+      if (profile.role !== "system" && !["admin", "gestor", "super_admin"].includes(profile.role)) {
+        return new Response(JSON.stringify({ success: false, error: "Sem permissão para remover agenda" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const calendarId = String(body?.calendar_id || "");
+
+      const calendarId = String(body?.calendar_id || "").trim();
       if (!calendarId) {
         return new Response(JSON.stringify({ success: false, error: "calendar_id é obrigatório" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
       await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`, {
         method: "DELETE",
       });
+
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -283,7 +356,6 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
       if (!timeMin || !timeMax) {
         return new Response(JSON.stringify({ success: false, error: "time_min e time_max são obrigatórios" }), {
           status: 400,
@@ -328,10 +400,19 @@ serve(async (req) => {
       const startDateTime = String(body?.start || "").trim();
       const endDateTime = String(body?.end || "").trim();
       const summary = String(body?.summary || "Visita").trim();
-      const description = String(body?.description || "").trim();
+      const descriptionRaw = String(body?.description || "").trim();
       const location = String(body?.location || "").trim();
       const useDefaultReminders = Boolean(body?.use_default_reminders ?? false);
-      const attendeeEmails = Array.isArray(body?.attendees) ? body.attendees : [];
+
+      // attendees pode chegar como array ou string (n8n às vezes manda string)
+      let attendeeEmails: string[] = [];
+      const rawAttendees = body?.attendees;
+      if (Array.isArray(rawAttendees)) {
+        attendeeEmails = rawAttendees.map((e: any) => String(e || "").trim()).filter(Boolean);
+      } else if (typeof rawAttendees === "string" && rawAttendees.trim()) {
+        attendeeEmails = rawAttendees.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+      }
+
       const reminders = Array.isArray(body?.reminders) ? body.reminders : [];
 
       if (!startDateTime || !endDateTime) {
@@ -341,8 +422,30 @@ serve(async (req) => {
         });
       }
 
+      // ⚡ Lookup do lead via lead_id (também aceita session_id como alias).
+      // Se o nome estiver vazio, cai no nome_instagram_cliente; o @arroba vai como sufixo "(@handle)".
+      const leadId = String(body?.lead_id || body?.session_id || "").trim();
+      const leadInfo = await resolveLeadInfo(service, leadId, profile.company_id);
+
+      // Prefixa "Cliente: NOME (@handle)\nTelefone: XXX" no description para os
+      // parsers do front (services/agenda/events.ts e AgendaView/AppointmentCalendar)
+      // capturarem o nome via Strategy 2 do regex.
+      let description = descriptionRaw;
+      if (leadInfo.displayName) {
+        const handlePart = leadInfo.handle ? ` (${leadInfo.handle})` : "";
+        const phonePart = leadInfo.phone ? `\nTelefone: ${leadInfo.phone}` : "";
+        const clientHeader = `Cliente: ${leadInfo.displayName}${handlePart}${phonePart}`;
+        description = description
+          ? `${clientHeader}\n\n${description}`
+          : clientHeader;
+      }
+
+      // Se nenhum attendee veio do n8n, mas o lead tem email, convidamos o lead automaticamente
+      if (attendeeEmails.length === 0 && leadInfo.email && /@/.test(leadInfo.email)) {
+        attendeeEmails = [leadInfo.email];
+      }
+
       const attendees = attendeeEmails
-        .map((email: any) => String(email || "").trim())
         .filter(Boolean)
         .map((email: string) => ({ email }));
 
@@ -365,12 +468,58 @@ serve(async (req) => {
         ? { useDefault: true }
         : (overrides.length ? { useDefault: false, overrides } : { useDefault: false });
 
+      // ⚡ Persiste metadados do lead em extendedProperties.private — fonte canônica
+      // para quando o front quiser ler o lead vinculado sem depender do regex do description.
+      if (leadInfo.displayName || leadId) {
+        const priv: Record<string, string> = {};
+        if (leadId) priv.lead_id = leadId;
+        if (leadInfo.displayName) priv.client_name = leadInfo.displayName;
+        if (leadInfo.handle) priv.client_handle = leadInfo.handle;
+        if (leadInfo.phone) priv.client_phone = leadInfo.phone;
+        if (leadInfo.email) priv.client_email = leadInfo.email;
+        eventBody.extendedProperties = { private: priv };
+      }
+
       const created = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
         method: "POST",
         body: JSON.stringify(eventBody),
       });
 
-      return new Response(JSON.stringify(created), {
+      // Mirror em oncall_events (best-effort; tabela é opcional, hoje pode não existir)
+      try {
+        await service.from("oncall_events").insert({
+          company_id: profile.company_id,
+          calendar_id: calendarId,
+          google_event_id: created?.id || null,
+          title: summary,
+          description,
+          starts_at: startDateTime,
+          ends_at: endDateTime,
+          client_name: leadInfo.displayName || null,
+          client_email: leadInfo.email || (attendeeEmails[0] || null),
+          client_phone: leadInfo.phone || null,
+          client_handle: leadInfo.handle || null,
+          lead_id: leadId || null,
+          property_title: summary,
+          address: location || null,
+          type: "Visita",
+          status: "Agendado",
+        });
+      } catch (e) {
+        // silencioso: schema pode não ter todas as colunas / tabela pode não existir
+        console.warn("oncall_events insert (não-fatal):", (e as Error).message);
+      }
+
+      return new Response(JSON.stringify({
+        ...created,
+        success: true,
+        client_resolved: leadInfo.displayName ? {
+          name: leadInfo.displayName,
+          handle: leadInfo.handle || null,
+          phone: leadInfo.phone || null,
+          email: leadInfo.email || null,
+        } : null,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -384,79 +533,11 @@ serve(async (req) => {
         });
       }
       const eventBody = body?.event || {};
-      const json = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+      const created = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
         method: "POST",
         body: JSON.stringify(eventBody),
       });
-      return new Response(JSON.stringify({ success: true, event: json }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (action === "update_event") {
-      const calendarId = String(body?.calendar_id || "");
-      const eventId = String(body?.evento_id || body?.event_id || "");
-      const update = body?.update || {};
-      if (!calendarId || !eventId) {
-        return new Response(JSON.stringify({ success: false, error: "calendar_id e evento_id são obrigatórios" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const json = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-        method: "PATCH",
-        body: JSON.stringify(update),
-      });
-      return new Response(JSON.stringify({ success: true, event: json }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (action === "delete_event") {
-      const calendarId = String(body?.calendar_id || "");
-      const eventId = String(body?.evento_id || body?.event_id || "");
-      if (!calendarId || !eventId) {
-        return new Response(JSON.stringify({ success: false, error: "calendar_id e evento_id são obrigatórios" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-        method: "DELETE",
-      });
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (action === "update_event_status") {
-      const calendarId = String(body?.calendar_id || "");
-      const eventId = String(body?.evento_id || body?.event_id || "");
-      const responseStatus = String(body?.response_status || "needsAction");
-      if (!calendarId || !eventId) {
-        return new Response(JSON.stringify({ success: false, error: "calendar_id e evento_id são obrigatórios" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Atualiza status no attendee principal (owner)
-      const event = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`);
-      const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
-      const ownerEmail = integration.google_email ? String(integration.google_email).toLowerCase() : "";
-      const updatedAttendees = attendees.map((a: any) => {
-        const email = String(a?.email || "").toLowerCase();
-        if (ownerEmail && email === ownerEmail) {
-          return { ...a, responseStatus };
-        }
-        return a;
-      });
-
-      const json = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ attendees: updatedAttendees }),
-      });
-      return new Response(JSON.stringify({ success: true, event: json }), {
+      return new Response(JSON.stringify({ success: true, event: created }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

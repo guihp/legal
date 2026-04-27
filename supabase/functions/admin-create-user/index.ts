@@ -1,274 +1,175 @@
 // deno-lint-ignore-file no-explicit-any
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
 }
 
-serve(async (req) => {
-  console.log('🚀 Edge Function admin-create-user chamada');
-  console.log('📝 Método:', req.method);
-  console.log('🔗 URL:', req.url);
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
 
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    console.log('✅ Respondendo preflight CORS');
-    return new Response('ok', { 
-      headers: corsHeaders,
-      status: 200 
-    })
+  if (req.method !== "POST") {
+    return jsonResponse({ success: false, error: "Method not allowed" }, 405);
   }
 
   try {
-    console.log('🔐 Iniciando autenticação...');
-    
-    // Create a Supabase client with the Auth context of the function
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
-
-    console.log('🔑 Verificando JWT...');
-    
-    // Get the user from the JWT token
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
-    if (userError || !user) {
-      console.error('❌ Erro na autenticação:', userError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Unauthorized: ' + (userError?.message || 'No user found')
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 401,
-        }
-      )
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return jsonResponse({ success: false, error: "Unauthorized" }, 401);
     }
 
-    console.log('✅ Usuário autenticado:', user.id, user.email);
+    const accessToken = authHeader.replace(/^Bearer\s+/i, "");
+    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    // Get request body
+    const { data: authUserData, error: authErr } = await adminClient.auth.getUser(accessToken);
+    if (authErr || !authUserData.user) {
+      return jsonResponse({ success: false, error: "Invalid token" }, 401);
+    }
+
     const body = await req.json();
-    console.log('📦 Request body:', body);
-    
-    const { email, role = 'corretor', full_name, phone, department, company_id } = body
+    const {
+      email,
+      password,
+      role = "corretor",
+      full_name,
+      phone,
+      department,
+      company_id,
+    } = body;
 
-    if (!email) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Email is required'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return jsonResponse({ success: false, error: "Email is required" }, 400);
+    }
+    if (!full_name || typeof full_name !== "string" || !full_name.trim()) {
+      return jsonResponse({ success: false, error: "Full name is required" }, 400);
+    }
+    const pwd = typeof password === "string" ? password : "";
+    if (!pwd.trim()) {
+      return jsonResponse({ success: false, error: "Password is required" }, 400);
+    }
+    if (pwd.length < 6) {
+      return jsonResponse({ success: false, error: "Password must be at least 6 characters" }, 400);
     }
 
-    if (!full_name) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Full name is required'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
-    }
-
-    // Obter perfil do solicitante para validar escopo e permissões
-    const { data: requesterProfile, error: requesterProfileError } = await supabaseClient
-      .from('user_profiles')
-      .select('id, role, company_id')
-      .eq('id', user.id)
-      .single()
+    const { data: requesterProfile, error: requesterProfileError } = await adminClient
+      .from("user_profiles")
+      .select("id, role, company_id")
+      .eq("id", authUserData.user.id)
+      .single();
 
     if (requesterProfileError || !requesterProfile) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Perfil do solicitante não encontrado'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      )
+      return jsonResponse({ success: false, error: "Perfil do solicitante não encontrado" }, 403);
     }
 
-    // Apenas gestor, admin ou super_admin podem criar usuários
-    if (!['gestor', 'admin', 'super_admin'].includes(requesterProfile.role)) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Sem permissão para criar usuários'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      )
+    if (!["gestor", "admin", "super_admin"].includes(requesterProfile.role)) {
+      return jsonResponse({ success: false, error: "Sem permissão para criar usuários" }, 403);
     }
 
-    // Regras de hierarquia
-    if (requesterProfile.role === 'gestor' && role !== 'corretor') {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Gestor pode criar apenas usuários com role corretor'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      )
+    if (requesterProfile.role === "gestor" && role !== "corretor") {
+      return jsonResponse(
+        { success: false, error: "Gestor pode criar apenas usuários com role corretor" },
+        403
+      );
     }
 
-    if (requesterProfile.role === 'admin' && role === 'super_admin') {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Admin não pode criar super_admin'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      )
+    if (requesterProfile.role === "admin" && role === "super_admin") {
+      return jsonResponse({ success: false, error: "Admin não pode criar super_admin" }, 403);
     }
 
     const targetCompanyId =
-      requesterProfile.role === 'super_admin'
+      requesterProfile.role === "super_admin"
         ? (company_id || requesterProfile.company_id || null)
         : requesterProfile.company_id;
 
     if (!targetCompanyId) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Company ID não definido para criação do usuário'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
+      return jsonResponse(
+        { success: false, error: "Company ID não definido para criação do usuário" },
+        400
+      );
     }
 
-    // Verificar se já existe um perfil com este email
-    console.log('🔍 Verificando se email já existe...');
-    const { data: existingProfile, error: existingProfileError } = await supabaseClient
-      .from('user_profiles')
-      .select('id, email, role')
-      .eq('email', email)
-      .single()
+    const emailNorm = email.trim().toLowerCase();
 
-    if (existingProfileError && existingProfileError.code !== 'PGRST116') {
-      console.error('❌ Erro ao verificar email existente:', existingProfileError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Erro ao verificar email: ${existingProfileError.message}`
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
-    }
+    const { data: existingProfile } = await adminClient
+      .from("user_profiles")
+      .select("id, email, role")
+      .eq("email", emailNorm)
+      .maybeSingle();
 
     if (existingProfile) {
-      console.log('⚠️ Email já existe, retornando erro');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Email já existe no sistema'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
+      return jsonResponse({ success: false, error: "Email já existe no sistema" }, 400);
     }
 
-    // Criar novo perfil
-    console.log('💾 Criando novo perfil...');
-    
-    // Gerar UUID para o novo perfil
-    const newProfileId = crypto.randomUUID();
-    
-    const { data: profileData, error: insertError } = await supabaseClient
-      .from('user_profiles')
+    const { data: authUser, error: createAuthError } = await adminClient.auth.admin.createUser({
+      email: emailNorm,
+      password: pwd,
+      email_confirm: true,
+      user_metadata: { full_name: full_name.trim() },
+    });
+
+    if (createAuthError || !authUser?.user?.id) {
+      const msg = createAuthError?.message || "Erro ao criar usuário de autenticação";
+      return jsonResponse({ success: false, error: msg }, 400);
+    }
+
+    const userId = authUser.user.id;
+
+    const { data: profileData, error: insertError } = await adminClient
+      .from("user_profiles")
       .insert({
-        id: newProfileId,
-        email: email,
-        full_name: full_name,
-        role: role,
+        id: userId,
+        email: emailNorm,
+        full_name: full_name.trim(),
+        role,
         company_id: targetCompanyId,
-        phone: phone || null,
-        department: department || null,
+        phone: phone ? String(phone).trim() || null : null,
+        department: department ? String(department).trim() || null : null,
         is_active: true,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .select()
-      .single()
+      .single();
 
     if (insertError) {
-      console.error('❌ Erro ao inserir perfil:', insertError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Failed to create user profile: ${insertError.message}`
-        }),
+      try {
+        await adminClient.auth.admin.deleteUser(userId);
+      } catch {
+        // best effort rollback
+      }
+      return jsonResponse(
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      )
+          success: false,
+          error: insertError.message || "Failed to create user profile",
+        },
+        400
+      );
     }
 
-    console.log('✅ Perfil criado com sucesso:', profileData);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'User profile created successfully',
-        data: profileData
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    )
-
+    return jsonResponse({
+      success: true,
+      message: "User created successfully",
+      data: profileData,
+    });
   } catch (error: any) {
-    console.error('❌ Edge Function Error:', error);
-    
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Internal server error'
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
-    )
+    console.error("admin-create-user:", error);
+    return jsonResponse(
+      { success: false, error: error?.message || "Internal server error" },
+      500
+    );
   }
-})
-
-
+});

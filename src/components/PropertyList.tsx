@@ -53,6 +53,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId } from "@/utils/imageUtils";
+import { FEATURE_OPTIONS } from "@/constants/imovelFeatures";
 import { toast as sonnerToast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 
@@ -400,6 +401,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editExistingImages, setEditExistingImages] = useState<string[]>([]);
   const [editGoogleDriveLink, setEditGoogleDriveLink] = useState('');
   const [isEditDownloadingFromDrive, setIsEditDownloadingFromDrive] = useState(false);
+  // Features (amenidades) selecionadas no modal de edição.
+  // Gravadas em INGLÊS para casar com a tool `buscar_por_features` do agente n8n.
+  const [editFeatures, setEditFeatures] = useState<string[]>([]);
+  const toggleEditFeature = (value: string) => {
+    setEditFeatures((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
   const MAX_IMAGES = 50; // Limite máximo de imagens por imóvel
 
   // Função para mapear JSON do VivaReal para schema do banco
@@ -558,6 +567,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       ...(i.modalidade ? { modalidade: i.modalidade } : {}),
       ...(i.tipo_imovel ? { tipo_imovel: i.tipo_imovel } : {}),
       ...(i.tipo_categoria ? { tipo_categoria: i.tipo_categoria } : {}),
+      // Propaga features do banco para o modal de edição (text[] → string[]).
+      ...(Array.isArray(i.features) ? { features: i.features } : {}),
     } as unknown as PropertyWithImages;
   });
 
@@ -630,7 +641,11 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setEditImages([]);
     setEditPreviews([]);
     setEditGoogleDriveLink('');
-    
+
+    // Features atuais do imóvel (vêm propagadas pelo adapter `propertiesFromImoveis`).
+    const currentFeatures = (property as any).features;
+    setEditFeatures(Array.isArray(currentFeatures) ? currentFeatures : []);
+
     setIsVivaRealEditOpen(true);
   };
 
@@ -815,6 +830,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         descricao: editDescricao,
         // SEMPRE atualizar imagens (pode ser array vazio se todas foram removidas)
         imagens: imageUrls,
+        // Features (amenidades) — null quando vazio para não inflar o registro com [].
+        features: editFeatures.length > 0 ? editFeatures : null,
       };
       
       console.log(`💾 Salvando imóvel com ${imageUrls.length} imagem(ns)`);
@@ -833,6 +850,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       setEditPreviews([]);
       setEditExistingImages([]);
       setEditGoogleDriveLink('');
+      setEditFeatures([]);
       refetchImoveisList();
     } catch (err) {
       toast({ title: 'Erro ao atualizar', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
@@ -2251,7 +2269,39 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <label className="text-sm text-gray-300">Descrição</label>
               <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md p-2 text-gray-200 min-h-[100px]"></textarea>
             </div>
-            
+
+            {/* Características / amenidades — gravadas em INGLÊS para casar com a tool
+                `buscar_por_features` do agente n8n (ver src/constants/imovelFeatures.ts). */}
+            <div>
+              <label className="text-sm text-gray-300 font-medium">Características</label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {FEATURE_OPTIONS.map((opt) => {
+                  const active = editFeatures.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleEditFeature(opt.value)}
+                      className={
+                        'px-3 py-1.5 rounded-full text-sm border transition-colors ' +
+                        (active
+                          ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
+                          : 'bg-gray-800 border-gray-700 text-gray-200 hover:bg-gray-700')
+                      }
+                      aria-pressed={active}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                {editFeatures.length === 0
+                  ? 'Nenhuma característica selecionada'
+                  : `${editFeatures.length} selecionada${editFeatures.length > 1 ? 's' : ''}`}
+              </p>
+            </div>
+
             {/* Seção de Imagens */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">

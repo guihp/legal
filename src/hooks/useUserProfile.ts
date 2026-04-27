@@ -440,6 +440,7 @@ export function useUserProfile() {
       const { data: fnData, error: fnError } = await invokeEdge<any, any>('admin-create-user', {
         body: {
           email: userData.email,
+          password: userData.password,
           full_name: userData.full_name,
           role: userData.role,
           phone: userData.phone || undefined,

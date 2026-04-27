@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { convertMultipleToJPEG, downloadGoogleDriveImage, extractGoogleDriveFileId } from '@/utils/imageUtils';
 import { X, ImagePlus, Link, Loader2 } from 'lucide-react';
+import { FEATURE_OPTIONS } from '@/constants/imovelFeatures';
 
 interface AddImovelModalProps {
   isOpen: boolean;
@@ -84,6 +85,15 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
   const [previews, setPreviews] = useState<string[]>([]);
   const [googleDriveLink, setGoogleDriveLink] = useState('');
   const [isDownloadingFromDrive, setIsDownloadingFromDrive] = useState(false);
+  // Features = amenidades selecionadas (gravadas em INGLÊS para casar com a tool
+  // `buscar_por_features` do agente n8n — ver src/constants/imovelFeatures.ts).
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+
+  const toggleFeature = (value: string) => {
+    setSelectedFeatures((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -386,7 +396,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
         ano_construcao: typeof form.ano_construcao === 'number' ? form.ano_construcao : null,
         suite: typeof form.suite === 'number' ? form.suite : null,
         garagem: typeof form.garagem === 'number' ? form.garagem : null,
-        features: null,
+        features: selectedFeatures.length > 0 ? selectedFeatures : null,
         andar: (form as any).andar ? Number((form as any).andar) : null,
         blocos: (form as any).blocos ? Number((form as any).blocos) : null,
         cidade: form.cidade || null,
@@ -429,7 +439,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
         toast.success('Imóvel criado com sucesso');
       }
       onClose();
-      setImages([]); setPreviews([]);
+      setImages([]); setPreviews([]); setSelectedFeatures([]);
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao criar imóvel');
     } finally {
@@ -600,12 +610,48 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
                     </div>
                     <div className="md:col-span-2">
                       <Label className="text-white mb-2 block">Descrição</Label>
-                      <Textarea 
-                        value={form.descricao ?? ''} 
-                        onChange={e => updateField('descricao', e.target.value)} 
+                      <Textarea
+                        value={form.descricao ?? ''}
+                        onChange={e => updateField('descricao', e.target.value)}
                         rows={3}
                         className="bg-gray-700/50 border-gray-600 text-white placeholder:text-gray-500 hover:bg-gray-700/70"
                       />
+                    </div>
+
+                    {/*
+                      Características / amenidades — selecionar as que se aplicam.
+                      Os valores são salvos em INGLÊS para alimentar a tool
+                      `buscar_por_features` do agente n8n (ver
+                      src/constants/imovelFeatures.ts).
+                    */}
+                    <div className="md:col-span-2">
+                      <Label className="text-white mb-2 block">Características</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {FEATURE_OPTIONS.map((opt) => {
+                          const active = selectedFeatures.includes(opt.value);
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => toggleFeature(opt.value)}
+                              className={
+                                'px-3 py-1.5 rounded-full text-sm border transition-colors ' +
+                                (active
+                                  ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
+                                  : 'bg-gray-700/40 border-gray-600 text-gray-200 hover:bg-gray-700/70')
+                              }
+                              aria-pressed={active}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {selectedFeatures.length === 0
+                          ? 'Nenhuma característica selecionada'
+                          : `${selectedFeatures.length} selecionada${selectedFeatures.length > 1 ? 's' : ''}`}
+                      </p>
                     </div>
                   </div>
 

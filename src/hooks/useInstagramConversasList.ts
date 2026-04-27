@@ -3,11 +3,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 
+function instagramListaFallbackLabel(sessionId: string): string {
+  const id = String(sessionId || '').trim();
+  if (id.length >= 8) return `Cliente · ${id.slice(0, 8)}…`;
+  return 'Cliente';
+}
+
 export interface InstagramConversa {
   sessionId: string;
   instancia: string;
   displayName: string;
-  /** @ do cliente em `leads.arroba_instagram_cliente` (quando session_id = lead.id). */
+  /** @ do cliente em `leads.arroba_instagram_cliente` (quando session_id = leads.id). */
   arrobaInstagramCliente?: string | null;
   profilePicUrlInstagram?: string | null;
   lastProfileSyncInstagram?: string | null;
@@ -75,7 +81,7 @@ export function useInstagramConversasList(
       if (fetchError) throw fetchError;
 
       const list: InstagramConversa[] = ((rows as any[]) || []).map((r: any) => {
-        const sid = String(r.session_id);
+        const sid = String(r.session_id ?? '').trim();
         const hasMedia = !!(r.media && String(r.media).trim() && String(r.media).toLowerCase() !== 'null');
         let parsedMessage: any = r.message;
         if (typeof parsedMessage === 'string') {
@@ -88,14 +94,21 @@ export function useInstagramConversasList(
         const lastContent = `${mediaPrefix}${cleanContent}`;
         const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
 
+        const rpcName = String((r as any).lead_display_name ?? '').trim();
+        const rpcPic = String((r as any).lead_profile_pic_url ?? '').trim();
+        const rpcSync =
+          (r as any).lead_last_profile_sync != null ? String((r as any).lead_last_profile_sync) : '';
+        const rpcArroba = String((r as any).lead_arroba_instagram ?? '').trim();
+        const rpcIgId = String((r as any).lead_instagram_id_cliente ?? '').trim();
+
         return {
           sessionId: sid,
           instancia: String(r.instancia || effectiveInstance || ''),
-          displayName: sid,
-          arrobaInstagramCliente: null as string | null,
-          profilePicUrlInstagram: null as string | null,
-          lastProfileSyncInstagram: null as string | null,
-          instagramIdCliente: null as string | null,
+          displayName: rpcName || instagramListaFallbackLabel(sid),
+          arrobaInstagramCliente: rpcArroba || null,
+          profilePicUrlInstagram: rpcPic || null,
+          lastProfileSyncInstagram: rpcSync || null,
+          instagramIdCliente: rpcIgId || null,
           leadPhone: null,
           leadStage: null,
           lastMessageDate: String(r.data),
@@ -105,18 +118,18 @@ export function useInstagramConversasList(
         };
       });
 
-      // Enriquecer com lead (nome + arroba Instagram quando session_id = leads.id)
+      // Complementar com leads visíveis ao usuário (RLS); RPC já traz nome/foto para corretor quando permitido
       if (list.length > 0) {
         const sids = list.map(l => l.sessionId);
         try {
           const { data: leadRows } = await supabase
             .from('leads')
             .select(
-              'id, name, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
+              'id, name, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
             )
             .in('id', sids as any);
 
-          const nameById = new Map<string, string>();
+          const displayNameById = new Map<string, string>();
           const arrobaById = new Map<string, string>();
           const picById = new Map<string, string>();
           const syncById = new Map<string, string>();
@@ -124,8 +137,12 @@ export function useInstagramConversasList(
           (leadRows || []).forEach((lr: any) => {
             if (!lr?.id) return;
             const id = String(lr.id);
-            if (lr.name) nameById.set(id, String(lr.name));
+            const nomeIg =
+              lr.nome_instagram_cliente != null ? String(lr.nome_instagram_cliente).trim() : '';
+            const nm = lr.name != null ? String(lr.name).trim() : '';
             const ab = lr.arroba_instagram_cliente != null ? String(lr.arroba_instagram_cliente).trim() : '';
+            const label = nomeIg || nm || (ab ? (ab.startsWith('@') ? ab : `@${ab}`) : '');
+            if (label) displayNameById.set(id, label);
             if (ab) arrobaById.set(id, ab);
             const pic = lr.profile_pic_url_instagram != null ? String(lr.profile_pic_url_instagram).trim() : '';
             if (pic) picById.set(id, pic);
@@ -137,22 +154,25 @@ export function useInstagramConversasList(
           });
 
           list.forEach(item => {
-            const nm = nameById.get(item.sessionId);
+            const resolved = displayNameById.get(item.sessionId);
+            if (resolved) item.displayName = resolved;
+            else if (!item.displayName?.trim()) item.displayName = instagramListaFallbackLabel(item.sessionId);
+
             const ab = arrobaById.get(item.sessionId);
-            if (nm) item.displayName = nm;
-            else item.displayName = `@${item.sessionId.substring(0, 24)}`;
-            item.arrobaInstagramCliente = ab || null;
-            item.profilePicUrlInstagram = picById.get(item.sessionId) || null;
-            item.lastProfileSyncInstagram = syncById.get(item.sessionId) || null;
-            item.instagramIdCliente = igIdById.get(item.sessionId) || null;
+            if (ab) item.arrobaInstagramCliente = ab;
+
+            const pic = picById.get(item.sessionId);
+            if (pic) item.profilePicUrlInstagram = pic;
+
+            const sync = syncById.get(item.sessionId);
+            if (sync) item.lastProfileSyncInstagram = sync;
+
+            const igc = igIdById.get(item.sessionId);
+            if (igc) item.instagramIdCliente = igc;
           });
         } catch {
           list.forEach(item => {
-            item.displayName = `@${item.sessionId.substring(0, 24)}`;
-            item.arrobaInstagramCliente = null;
-            item.profilePicUrlInstagram = null;
-            item.lastProfileSyncInstagram = null;
-            item.instagramIdCliente = null;
+            if (!item.displayName?.trim()) item.displayName = instagramListaFallbackLabel(item.sessionId);
           });
         }
       }

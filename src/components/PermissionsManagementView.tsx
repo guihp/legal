@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PermissionConfirmDialog } from '@/components/PermissionConfirmDialog';
-import { getManagedRoles } from '@/lib/permissions/rules';
+import { getManagedRoles, canAccessPermissionsModule } from '@/lib/permissions/rules';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Shield, CheckCircle, XCircle, Users, Settings, Key, Lock, Eye, RefreshCw, Crown, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { logAudit } from '@/lib/audit/logger';
+import { cn } from '@/lib/utils';
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -246,7 +247,9 @@ export function PermissionsManagementView() {
   // Obter roles que o usuário atual pode gerenciar
   const { profile } = useUserProfile();
   const managedRoles = profile ? getManagedRoles(profile.role) : [];
-  const roles = managedRoles.length > 0 ? managedRoles : ['corretor'] as const;
+  const roles = managedRoles.length > 0 ? managedRoles : ['corretor'];
+  const tabGridClass =
+    roles.length >= 3 ? 'grid-cols-3' : roles.length === 2 ? 'grid-cols-2' : 'grid-cols-1';
   
   console.log('🔐 DEBUG PERMISSIONS VIEW: Profile:', profile);
   console.log('🔐 DEBUG PERMISSIONS VIEW: Managed roles:', managedRoles);
@@ -287,6 +290,21 @@ export function PermissionsManagementView() {
               <p className="text-muted-foreground">Carregando sistema de permissões...</p>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (profile && !canAccessPermissionsModule(profile.role)) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
+          <Alert className="max-w-md border-border bg-card">
+            <Lock className="h-4 w-4" />
+            <AlertDescription className="text-muted-foreground">
+              Apenas administradores e gestores podem configurar permissões de outros perfis.
+            </AlertDescription>
+          </Alert>
         </div>
       </div>
     );
@@ -403,7 +421,13 @@ export function PermissionsManagementView() {
           transition={{ delay: 0.3 }}
         >
           <Tabs defaultValue="corretor" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 bg-muted/50 border border-border p-1">
+            <TabsList
+              className={cn(
+                'grid w-full gap-1 rounded-md bg-muted/50 border border-border p-1',
+                'h-auto min-h-10 items-stretch',
+                tabGridClass
+              )}
+            >
               {roles.map((role) => {
                 const roleData = getRoleData(role);
                 const rolePermissions = getPermissionsByRole(role);
@@ -413,7 +437,11 @@ export function PermissionsManagementView() {
                   <TabsTrigger 
                     key={role}
                     value={role} 
-                    className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm flex items-center gap-2 py-3"
+                    className={cn(
+                      'flex w-full min-w-0 min-h-9 items-center justify-center gap-1.5 sm:gap-2',
+                      'px-2 py-2 text-xs sm:text-sm font-medium whitespace-normal sm:whitespace-nowrap',
+                      'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm'
+                    )}
                   >
                     <roleData.icon className="h-4 w-4" />
                     <span className="hidden sm:inline">{roleData.label}</span>

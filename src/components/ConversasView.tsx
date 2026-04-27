@@ -517,10 +517,7 @@ export function ConversasView() {
                   <div>
                     {/* Título principal */}
                     <h3 className="text-base md:text-lg font-semibold text-white">
-                      {currentConversation.displayName === currentConversation.sessionId
-                        ? 'Aguardando nome do lead...'
-                        : currentConversation.displayName
-                      }
+                      {currentConversation.displayName}
                     </h3>
 
                     {/* Subtítulo com telefone e badge de estágio */}

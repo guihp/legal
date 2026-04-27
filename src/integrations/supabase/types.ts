@@ -1195,6 +1195,7 @@ export type Database = {
           interest: string | null
           message: string | null
           name: string | null
+          nome_instagram_cliente: string | null
           notes: string | null
           phone: string | null
           source: string | null
@@ -1220,6 +1221,7 @@ export type Database = {
           interest?: string | null
           message?: string | null
           name?: string | null
+          nome_instagram_cliente?: string | null
           notes?: string | null
           phone?: string | null
           source?: string | null
@@ -1245,6 +1247,7 @@ export type Database = {
           interest?: string | null
           message?: string | null
           name?: string | null
+          nome_instagram_cliente?: string | null
           notes?: string | null
           phone?: string | null
           source?: string | null

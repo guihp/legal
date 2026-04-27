@@ -378,7 +378,7 @@ export function UserManagementView() {
       toast.error('❌ Campos obrigatórios', {
         description: 'Email e nome são obrigatórios'
       });
-      setError('Email, senha e nome são obrigatórios');
+      setError('Email e nome são obrigatórios');
       return;
     }
 
