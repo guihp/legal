@@ -18,7 +18,9 @@ import {
   Trash2,
   AlertCircle,
   Zap,
-  Clock
+  Clock,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -390,7 +392,13 @@ function processTextWithBold(text: string): React.ReactNode {
 }
 
 // Renderer da mensagem (prioridade: URLs de imagem > base64 > texto)
-function MessageBubble({ row }: { row: any }) {
+function MessageBubble({
+  row,
+  onOpenMedia,
+}: {
+  row: any;
+  onOpenMedia?: (images: string[], startIndex: number) => void;
+}) {
   // Parse da mensagem para determinar tipo (AI/human)
   const raw = row?.message;
   const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
@@ -413,12 +421,12 @@ function MessageBubble({ row }: { row: any }) {
             'grid-cols-2'
           }`}>
             {mediaImages.slice(0, 4).map((imgUrl, imgIdx) => (
-              <div 
+              <div
                 key={imgIdx} 
                 className={`relative overflow-hidden rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${
                   mediaImages.length === 3 && imgIdx === 0 ? 'col-span-2' : ''
                 }`}
-                onClick={() => window.open(imgUrl, '_blank')}
+                onClick={() => onOpenMedia?.(mediaImages, imgIdx)}
               >
                 <img 
                   src={imgUrl} 
@@ -678,6 +686,11 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     type: "imagem" | "audio" | "arquivo";
     caption: string;
   } | null>(null);
+  const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
+    isOpen: false,
+    images: [],
+    index: 0,
+  });
 
   const maxAudioSec = 60;
 
@@ -1295,6 +1308,35 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     sendText();
   };
 
+  const openMediaViewer = useCallback((images: string[], startIndex: number) => {
+    if (!images?.length) return;
+    setMediaViewer({
+      isOpen: true,
+      images,
+      index: Math.max(0, Math.min(startIndex, images.length - 1)),
+    });
+  }, []);
+
+  const closeMediaViewer = useCallback(() => {
+    setMediaViewer({ isOpen: false, images: [], index: 0 });
+  }, []);
+
+  const goPrevMedia = useCallback(() => {
+    setMediaViewer((prev) => {
+      if (!prev.images.length) return prev;
+      const nextIndex = prev.index === 0 ? prev.images.length - 1 : prev.index - 1;
+      return { ...prev, index: nextIndex };
+    });
+  }, []);
+
+  const goNextMedia = useCallback(() => {
+    setMediaViewer((prev) => {
+      if (!prev.images.length) return prev;
+      const nextIndex = prev.index === prev.images.length - 1 ? 0 : prev.index + 1;
+      return { ...prev, index: nextIndex };
+    });
+  }, []);
+
   return (
     // Ajuste de altura para compensar o layout pai (sidebar/header) e padding (aprox 7rem / 112px)
     <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
@@ -1470,7 +1512,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                       animate="visible"
                       className={isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}
                     >
-                      <MessageBubble row={msg} />
+                      <MessageBubble row={msg} onOpenMedia={openMediaViewer} />
                     </motion.div>
                   );
                 })}
@@ -1495,7 +1537,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                       animate="visible"
                       className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
                     >
-                      <MessageBubble row={row} />
+                      <MessageBubble row={row} onOpenMedia={openMediaViewer} />
                     </motion.div>
                   );
                 })}
@@ -1590,6 +1632,64 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
       {/* MEDIA PREVIEW OVERLAY */}
       <AnimatePresence>
+        {mediaViewer.isOpen && mediaViewer.images.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            onClick={closeMediaViewer}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                closeMediaViewer();
+              }}
+              className="absolute top-4 left-4 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+              aria-label="Fechar visualizador"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+
+            {mediaViewer.images.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goPrevMedia();
+                }}
+                className="absolute left-4 md:left-8 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                aria-label="Imagem anterior"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            <img
+              src={mediaViewer.images[mediaViewer.index]}
+              alt={`Imagem ${mediaViewer.index + 1}`}
+              className="max-h-[86vh] max-w-[92vw] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {mediaViewer.images.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goNextMedia();
+                }}
+                className="absolute right-4 md:right-8 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+
+            <div className="absolute bottom-4 px-3 py-1.5 rounded-full bg-black/50 text-white text-xs">
+              {mediaViewer.index + 1} / {mediaViewer.images.length}
+            </div>
+          </motion.div>
+        )}
+
         {previewData && (
           <motion.div
             initial={{ opacity: 0 }}

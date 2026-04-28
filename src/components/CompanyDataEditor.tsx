@@ -10,7 +10,8 @@ import { useOwnCompany } from '@/hooks/useOwnCompany';
 export function CompanyDataEditor() {
   const { company, loading, updating, isManager, updateCompany, daysRemaining } = useOwnCompany();
   const [formData, setFormData] = useState({
-    name: '',
+    companyName: '',
+    contactName: '',
     email: '',
     cnpj: '',
     phone: '',
@@ -22,7 +23,8 @@ export function CompanyDataEditor() {
   useEffect(() => {
     if (company) {
       setFormData({
-        name: company.name || '',
+        companyName: company.name || '',
+        contactName: company.contact_name || '',
         email: company.email || '',
         cnpj: company.cnpj || '',
         phone: company.phone || '',
@@ -35,7 +37,8 @@ export function CompanyDataEditor() {
   useEffect(() => {
     if (!company) return;
     const changed = 
-      formData.name !== (company.name || '') ||
+      formData.companyName !== (company.name || '') ||
+      formData.contactName !== (company.contact_name || '') ||
       formData.email !== (company.email || '') ||
       formData.cnpj !== (company.cnpj || '') ||
       formData.phone !== (company.phone || '') ||
@@ -44,7 +47,14 @@ export function CompanyDataEditor() {
   }, [formData, company]);
 
   const handleSave = async () => {
-    const success = await updateCompany(formData);
+    const success = await updateCompany({
+      name: formData.companyName,
+      contact_name: formData.contactName,
+      email: formData.email,
+      cnpj: formData.cnpj,
+      phone: formData.phone,
+      address: formData.address,
+    });
     if (success) {
       setHasChanges(false);
     }
@@ -172,11 +182,21 @@ export function CompanyDataEditor() {
             <div className="space-y-2">
               <Label className="text-gray-300">Nome da Empresa</Label>
               <Input
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                value={formData.companyName}
+                onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                 disabled={!isManager}
                 className="bg-gray-900/50 border-gray-600 text-white"
                 placeholder="Nome da sua empresa"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-gray-300">Seu nome</Label>
+              <Input
+                value={formData.contactName}
+                onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
+                disabled={!isManager}
+                className="bg-gray-900/50 border-gray-600 text-white"
+                placeholder="Seu nome"
               />
             </div>
             <div className="space-y-2">

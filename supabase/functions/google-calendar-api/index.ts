@@ -93,6 +93,81 @@ async function resolveLeadInfo(
   return { displayName, handle, phone, email, raw: data };
 }
 
+type QueueBroker = {
+  broker_id: string;
+  broker_name: string;
+  calendar_id: string;
+};
+
+async function pickNextBrokerFromQueue(
+  service: ReturnType<typeof createClient>,
+  companyId: string,
+  fallbackCalendarId?: string,
+): Promise<QueueBroker | null> {
+  const { data: schedules, error: schedulesError } = await service
+    .from("oncall_schedules")
+    .select("assigned_user_id, calendar_id, assigned_user_profile:assigned_user_id(full_name, email, role, is_active)")
+    .eq("company_id", companyId)
+    .not("assigned_user_id", "is", null);
+
+  if (schedulesError) {
+    throw new Error(`Falha ao carregar fila de corretores: ${schedulesError.message}`);
+  }
+
+  const rows = Array.isArray(schedules) ? schedules : [];
+  const candidates = rows
+    .map((row: any) => {
+      const profile = row?.assigned_user_profile;
+      const role = String(profile?.role || "");
+      const isActive = profile?.is_active ?? true;
+      if (!row?.assigned_user_id || !row?.calendar_id) return null;
+      if (!isActive) return null;
+      if (!["corretor", "gestor"].includes(role)) return null;
+
+      return {
+        broker_id: String(row.assigned_user_id),
+        broker_name: String(profile?.full_name || profile?.email || row.assigned_user_id),
+        calendar_id: String(row.calendar_id),
+      } satisfies QueueBroker;
+    })
+    .filter(Boolean) as QueueBroker[];
+
+  if (!candidates.length) return null;
+
+  // Ordenação estável para round-robin previsível.
+  candidates.sort((a, b) => {
+    const byName = a.broker_name.localeCompare(b.broker_name, "pt-BR");
+    if (byName !== 0) return byName;
+    return a.broker_id.localeCompare(b.broker_id);
+  });
+
+  // Se calendar_id já veio no request e estiver vinculado, respeitamos e retornamos esse corretor.
+  if (fallbackCalendarId) {
+    const byCalendar = candidates.find((c) => c.calendar_id === fallbackCalendarId);
+    if (byCalendar) return byCalendar;
+  }
+
+  const { data: queueState } = await service
+    .from("broker_queue_state")
+    .select("last_index")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  const lastIndex = Number(queueState?.last_index ?? -1);
+  const nextIndex = (lastIndex + 1) % candidates.length;
+  const chosen = candidates[nextIndex];
+
+  await service
+    .from("broker_queue_state")
+    .upsert({
+      company_id: companyId,
+      last_index: nextIndex,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "company_id" });
+
+  return chosen;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -389,13 +464,7 @@ serve(async (req) => {
     }
 
     if (action === "create_event_from_n8n") {
-      const calendarId = String(body?.calendar_id || "");
-      if (!calendarId) {
-        return new Response(JSON.stringify({ success: false, error: "calendar_id é obrigatório" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      let calendarId = String(body?.calendar_id || "").trim();
 
       const startDateTime = String(body?.start || "").trim();
       const endDateTime = String(body?.end || "").trim();
@@ -403,6 +472,38 @@ serve(async (req) => {
       const descriptionRaw = String(body?.description || "").trim();
       const location = String(body?.location || "").trim();
       const useDefaultReminders = Boolean(body?.use_default_reminders ?? false);
+      let brokerId = String(
+        body?.broker_id ||
+        body?.corretor_id ||
+        body?.realtor_id ||
+        body?.agent_id ||
+        "",
+      ).trim();
+      let brokerName = String(
+        body?.broker_name ||
+        body?.corretor_nome ||
+        "",
+      ).trim();
+      const useBrokerQueue = Boolean(body?.use_broker_queue ?? !brokerId);
+
+      if (useBrokerQueue && (!brokerId || !calendarId)) {
+        const queuePick = await pickNextBrokerFromQueue(service, profile.company_id, calendarId || undefined);
+        if (queuePick) {
+          if (!brokerId) brokerId = queuePick.broker_id;
+          if (!brokerName) brokerName = queuePick.broker_name;
+          if (!calendarId) calendarId = queuePick.calendar_id;
+        }
+      }
+
+      if (!calendarId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "calendar_id é obrigatório (ou use_broker_queue=true com fila configurada)",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // attendees pode chegar como array ou string (n8n às vezes manda string)
       let attendeeEmails: string[] = [];
@@ -470,13 +571,15 @@ serve(async (req) => {
 
       // ⚡ Persiste metadados do lead em extendedProperties.private — fonte canônica
       // para quando o front quiser ler o lead vinculado sem depender do regex do description.
-      if (leadInfo.displayName || leadId) {
+      if (leadInfo.displayName || leadId || brokerId || brokerName) {
         const priv: Record<string, string> = {};
         if (leadId) priv.lead_id = leadId;
         if (leadInfo.displayName) priv.client_name = leadInfo.displayName;
         if (leadInfo.handle) priv.client_handle = leadInfo.handle;
         if (leadInfo.phone) priv.client_phone = leadInfo.phone;
         if (leadInfo.email) priv.client_email = leadInfo.email;
+        if (brokerId) priv.broker_id = brokerId;
+        if (brokerName) priv.broker_name = brokerName;
         eventBody.extendedProperties = { private: priv };
       }
 
@@ -513,12 +616,41 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         ...created,
         success: true,
+        broker_id: brokerId || null,
+        broker_name: brokerName || null,
         client_resolved: leadInfo.displayName ? {
           name: leadInfo.displayName,
           handle: leadInfo.handle || null,
           phone: leadInfo.phone || null,
           email: leadInfo.email || null,
         } : null,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "pick_broker_queue") {
+      const queuePick = await pickNextBrokerFromQueue(
+        service,
+        profile.company_id,
+        String(body?.calendar_id || "").trim() || undefined,
+      );
+
+      if (!queuePick) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Nenhum corretor elegível encontrado na fila (verifique oncall_schedules.assigned_user_id)",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        broker_id: queuePick.broker_id,
+        broker_name: queuePick.broker_name,
+        calendar_id: queuePick.calendar_id,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

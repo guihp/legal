@@ -105,6 +105,7 @@ export type Database = {
           blocked_at: string | null
           cnpj: string | null
           created_at: string | null
+          contact_name: string | null
           email: string | null
           grace_period_days: number | null
           id: string
@@ -133,6 +134,7 @@ export type Database = {
           blocked_at?: string | null
           cnpj?: string | null
           created_at?: string | null
+          contact_name?: string | null
           email?: string | null
           grace_period_days?: number | null
           id?: string
@@ -161,6 +163,7 @@ export type Database = {
           blocked_at?: string | null
           cnpj?: string | null
           created_at?: string | null
+          contact_name?: string | null
           email?: string | null
           grace_period_days?: number | null
           id?: string
@@ -1833,6 +1836,7 @@ export type Database = {
         Returns: {
           address: string
           cnpj: string
+          contact_name: string
           created_at: string
           email: string
           id: string
@@ -1979,6 +1983,7 @@ export type Database = {
         Args: {
           p_address?: string
           p_cnpj?: string
+          p_contact_name?: string
           p_email?: string
           p_name?: string
           p_phone?: string

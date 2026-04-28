@@ -476,7 +476,7 @@ const KanbanColumn = ({ stage, leads, leadCount, availableBrokers = [] }: Kanban
   return (
     <div 
       ref={setDropRef}
-      className="flex flex-col w-[280px] flex-shrink-0 kanban-column min-h-[360px] max-h-[min(72vh,760px)]"
+      className="flex flex-col w-[280px] flex-shrink-0 kanban-column h-full min-h-0"
       style={{ contain: 'layout style' }}
     >
       {/* Header da coluna */}
@@ -497,7 +497,7 @@ const KanbanColumn = ({ stage, leads, leadCount, availableBrokers = [] }: Kanban
       {/* Lista de leads — altura explícita (evita colapso quando ancestrais não têm height %) */}
       <div className={`flex-1 flex flex-col min-h-0 ${isOver ? 'bg-blue-500/5 rounded-lg' : ''}`}>
         <div 
-          className="min-h-[220px] flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-muted/40 scrollbar-thumb-muted-foreground/30 hover:scrollbar-thumb-muted-foreground/50 kanban-scroll rounded-md border border-border/40"
+          className="h-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-muted/40 scrollbar-thumb-muted-foreground/30 hover:scrollbar-thumb-muted-foreground/50 kanban-scroll rounded-md border border-border/40"
         >
           <SortableContext items={leads.map(lead => lead.id.toString())} strategy={verticalListSortingStrategy}>
             <div className="space-y-3 p-2">

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 export interface OwnCompanyData {
   id: string;
   name: string;
+  contact_name: string | null;
   email: string | null;
   cnpj: string | null;
   phone: string | null;
@@ -56,6 +57,7 @@ export function useOwnCompany() {
   // Atualizar dados da empresa
   const updateCompany = useCallback(async (data: {
     name?: string;
+    contact_name?: string;
     email?: string;
     cnpj?: string;
     phone?: string;
@@ -72,6 +74,7 @@ export function useOwnCompany() {
 
       const { error: rpcError } = await supabase.rpc('update_own_company', {
         p_name: data.name || null,
+        p_contact_name: data.contact_name || null,
         p_email: data.email || null,
         p_cnpj: data.cnpj || null,
         p_phone: data.phone || null,

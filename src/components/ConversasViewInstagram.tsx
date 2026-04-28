@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallba
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   MessageCircle, MessageSquare, Search, Send, Paperclip, ArrowLeft,
-  MoreVertical, Mic, Plus, AlertCircle, Instagram, Image as ImageIcon,
+  MoreVertical, Mic, Plus, AlertCircle, Instagram, Image as ImageIcon, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LeadInstagramAvatar } from '@/components/LeadInstagramAvatar';
@@ -102,12 +102,22 @@ const InstagramEmptyState: React.FC<{
 
 /* ---------- bolha de mensagem (simplificada) ---------- */
 
-function InstagramMessageBubble({ row, highlightQuery }: { row: any; highlightQuery?: string }) {
+function InstagramMessageBubble({
+  row,
+  highlightQuery,
+  onOpenMedia,
+}: {
+  row: any;
+  highlightQuery?: string;
+  onOpenMedia?: (images: string[], startIndex: number) => void;
+}) {
   const msgType = row.message?.type;
   const isAI = String(msgType || '').toLowerCase() === 'ai';
   const content = row.message?.content ?? '';
   const mediaImages: string[] = row?.mediaImages || [];
   const hq = highlightQuery?.trim();
+  const hasImages = mediaImages.length > 0;
+  const hasText = Boolean(content);
 
   const textBody =
     content && hq ? (
@@ -131,19 +141,47 @@ function InstagramMessageBubble({ row, highlightQuery }: { row: any; highlightQu
       <div
         className={
           isAI
-            ? 'max-w-[72ch] rounded-2xl px-3 py-2 shadow-sm rounded-tr-sm bg-gradient-to-br from-[#d62976]/20 to-[#962fbf]/20 text-[var(--cv-text)] border border-[#d62976]/20'
-            : 'max-w-[72ch] rounded-2xl px-3 py-2 shadow-sm rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'
+            ? `w-fit max-w-[min(82vw,34rem)] rounded-2xl shadow-sm rounded-tr-sm bg-gradient-to-br from-[#d62976]/20 to-[#962fbf]/20 text-[var(--cv-text)] border border-[#d62976]/20 ${
+                hasImages ? 'p-1.5' : 'px-3 py-2'
+              }`
+            : `w-fit max-w-[min(82vw,34rem)] rounded-2xl shadow-sm rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${
+                hasImages ? 'p-1.5' : 'px-3 py-2'
+              }`
         }
       >
-        {mediaImages && mediaImages.length > 0 && (
-          <div className={`grid gap-1 mb-2 ${mediaImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            {mediaImages.map((url, i) => (
-              <img key={i} src={url} alt="Mídia IG" className="rounded-lg max-h-64 object-cover w-full" />
+        {hasImages && (
+          <div
+            className={`grid gap-1 overflow-hidden rounded-xl ${!hasText ? '' : 'mb-2'} ${
+              mediaImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+            }`}
+          >
+            {mediaImages.slice(0, 4).map((url, i) => (
+              <div
+                key={i}
+                className={`relative bg-black/10 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity ${
+                  mediaImages.length === 3 && i === 0 ? 'col-span-2' : ''
+                } ${mediaImages.length === 1 ? 'max-h-[420px]' : 'aspect-square'}`}
+                onClick={() => onOpenMedia?.(mediaImages, i)}
+              >
+                <img
+                  src={url}
+                  alt="Mídia IG"
+                  loading="lazy"
+                  className={`w-full h-full ${mediaImages.length === 1 ? 'object-contain' : 'object-cover'}`}
+                />
+                {mediaImages.length > 4 && i === 3 && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                    <span className="text-white text-lg font-semibold">+{mediaImages.length - 4}</span>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
         {textBody}
-        <div className="text-[10px] opacity-60 mt-1 text-right">{formatHour(row.data)}</div>
+        <div className={`text-[10px] opacity-60 text-right ${hasText ? 'mt-1' : 'mt-1 pr-1 pb-0.5'}`}>
+          {formatHour(row.data)}
+        </div>
       </div>
     </div>
   );
@@ -168,6 +206,11 @@ export function ConversasViewInstagram() {
   } | null>(null);
   const [companyTokenInstagram, setCompanyTokenInstagram] = useState<string | null>(null);
   const [summaryModal, setSummaryModal] = useState<{ isOpen: boolean; data: any }>({ isOpen: false, data: null });
+  const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
+    isOpen: false,
+    images: [],
+    index: 0,
+  });
   const [inChatSearchQuery, setInChatSearchQuery] = useState('');
   const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
 
@@ -443,6 +486,35 @@ export function ConversasViewInstagram() {
     }
   };
 
+  const openMediaViewer = useCallback((images: string[], startIndex: number) => {
+    if (!images?.length) return;
+    setMediaViewer({
+      isOpen: true,
+      images,
+      index: Math.max(0, Math.min(startIndex, images.length - 1)),
+    });
+  }, []);
+
+  const closeMediaViewer = useCallback(() => {
+    setMediaViewer({ isOpen: false, images: [], index: 0 });
+  }, []);
+
+  const goPrevMedia = useCallback(() => {
+    setMediaViewer((prev) => {
+      if (!prev.images.length) return prev;
+      const nextIndex = prev.index === 0 ? prev.images.length - 1 : prev.index - 1;
+      return { ...prev, index: nextIndex };
+    });
+  }, []);
+
+  const goNextMedia = useCallback(() => {
+    setMediaViewer((prev) => {
+      if (!prev.images.length) return prev;
+      const nextIndex = prev.index === prev.images.length - 1 ? 0 : prev.index + 1;
+      return { ...prev, index: nextIndex };
+    });
+  }, []);
+
   return (
     <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR */}
@@ -697,7 +769,11 @@ export function ConversasViewInstagram() {
                         animate="visible"
                         className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
                       >
-                        <InstagramMessageBubble row={row} highlightQuery={inChatSearchQuery} />
+                        <InstagramMessageBubble
+                          row={row}
+                          highlightQuery={inChatSearchQuery}
+                          onOpenMedia={openMediaViewer}
+                        />
                       </motion.div>
                     );
                   })
@@ -754,6 +830,64 @@ export function ConversasViewInstagram() {
 
       {/* MEDIA PREVIEW */}
       <AnimatePresence>
+        {mediaViewer.isOpen && mediaViewer.images.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            onClick={closeMediaViewer}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                closeMediaViewer();
+              }}
+              className="absolute top-4 left-4 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+              aria-label="Fechar visualizador"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+
+            {mediaViewer.images.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goPrevMedia();
+                }}
+                className="absolute left-4 md:left-8 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                aria-label="Imagem anterior"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            <img
+              src={mediaViewer.images[mediaViewer.index]}
+              alt={`Imagem ${mediaViewer.index + 1}`}
+              className="max-h-[86vh] max-w-[92vw] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {mediaViewer.images.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goNextMedia();
+                }}
+                className="absolute right-4 md:right-8 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+
+            <div className="absolute bottom-4 px-3 py-1.5 rounded-full bg-black/50 text-white text-xs">
+              {mediaViewer.index + 1} / {mediaViewer.images.length}
+            </div>
+          </motion.div>
+        )}
+
         {previewData && (
           <motion.div
             initial={{ opacity: 0 }}
