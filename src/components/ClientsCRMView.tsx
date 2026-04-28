@@ -550,10 +550,26 @@ export function ClientsCRMView() {
                           <div className="flex-1">
                             {/* Header com Nome e Status */}
                             <div className="flex items-start gap-3 mb-4">
-                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                                <span className="text-foreground font-semibold text-sm">
-                                  {lead.nome.split(' ').map(n => n[0]).join('').substring(0, 2)}
-                                </span>
+                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                {lead.profile_pic_url_instagram ? (
+                                  <img
+                                    src={lead.profile_pic_url_instagram}
+                                    alt={lead.nome || 'Lead'}
+                                    className="h-full w-full object-cover"
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <span className="text-foreground font-semibold text-sm">
+                                    {(lead.nome || 'SN')
+                                      .split(' ')
+                                      .filter(Boolean)
+                                      .map(n => n[0])
+                                      .join('')
+                                      .substring(0, 2)
+                                      .toUpperCase()}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <h3 className="text-lg font-semibold text-foreground mb-2">{lead.nome}</h3>
@@ -564,6 +580,11 @@ export function ClientsCRMView() {
                                   <Badge variant="outline" className={getSourceColor(lead.origem)}>
                                     {lead.origem}
                                   </Badge>
+                                  {lead.arroba_instagram_cliente && (
+                                    <Badge variant="outline" className="bg-pink-100 text-pink-800 border-pink-300">
+                                      @{lead.arroba_instagram_cliente.replace(/^@+/, '')}
+                                    </Badge>
+                                  )}
                                   {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
                                   {(() => {
                                     const brokerFromList = lead.id_corretor_responsavel 
@@ -860,10 +881,26 @@ export function ClientsCRMView() {
         <DialogContent className="max-w-4xl bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-foreground flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                <span className="text-foreground font-semibold">
-                  {selectedLead?.nome?.split(' ').map(n => n[0]).join('').substring(0, 2)}
-                </span>
+              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center overflow-hidden">
+                {selectedLead?.profile_pic_url_instagram ? (
+                  <img
+                    src={selectedLead.profile_pic_url_instagram}
+                    alt={selectedLead?.nome || 'Lead'}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="text-foreground font-semibold">
+                    {(selectedLead?.nome || 'SN')
+                      .split(' ')
+                      .filter(Boolean)
+                      .map((n: string) => n[0])
+                      .join('')
+                      .substring(0, 2)
+                      .toUpperCase()}
+                  </span>
+                )}
               </div>
               {selectedLead?.nome}
             </DialogTitle>
@@ -879,6 +916,11 @@ export function ClientsCRMView() {
                 <Badge variant="outline" className={getSourceColor(selectedLead.origem)}>
                   {selectedLead.origem}
                 </Badge>
+                {selectedLead.arroba_instagram_cliente && (
+                  <Badge variant="outline" className="bg-pink-100 text-pink-800 border-pink-300">
+                    @{selectedLead.arroba_instagram_cliente.replace(/^@+/, '')}
+                  </Badge>
+                )}
                 {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
                 {(() => {
                   const brokerFromList = selectedLead.id_corretor_responsavel 

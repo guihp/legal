@@ -23,7 +23,7 @@ export type LeadStage =
 
 export interface DatabaseLead {
   id: string;
-  name: string;
+  name: string | null;
   email: string | null;
   phone: string | null;
   cpf: string | null;
@@ -41,6 +41,9 @@ export interface DatabaseLead {
   created_at: string | null;
   updated_at: string | null;
   message?: string | null; // Campo legado
+  nome_instagram_cliente?: string | null;
+  arroba_instagram_cliente?: string | null;
+  profile_pic_url_instagram?: string | null;
 }
 
 export interface KanbanLead {
@@ -69,6 +72,10 @@ export interface KanbanLead {
     nome: string;
     role: string;
   };
+  // Metadados Instagram do lead
+  nome_instagram_cliente?: string;
+  arroba_instagram_cliente?: string;
+  profile_pic_url_instagram?: string;
 }
 
 export interface KanbanStage {
@@ -90,9 +97,14 @@ export interface KanbanStats {
 
 // Função para converter DatabaseLead para KanbanLead
 export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
+  const name = String(dbLead?.name || '').trim();
+  const igName = String(dbLead?.nome_instagram_cliente || '').trim();
+  const igHandle = String(dbLead?.arroba_instagram_cliente || '').trim();
+  const displayName = name || igName || (igHandle ? (igHandle.startsWith('@') ? igHandle : `@${igHandle}`) : '');
+
   return {
     id: dbLead.id,
-    nome: dbLead.name || '',
+    nome: displayName || 'Sem nome',
     email: dbLead.email || '',
     telefone: dbLead.phone || '',
     cpf: dbLead.cpf || '',
@@ -109,6 +121,9 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     imovel_interesse: dbLead.imovel_interesse || undefined,
     message: dbLead.message || undefined,
     id_corretor_responsavel: dbLead.id_corretor_responsavel || dbLead.assigned_user_id || undefined,
+    nome_instagram_cliente: igName || undefined,
+    arroba_instagram_cliente: igHandle || undefined,
+    profile_pic_url_instagram: String(dbLead?.profile_pic_url_instagram || '').trim() || undefined,
     // Incluir informações do corretor se disponível
     corretor: dbLead.corretor ? {
       id: dbLead.corretor.id,
