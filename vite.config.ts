@@ -61,53 +61,9 @@ export default defineConfig(({ mode }) => ({
   esbuild: {
     drop: mode === 'production' ? ['console', 'debugger'] : [],
   },
-  build: {
-    rollupOptions: {
-      external: [],
-      output: {
-        manualChunks(id) {
-          // --- Vendors pesados ---
-          if (id.includes('jspdf') || id.includes('react-pdf') || id.includes('pdfjs-dist')) {
-            return 'vendor-pdf';
-          }
-          if (id.includes('html2canvas')) {
-            return 'vendor-canvas';
-          }
-          // Framer Motion (usado em quase tudo, mas pesado)
-          if (id.includes('framer-motion')) {
-            return 'vendor-motion';
-          }
-          // NÃO separar recharts/d3 em chunk próprio: @mui/x-charts também usa d3-*;
-          // chunk manual causa TDZ ("Cannot access before initialization") em produção.
-          // MUI (X-Charts, Material) — inclui d3 usado pelo x-charts no mesmo grafo
-          if (id.includes('@mui')) {
-            return 'vendor-mui';
-          }
-          // Supabase SDK
-          if (id.includes('@supabase')) {
-            return 'vendor-supabase';
-          }
-          // Radix UI primitives
-          if (id.includes('@radix-ui')) {
-            return 'vendor-radix';
-          }
-          // Date utilities
-          if (id.includes('date-fns')) {
-            return 'vendor-datefns';
-          }
-
-          // --- Domínios pesados do app (já existiam antes) ---
-          if (id.includes('/components/ContractsView') || id.includes('/utils/contractProcessor')) {
-            return 'domain-contracts';
-          }
-          if (id.includes('/components/AgendaView')) {
-            return 'domain-agenda';
-          }
-          return undefined;
-        },
-      },
-    },
-  },
+  // Sem manualChunks: splits manuais (recharts/d3, date-fns, radix, MUI…) geraram
+  // em produção TDZ e `undefined.createContext` por ordem de carregamento + modulepreload.
+  // O Rollup/Vite faz code-splitting seguro por rota/import dinâmico.
   define: {
     global: 'globalThis',
   },
