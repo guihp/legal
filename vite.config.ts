@@ -77,11 +77,9 @@ export default defineConfig(({ mode }) => ({
           if (id.includes('framer-motion')) {
             return 'vendor-motion';
           }
-          // Recharts (só usado em dashboard/relatórios)
-          if (id.includes('recharts') || id.includes('d3-')) {
-            return 'vendor-charts';
-          }
-          // MUI (X-Charts, Material)
+          // NÃO separar recharts/d3 em chunk próprio: @mui/x-charts também usa d3-*;
+          // chunk manual causa TDZ ("Cannot access before initialization") em produção.
+          // MUI (X-Charts, Material) — inclui d3 usado pelo x-charts no mesmo grafo
           if (id.includes('@mui')) {
             return 'vendor-mui';
           }
