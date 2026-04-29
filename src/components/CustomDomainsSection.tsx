@@ -230,16 +230,39 @@ export function CustomDomainsSection({ companyId }: { companyId: string | null }
     if (!confirm(`Remover o domínio ${domain.hostname}? O site deixará de responder por esse endereço.`)) {
       return;
     }
-    const { error } = await supabase
-      .from('company_custom_domains' as never)
-      .delete()
-      .eq('id', domain.id);
-    if (error) {
-      toast.error(error.message || 'Erro ao remover.');
-      return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const accessToken = session?.session?.access_token;
+      if (!accessToken) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        return;
+      }
+
+      const supaUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL || '';
+      const endpoint = `${String(supaUrl).replace(/\/$/, '')}/functions/v1/remove-custom-domain`;
+
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          apikey: (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '',
+        },
+        body: JSON.stringify({ domain_id: domain.id }),
+      });
+
+      const result = await r.json().catch(() => ({}));
+      if (r.ok && result?.ok) {
+        toast.success('Domínio removido com sucesso.');
+      } else {
+        toast.error(result?.error || 'Erro ao remover domínio.');
+        return;
+      }
+      await loadDomains();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao remover domínio.');
+      await loadDomains();
     }
-    toast.success('Domínio removido.');
-    await loadDomains();
   };
 
   return (

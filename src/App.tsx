@@ -25,6 +25,7 @@ import { useCustomDomain } from './hooks/useCustomDomain';
 const SiteVitrine = lazy(() => import("@/pages/public/SiteVitrine"));
 const PropertyLandingPage = lazy(() => import("@/pages/public/PropertyLandingPage"));
 const SignupPage = lazy(() => import("@/pages/public/SignupPage"));
+const LandingPage = lazy(() => import("@/pages/LandingPage"));
 
 function AppContent() {
   const { profile, loading: profileLoading, error: profileError } = useUserProfile();
@@ -314,7 +315,6 @@ function App() {
   if (!session) {
     const isPublicRoute = window.location.pathname.startsWith('/s/') || window.location.pathname.startsWith('/imovel/') || window.location.pathname.startsWith('/cadastro/');
     if (window.location.pathname === '/landing' || isPublicRoute) {
-      const LandingPage = lazy(() => import("@/pages/LandingPage"));
       return (
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-white">Carregando...</div></div>}>

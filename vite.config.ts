@@ -1,7 +1,30 @@
-import { defineConfig } from "vite";
+import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { writeFileSync } from "fs";
+import { createHash } from "crypto";
+
+/**
+ * Plugin Vite que gera um arquivo `build-meta.json` na pasta de saída
+ * a cada build. Contém um hash único que muda a cada deploy, permitindo
+ * que o front-end detecte novas versões automaticamente.
+ */
+function buildMetaPlugin(): Plugin {
+  return {
+    name: 'build-meta',
+    apply: 'build',
+    closeBundle() {
+      const buildHash = createHash('sha256')
+        .update(Date.now().toString() + Math.random().toString())
+        .digest('hex')
+        .slice(0, 16);
+      const meta = JSON.stringify({ buildHash, buildTime: new Date().toISOString() });
+      writeFileSync(path.resolve(__dirname, 'dist', 'build-meta.json'), meta);
+      console.log(`[build-meta] Generated build hash: ${buildHash}`);
+    },
+  };
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -25,6 +48,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     mode === 'development' &&
     componentTagger(),
+    buildMetaPlugin(),
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -42,22 +66,50 @@ export default defineConfig(({ mode }) => ({
       external: [],
       output: {
         manualChunks(id) {
-          // Vendors pesados
+          // --- Vendors pesados ---
           if (id.includes('jspdf') || id.includes('react-pdf') || id.includes('pdfjs-dist')) {
             return 'vendor-pdf';
           }
           if (id.includes('html2canvas')) {
             return 'vendor-canvas';
           }
-          // Domínios pesados
-          if (id.includes('/components/ContractsView')) {
-            return 'domain-contracts';
+          // Framer Motion (usado em quase tudo, mas pesado)
+          if (id.includes('framer-motion')) {
+            return 'vendor-motion';
           }
-          if (id.includes('/utils/contractProcessor')) {
+          // Recharts (só usado em dashboard/relatórios)
+          if (id.includes('recharts') || id.includes('d3-')) {
+            return 'vendor-charts';
+          }
+          // MUI (X-Charts, Material)
+          if (id.includes('@mui')) {
+            return 'vendor-mui';
+          }
+          // Supabase SDK
+          if (id.includes('@supabase')) {
+            return 'vendor-supabase';
+          }
+          // Radix UI primitives
+          if (id.includes('@radix-ui')) {
+            return 'vendor-radix';
+          }
+          // Date utilities
+          if (id.includes('date-fns')) {
+            return 'vendor-datefns';
+          }
+
+          // --- Domínios pesados do app ---
+          if (id.includes('/components/ContractsView') || id.includes('/utils/contractProcessor')) {
             return 'domain-contracts';
           }
           if (id.includes('/components/AgendaView')) {
             return 'domain-agenda';
+          }
+          if (id.includes('/components/ConversasView') || id.includes('/components/ConversasPage')) {
+            return 'domain-conversas';
+          }
+          if (id.includes('/components/PropertyList')) {
+            return 'domain-properties';
           }
           return undefined;
         },

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Megaphone, Globe, Layers, Save, ExternalLink, Upload, Image as ImageIcon, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { slugifyForUrl } from '@/lib/slugify';
 import { MarketingTrafficSection } from '@/components/MarketingTrafficSection';
-import { CustomDomainsSection } from '@/components/CustomDomainsSection';
+// import { CustomDomainsSection } from '@/components/CustomDomainsSection'; // Desabilitado temporariamente — domínio próprio será reativado com Caddy on-demand TLS
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -816,8 +816,8 @@ export function MarketingView({ section = 'overview' }: { section?: MarketingSec
                 </div>
               </div>
 
-              {/* DOMÍNIO PRÓPRIO (white-label) */}
-              <CustomDomainsSection companyId={profile?.company_id ?? null} />
+              {/* DOMÍNIO PRÓPRIO (white-label) — desabilitado temporariamente */}
+              {/* <CustomDomainsSection companyId={profile?.company_id ?? null} /> */}
 
               {dirty && (
                 <div className="flex items-start gap-3 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-amber-200">

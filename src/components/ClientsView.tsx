@@ -53,6 +53,7 @@ import {
   Handshake,
   FileText,
   TrendingUp,
+  XCircle,
   GripVertical,
   Loader2
 } from "lucide-react";
@@ -271,6 +272,14 @@ const kanbanStages = [
     bgColor: "bg-purple-500/10",
     icon: Calendar
   },
+  {
+    id: "visita-cancelada",
+    title: "Visita Cancelada",
+    iconColor: "text-rose-400",
+    borderColor: "border-rose-500/30",
+    bgColor: "bg-rose-500/10",
+    icon: XCircle,
+  },
   { 
     id: "em-negociacao", 
     title: "Em Negociação", 
@@ -400,11 +409,11 @@ const LeadCard = ({ lead, isDragging = false, availableBrokers = [] }: LeadCardP
           <div className="space-y-3">
             {/* Header apenas com nome */}
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 hover:bg-gray-700/50 rounded">
                   <GripVertical className="h-3 w-3 text-gray-400" />
                 </div>
-                <h4 className="font-semibold text-white text-sm truncate">{lead.nome}</h4>
+                <h4 className="font-semibold text-foreground text-sm truncate max-w-full">{lead.nome}</h4>
               </div>
             </div>
             

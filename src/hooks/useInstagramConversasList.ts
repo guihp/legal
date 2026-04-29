@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 import { mediaPreviewPrefix } from '@/lib/conversaMedia';
+import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
 
 function instagramListaFallbackLabel(sessionId: string): string {
   const id = String(sessionId || '').trim();
@@ -20,7 +21,9 @@ export interface InstagramConversa {
   lastProfileSyncInstagram?: string | null;
   instagramIdCliente?: string | null;
   leadPhone?: string | null;   // reservado (IG não usa telefone)
-  leadStage?: string | null;
+  leadStage?: string | null; // etiqueta do contato (Humano | Humano solicitado | AI ATIVA)
+  crmStage?: string | null;
+  hasCrmLead?: boolean;
   lastMessageDate: string;
   messageCount: number;
   lastMessageContent: string;
@@ -111,6 +114,8 @@ export function useInstagramConversasList(
           instagramIdCliente: rpcIgId || null,
           leadPhone: null,
           leadStage: null,
+          crmStage: null,
+          hasCrmLead: false,
           lastMessageDate: String(r.data),
           messageCount: 1,
           lastMessageContent: lastContent,
@@ -125,7 +130,7 @@ export function useInstagramConversasList(
           const { data: leadRows } = await supabase
             .from('leads')
             .select(
-              'id, name, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
+              'id, name, stage, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
             )
             .in('id', sids as any);
 
@@ -134,9 +139,11 @@ export function useInstagramConversasList(
           const picById = new Map<string, string>();
           const syncById = new Map<string, string>();
           const igIdById = new Map<string, string>();
+          const crmStageById = new Map<string, string | null>();
           (leadRows || []).forEach((lr: any) => {
             if (!lr?.id) return;
             const id = String(lr.id);
+            crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
             const nomeIg =
               lr.nome_instagram_cliente != null ? String(lr.nome_instagram_cliente).trim() : '';
             const nm = lr.name != null ? String(lr.name).trim() : '';
@@ -169,12 +176,43 @@ export function useInstagramConversasList(
 
             const igc = igIdById.get(item.sessionId);
             if (igc) item.instagramIdCliente = igc;
+
+            if (crmStageById.has(item.sessionId)) {
+              item.hasCrmLead = true;
+              item.crmStage = crmStageById.get(item.sessionId) ?? null;
+            }
           });
         } catch {
           list.forEach(item => {
             if (!item.displayName?.trim()) item.displayName = instagramListaFallbackLabel(item.sessionId);
           });
         }
+      }
+
+      if (list.length > 0 && profile?.company_id) {
+        try {
+          const { data: labels } = await supabase
+            .from('conversation_contact_labels')
+            .select('session_id, status')
+            .eq('company_id', profile.company_id)
+            .eq('channel', 'instagram')
+            .in('session_id', list.map((l) => l.sessionId) as any);
+
+          const statusBySession = new Map<string, string>();
+          (labels || []).forEach((row: any) => {
+            if (!row?.session_id) return;
+            statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
+          });
+
+          list.forEach((item) => {
+            const st = statusBySession.get(item.sessionId) || 'ai_ativa';
+            item.leadStage = conversationLabelStatusToDisplay(st);
+          });
+        } catch {
+          list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        }
+      } else {
+        list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
       }
 
       list.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());

@@ -825,11 +825,11 @@ export function AppointmentCalendar({
                       
                       {/* Tipo do evento */}
                       <div className={`px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide ${
-                        appointment.type === 'Visita' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-                        appointment.type === 'Avaliação' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
-                        appointment.type === 'Apresentação' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
-                        appointment.type === 'Vistoria' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
-                        'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                        appointment.type === 'Visita' ? 'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30' :
+                        appointment.type === 'Avaliação' ? 'bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30' :
+                        appointment.type === 'Apresentação' ? 'bg-orange-100 text-orange-700 border border-orange-300 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30' :
+                        appointment.type === 'Vistoria' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300 dark:bg-yellow-500/20 dark:text-yellow-300 dark:border-yellow-500/30' :
+                        'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30'
                       }`}>
                         {appointment.type}
                       </div>
@@ -838,9 +838,9 @@ export function AppointmentCalendar({
                     {/* Corretor - sempre no canto direito quando "Todos" estiver selecionado */}
                     {selectedAgenda === "Todos" && appointment.corretor && (
                       <div className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 ${
-                        appointment.corretor === 'Isis' ? 'bg-pink-500/25 text-pink-200 border border-pink-400/50 hover:bg-pink-500/35' :
-                        appointment.corretor === 'Arthur' ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/50 hover:bg-indigo-500/35' :
-                        'bg-gray-500/25 text-gray-200 border border-gray-400/50 hover:bg-gray-500/35'
+                        appointment.corretor === 'Isis' ? 'bg-pink-100 text-pink-700 border border-pink-300 hover:bg-pink-200 dark:bg-pink-500/25 dark:text-pink-200 dark:border-pink-400/50 dark:hover:bg-pink-500/35' :
+                        appointment.corretor === 'Arthur' ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200 dark:bg-indigo-500/25 dark:text-indigo-200 dark:border-indigo-400/50 dark:hover:bg-indigo-500/35' :
+                        'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 dark:bg-gray-500/25 dark:text-gray-200 dark:border-gray-400/50 dark:hover:bg-gray-500/35'
                       }`}>
                         <span className="text-lg animate-pulse">
                           {appointment.corretor === 'Isis' ? '👩‍💼' : 
@@ -888,7 +888,7 @@ export function AppointmentCalendar({
                           e.stopPropagation();
                           handleChangeStatus(appointment);
                         }}
-                        className="bg-background border-border text-foreground hover:bg-green-600 hover:text-white hover:border-green-500 transition-all duration-200 flex items-center gap-2"
+                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-green-600 hover:text-white hover:border-green-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-green-600 dark:hover:text-white dark:hover:border-green-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <CheckCircle className="h-3 w-3" />
                         Status
@@ -903,7 +903,7 @@ export function AppointmentCalendar({
                           setSelectedAppointmentToEdit(appointment);
                           setShowEditModal(true);
                         }}
-                        className="bg-background border-border text-foreground hover:bg-orange-600 hover:text-white hover:border-orange-500 transition-all duration-200 flex items-center gap-2"
+                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-orange-600 hover:text-white hover:border-orange-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-orange-600 dark:hover:text-white dark:hover:border-orange-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <Edit className="h-3 w-3" />
                         Editar
@@ -917,7 +917,7 @@ export function AppointmentCalendar({
                           e.stopPropagation();
                           handleDeleteEvent(appointment);
                         }}
-                        className="bg-background border-border text-foreground hover:bg-red-600 hover:text-white hover:border-red-500 transition-all duration-200 flex items-center gap-2"
+                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-red-600 dark:hover:text-white dark:hover:border-red-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <Trash2 className="h-3 w-3" />
                         Deletar

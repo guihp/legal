@@ -16,6 +16,7 @@ export type LeadStage =
   | 'Novo Lead'
   | 'Qualificado'
   | 'Visita Agendada'
+  | 'Visita Cancelada'
   | 'Em Negociação'
   | 'Documentação'
   | 'Contrato'

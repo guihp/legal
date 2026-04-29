@@ -1,16 +1,12 @@
 // deno-lint-ignore-file no-explicit-any
-// Edge function: verify-custom-domain
+// Edge function: remove-custom-domain
 //
-// Recebe { domain_id } e verifica via DNS-over-HTTPS (Cloudflare 1.1.1.1):
-//   1. Se existe um TXT em _iafe-verify.{hostname} contendo o verification_token
-//   2. Se existe um CNAME ou A apontando pro target_cname configurado
+// Remove um domínio customizado:
+// 1. Remove o domínio do Coolify (via API)
+// 2. Deleta o registro de company_custom_domains
+// 3. Restart do app pra o proxy parar de servir aquele hostname
 //
-// Se ambos OK → marca status='verified' via RPC mark_custom_domain_verified
-// e automaticamente adiciona o domínio no Coolify via API + restart.
-//
-// NOTA sobre SSL: a emissão de certificado é responsabilidade do proxy
-// (Coolify/Traefik ou Caddy). Essa função adiciona o domínio ao Coolify
-// que cuida automaticamente do SSL via Let's Encrypt.
+// Exige autenticação — só usuários da mesma empresa ou super_admin.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -20,18 +16,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-// DNS-over-HTTPS (Cloudflare). Retorna o JSON padrão RFC 8427.
-async function dnsQuery(name: string, type: "TXT" | "CNAME" | "A"): Promise<string[]> {
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
-  const res = await fetch(url, { headers: { Accept: "application/dns-json" } });
-  if (!res.ok) throw new Error(`DNS lookup ${type} ${name} retornou ${res.status}`);
-  const json = await res.json();
-  const answers: any[] = Array.isArray(json?.Answer) ? json.Answer : [];
-  return answers
-    .filter((a) => a && typeof a.data === "string")
-    .map((a) => String(a.data).trim().replace(/^"(.*)"$/, "$1")); // remove aspas do TXT
-}
 
 // =======================================================================
 // Coolify API helpers
@@ -92,32 +76,38 @@ async function coolifyRestart(): Promise<void> {
 }
 
 /**
- * Adiciona um hostname ao campo domains do app no Coolify.
- * Formato: "https://domain1.com,https://domain2.com"
- * Faz restart após atualizar pra o proxy aplicar as labels.
+ * Remove um hostname do campo domains do app no Coolify.
  */
-async function coolifyAddDomain(hostname: string): Promise<{ ok: boolean; error?: string }> {
+async function coolifyRemoveDomain(hostname: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const currentDomains = await coolifyGetDomains();
 
-    const newDomain = `https://${hostname}`;
+    const targetDomain = `https://${hostname}`.toLowerCase();
 
-    // Parse dos domínios atuais (separados por vírgula)
+    // Parse dos domínios atuais
     const domainList = currentDomains
       .split(",")
       .map((d: string) => d.trim())
       .filter(Boolean);
 
-    // Se já existe, não precisa fazer nada
-    if (domainList.some((d: string) => d.toLowerCase() === newDomain.toLowerCase())) {
-      console.log(`Domínio ${hostname} já existe no Coolify, pulando.`);
+    // Filtra removendo o domínio
+    const updatedList = domainList.filter(
+      (d: string) => d.toLowerCase() !== targetDomain,
+    );
+
+    // Se não mudou nada, já foi removido antes
+    if (updatedList.length === domainList.length) {
+      console.log(`Domínio ${hostname} não estava no Coolify, pulando.`);
       return { ok: true };
     }
 
-    // Adiciona o novo domínio
-    domainList.push(newDomain);
-    const updatedDomains = domainList.join(",");
+    // Garante que pelo menos o domínio principal permanece
+    if (updatedList.length === 0) {
+      console.warn("Não é possível remover todos os domínios do Coolify.");
+      return { ok: false, error: "Não é possível remover o último domínio do Coolify." };
+    }
 
+    const updatedDomains = updatedList.join(",");
     console.log(`Atualizando Coolify domains: ${updatedDomains}`);
     await coolifySetDomains(updatedDomains);
 
@@ -126,7 +116,7 @@ async function coolifyAddDomain(hostname: string): Promise<{ ok: boolean; error?
 
     return { ok: true };
   } catch (e: any) {
-    console.error("Erro ao adicionar domínio no Coolify:", e.message);
+    console.error("Erro ao remover domínio no Coolify:", e.message);
     return { ok: false, error: e.message };
   }
 }
@@ -144,7 +134,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
 
-    // Auth: exige bearer token do usuário pra garantir que é um autenticado da mesma empresa
+    // Auth
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
     if (!token) {
@@ -177,10 +167,10 @@ serve(async (req) => {
       );
     }
 
-    // Busca domain com service role (confere depois se o user é da mesma company)
+    // Busca domain com service role
     const { data: domain, error: qErr } = await supabaseAdmin
       .from("company_custom_domains")
-      .select("id, company_id, hostname, verification_token, target_cname, status")
+      .select("id, company_id, hostname, status")
       .eq("id", domainId)
       .maybeSingle();
 
@@ -191,7 +181,7 @@ serve(async (req) => {
       );
     }
 
-    // Confere se o user pertence à mesma company (ou é super_admin)
+    // Confere permissão
     const { data: profile } = await supabaseAdmin
       .from("user_profiles")
       .select("company_id, role")
@@ -206,99 +196,43 @@ serve(async (req) => {
     }
 
     const hostname = String(domain.hostname).toLowerCase().trim();
-    const expectedToken = String(domain.verification_token);
-    const expectedTarget = String(domain.target_cname || "").toLowerCase().trim();
 
-    const errors: string[] = [];
-
-    // 1. Verifica TXT de posse
-    let txtOk = false;
-    try {
-      const txts = await dnsQuery(`_iafe-verify.${hostname}`, "TXT");
-      txtOk = txts.some((t) => t.includes(expectedToken));
-      if (!txtOk) {
-        errors.push(
-          `TXT record _iafe-verify.${hostname} não encontrado ou não contém o token de verificação.`,
-        );
-      }
-    } catch (e) {
-      errors.push(`Falha ao consultar TXT _iafe-verify.${hostname}: ${(e as Error).message}`);
+    // Remove do Coolify (se estava verificado/ativo)
+    let coolifyResult = { ok: true, error: undefined as string | undefined };
+    if (
+      hasCoolifyConfig() &&
+      (domain.status === "verified" || domain.status === "active")
+    ) {
+      coolifyResult = await coolifyRemoveDomain(hostname);
     }
 
-    // 2. Verifica CNAME ou A apontando pro target
-    let pointOk = false;
-    if (expectedTarget) {
-      try {
-        const cnames = await dnsQuery(hostname, "CNAME");
-        // DoH retorna CNAME com ponto final: "sites.iafeoficial.com."
-        pointOk = cnames.some((c) => {
-          const normalized = c.replace(/\.$/, "").toLowerCase();
-          return normalized === expectedTarget || normalized.endsWith("." + expectedTarget);
-        });
+    // Deleta do banco (mesmo se Coolify falhou — o admin pode limpar depois)
+    const { error: deleteError } = await supabaseAdmin
+      .from("company_custom_domains")
+      .delete()
+      .eq("id", domainId);
 
-        if (!pointOk) {
-          // Tenta A record (caso apex com CNAME flattening ou A record manual)
-          const targetIps = await dnsQuery(expectedTarget, "A");
-          if (targetIps.length > 0) {
-            const hostIps = await dnsQuery(hostname, "A");
-            pointOk = hostIps.some((ip) => targetIps.includes(ip));
-          }
-        }
-
-        if (!pointOk) {
-          errors.push(
-            `Não encontramos CNAME de ${hostname} apontando pra ${expectedTarget} nem A record compatível.`,
-          );
-        }
-      } catch (e) {
-        errors.push(`Falha ao consultar DNS de ${hostname}: ${(e as Error).message}`);
-      }
+    if (deleteError) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: `Erro ao deletar registro: ${deleteError.message}`,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+      );
     }
-
-    const dnsOk = txtOk && pointOk;
-
-    // ===================================================================
-    // Se DNS OK → adiciona domínio no Coolify automaticamente
-    // ===================================================================
-    let coolifyOk = false;
-    let coolifyError = "";
-    if (dnsOk && hasCoolifyConfig()) {
-      const result = await coolifyAddDomain(hostname);
-      coolifyOk = result.ok;
-      coolifyError = result.error || "";
-      if (!coolifyOk) {
-        console.warn(`DNS verificado, mas Coolify falhou: ${coolifyError}`);
-      }
-    } else if (dnsOk) {
-      console.warn("DNS verificado, mas Coolify não está configurado (secrets ausentes).");
-    }
-
-    const allOk = dnsOk; // Marca como verificado mesmo se Coolify falhar (pode ser re-tentado)
-
-    // Marca resultado no banco via RPC (service role)
-    await supabaseAdmin.rpc("mark_custom_domain_verified", {
-      p_domain_id: domainId,
-      p_success: allOk,
-      p_error: allOk
-        ? (coolifyOk ? null : `DNS OK, mas proxy não atualizado: ${coolifyError}`)
-        : errors.join(" | "),
-    });
 
     return new Response(
       JSON.stringify({
-        ok: allOk,
+        ok: true,
         hostname,
-        checks: {
-          txt: txtOk,
-          dns_target: pointOk,
-          coolify_configured: coolifyOk,
-        },
-        errors: dnsOk ? (coolifyOk ? [] : [`Proxy: ${coolifyError}`]) : errors,
+        coolify_removed: coolifyResult.ok,
+        coolify_error: coolifyResult.error || null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );
   } catch (err: any) {
-    console.error("verify-custom-domain erro:", err);
+    console.error("remove-custom-domain erro:", err);
     return new Response(
       JSON.stringify({ ok: false, error: err?.message || "internal_error" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },

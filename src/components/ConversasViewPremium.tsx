@@ -31,8 +31,20 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from '@/components/ui/context-menu';
 import { useChatInstancesFromMessages } from '@/hooks/useChatInstancesFromMessages';
-import { mediaPreviewLabel, inferMediaKind } from '@/lib/conversaMedia';
+import { mediaPreviewLabel, inferMediaKind, extractMediaAudio } from '@/lib/conversaMedia';
+import { CRM_KANBAN_STAGE_TITLES, crmStageBadgeClasses } from '@/lib/crmKanbanStages';
+import { conversationLabelListBadgeClasses } from '@/lib/conversationContactLabels';
+import type { LeadStage } from '@/types/kanban';
 import { useConversasList } from '@/hooks/useConversasList';
 import { useConversaMessages } from '@/hooks/useConversaMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
@@ -147,29 +159,6 @@ const formatDateTimeBR = (dateString: string) => {
   });
 };
 
-// Utils de conversão para mídia
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onerror = reject;
-    fr.onload = () => {
-      const out = String(fr.result || "");
-      // remove "data:<mime>;base64,"
-      const payload = out.includes(",") ? out.split(",")[1] : out;
-      resolve(payload || "");
-    };
-    fr.readAsDataURL(file);
-  });
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
 // Helper para formatar data/hora no fuso de São Paulo
 function formatNowSP(): string {
   const now = new Date();
@@ -191,7 +180,12 @@ async function sendPayload(
   tipo: "texto" | "imagem" | "audio" | "arquivo",
   mensagem: string,
   mimeType?: string,
-  caption?: string
+  caption?: string,
+  companyId?: string,
+  mediaUrl?: string,
+  mutiplos?: boolean,
+  mediaUrls?: string[],
+  midias?: Array<{ url: string; tipo: string; mime_type?: string; nome?: string; caption?: string }>
 ) {
   // Normalizar instância
   const normalizedInstancia = instancia.trim().toLowerCase();
@@ -204,6 +198,8 @@ async function sendPayload(
   const body: any = {
     session_id: sessionId,
     instancia: normalizedInstancia,
+    channel: "whatsapp",
+    company_id: companyId || null,
     tipo,
     mensagem,
     data: formatNowSP()
@@ -218,6 +214,23 @@ async function sendPayload(
   if (caption) {
     body.caption = caption;
   }
+  if (mediaUrl) {
+    body.media_url = mediaUrl;
+    if (tipo === "imagem") body.image_url = mediaUrl;
+    if (tipo === "arquivo") body.file_url = mediaUrl;
+    if (tipo === "audio") body.audio_url = mediaUrl;
+  }
+  if (mutiplos === true) {
+    body.mutiplos = true;
+  }
+  if (Array.isArray(mediaUrls) && mediaUrls.length > 0) {
+    body.media_urls = mediaUrls;
+    body.mutiplos = mediaUrls.length > 1 || body.mutiplos === true;
+  }
+  if (Array.isArray(midias) && midias.length > 0) {
+    body.midias = midias;
+    body.mutiplos = midias.length > 1 || body.mutiplos === true;
+  }
 
   const r = await fetch("https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/enviar_mensagem", {
     method: "POST",
@@ -227,6 +240,113 @@ async function sendPayload(
 
   if (!r.ok) throw new Error(`Falha ao enviar (${r.status})`);
   try { return await r.json(); } catch { return {}; }
+}
+
+async function uploadMediaAndGetPublicUrl(
+  file: File,
+  channel: "whatsapp" | "instagram",
+  companyId?: string | null
+): Promise<string> {
+  const bucket = (import.meta as any).env?.VITE_CHAT_MEDIA_BUCKET || "company-assets";
+  const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+  const safeCompany = (companyId || "sem_empresa").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!companyId) throw new Error("company_id ausente para upload da mídia");
+  const path = `${safeCompany}/chat-media/${channel}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+  if (error) throw new Error(`Falha ao subir mídia: ${error.message}`);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  const url = String(data?.publicUrl || "").trim();
+  if (!url) throw new Error("URL pública da mídia não foi gerada");
+  return url;
+}
+
+// Insercao otimista direta na tabela imobipro_messages_{phoneSanitizado}.
+// Usado pelo envio de audio para que a bolha apareca imediatamente sem
+// depender da gravacao via webhook/n8n. Em caso de falha (RLS, tabela
+// inexistente, etc.) retornamos null e o caller continua confiando no
+// webhook como fonte de verdade.
+async function insertWhatsappMessageRow(params: {
+  companyId: string;
+  sessionId: string;
+  instancia: string;
+  audioUrl: string;
+  content?: string;
+}): Promise<{ tableName: string; id: any } | null> {
+  try {
+    const { data: companyRow, error: companyErr } = await supabase
+      .from("companies")
+      .select("phone")
+      .eq("id", params.companyId)
+      .single();
+    if (companyErr) {
+      console.warn("[insertWhatsappMessageRow] erro ao ler companies.phone:", companyErr);
+      return null;
+    }
+    const phoneSanitizado = String(companyRow?.phone || "").replace(/\D/g, "");
+    if (!phoneSanitizado) {
+      console.warn("[insertWhatsappMessageRow] companies.phone vazio/invalido");
+      return null;
+    }
+    const tableName = `imobipro_messages_${phoneSanitizado}`;
+    const messageJson = {
+      // Audio enviado pelo painel sai do lado da plataforma (AI) no chat.
+      type: "ai" as const,
+      content: params.content ?? "",
+      additional_kwargs: {},
+      response_metadata: {},
+      tool_calls: [],
+      invalid_tool_calls: [],
+    };
+    const mediaJson = JSON.stringify({ audio: params.audioUrl });
+    const { data, error } = await (supabase as any)
+      .from(tableName)
+      .insert({
+        session_id: params.sessionId,
+        instancia: params.instancia,
+        message: messageJson,
+        media: mediaJson,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      console.warn("[insertWhatsappMessageRow] insert falhou:", error);
+      return null;
+    }
+    return { tableName, id: data?.id };
+  } catch (err) {
+    console.warn("[insertWhatsappMessageRow] excecao inesperada:", err);
+    return null;
+  }
+}
+
+async function convertImageFileToPng(file: File): Promise<File> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Falha ao carregar imagem para conversão"));
+      el.src = objectUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Falha ao criar contexto para conversão PNG");
+    ctx.drawImage(img, 0, 0);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Falha ao converter imagem para PNG"))), "image/png");
+    });
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    return new File([blob], `${baseName}.png`, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 // Safe parse helper
@@ -458,7 +578,44 @@ function MessageBubble({
     );
   }
 
-  // 2) Se não há mediaImages, verificar se há media base64
+  // 2) URL publica de audio (Supabase Storage) salva via insert otimista
+  // Formato esperado em row.media: {"audio":"https://.../audio-*.webm"} ou URL crua.
+  const audioUrl = extractMediaAudio(row.media);
+  if (audioUrl) {
+    return (
+      <div className={isAI ? 'self-end' : 'self-start'}>
+        <div className={isAI
+          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
+          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
+          <div className="flex items-center gap-3 p-2 bg-black/15 rounded-lg border border-white/10">
+            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-full flex items-center justify-center">
+              <span className="text-xl">🎧</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium opacity-80 mb-1">Mensagem de áudio</div>
+              <audio
+                src={audioUrl}
+                controls
+                preload="metadata"
+                className="w-full max-w-xs"
+                style={{ height: '32px' }}
+              />
+            </div>
+          </div>
+          {content && (
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-2">
+              {processTextWithBold(content)}
+            </div>
+          )}
+          <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
+            {row.data ? formatHour(row.data) : ''}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3) Se não há audio URL, verificar se há media base64
   const dataUrl = buildDataUrlFromMedia(row.media);
   if (dataUrl) {
     const isImage = dataUrl.includes('image/');
@@ -668,12 +825,17 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [sec, setSec] = useState(0);
+  const [recordingLevels, setRecordingLevels] = useState<number[]>(Array.from({ length: 24 }, () => 8));
 
   // Refs para mídia
   const imgInputRef = useRef<HTMLInputElement | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const rafRef = useRef<number | null>(null);
   const endOfMessagesRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef<boolean>(true);
@@ -681,10 +843,13 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   // Estado para Preview de Mídia
   const [previewData, setPreviewData] = useState<{
-    file: File;
-    base64: string;
-    type: "imagem" | "audio" | "arquivo";
-    caption: string;
+    items: Array<{
+      file: File;
+      previewUrl: string;
+      type: "imagem" | "audio" | "arquivo";
+      caption: string;
+    }>;
+    activeIndex: number;
   } | null>(null);
   const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
     isOpen: false,
@@ -692,7 +857,27 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     index: 0,
   });
 
-  const maxAudioSec = 60;
+  const maxAudioSec = 120;
+
+  const cleanupAudioMeter = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    try {
+      sourceRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserRef.current?.disconnect();
+    } catch {}
+    sourceRef.current = null;
+    analyserRef.current = null;
+    if (audioCtxRef.current) {
+      void audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+    setRecordingLevels(Array.from({ length: 24 }, () => 8));
+  }, []);
 
 
 
@@ -824,6 +1009,32 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     conversa.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (conversa.leadPhone && conversa.leadPhone.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const setConversationLabel = useCallback(async (sessionId: string, status: 'ai_ativa' | 'humano' | 'humano_solicitado') => {
+    if (!profile?.company_id) return;
+    const { error } = await supabase
+      .from('conversation_contact_labels')
+      .upsert(
+        {
+          company_id: profile.company_id,
+          channel: 'whatsapp',
+          session_id: sessionId,
+          status,
+          updated_by: profile.id || null,
+        },
+        { onConflict: 'company_id,channel,session_id' }
+      );
+
+    if (error) throw error;
+    refetchConversas();
+  }, [profile?.company_id, profile?.id, refetchConversas]);
+
+  /** Atualiza coluna do Kanban (`leads.stage`) quando a conversa usa o mesmo id do lead. */
+  const setConversationCrmStage = useCallback(async (sessionId: string, stage: LeadStage) => {
+    const { error } = await supabase.from('leads').update({ stage }).eq('id', sessionId);
+    if (error) throw error;
+    refetchConversas();
+  }, [refetchConversas]);
 
   // Conversa atual
   const currentConversation = conversas.find(conv => conv.sessionId === selectedConversation);
@@ -1015,8 +1226,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   // IMAGE
   // FILE / IMAGE / AUDIO UPLOAD
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
     // Se não tiver conversa/lead selecionado, alerta
     if (!selectedConversation && !selectedLead) {
@@ -1029,19 +1240,39 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
     try {
       setBusy(true);
-      const base64 = await fileToBase64(file);
+      const items = await Promise.all(
+        files.map(async (file) => {
+          let normalizedFile = file;
+          let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
+          if (file.type.startsWith("image/")) {
+            tipo = "imagem";
+            try {
+              normalizedFile = await convertImageFileToPng(file);
+            } catch {
+              throw new Error(`Nao foi possivel converter a imagem "${file.name}" para PNG`);
+            }
+          } else if (file.type.startsWith("audio/")) {
+            tipo = "audio";
+            if (file.type !== "audio/mp4") throw new Error("Audio deve estar no formato audio/mp4");
+          } else if (file.type.startsWith("video/")) {
+            tipo = "arquivo";
+            if (file.type !== "video/mp4") throw new Error("Video deve estar no formato video/mp4");
+          } else {
+            tipo = "arquivo";
+            if (file.type !== "application/pdf") throw new Error("Arquivo deve ser PDF (application/pdf)");
+          }
+          return {
+            file: normalizedFile,
+            previewUrl: URL.createObjectURL(normalizedFile),
+            type: tipo,
+            caption: "",
+          };
+        })
+      );
 
-      // Determinar tipo
-      let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
-      if (file.type.startsWith("image/")) tipo = "imagem";
-      else if (file.type.startsWith("audio/")) tipo = "audio";
-
-      // Abrir preview em vez de enviar direto
       setPreviewData({
-        file,
-        base64,
-        type: tipo,
-        caption: ""
+        items,
+        activeIndex: 0,
       });
 
     } catch (err: any) {
@@ -1058,6 +1289,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   };
 
   const cancelPreview = () => {
+    (previewData?.items || []).forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
     setPreviewData(null);
   };
 
@@ -1070,31 +1304,52 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       // Target: se tiver lead selecionado usa lead, senao conversation
       const targetSession = selectedLead?.id || selectedConversation;
       // Usar a instância selecionada globalmente ou da conversa
-      const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+      const targetInstancia = selectedInstance || currentConversation?.instancia || "";
 
       if (!targetSession) throw new Error("Sessão inválida");
+      if (!targetInstancia) throw new Error("Selecione uma instância antes de enviar");
 
-      // Usar caption do preview se existir
-      const msgToSend = previewData.caption || previewData.base64; // Se for texto, usa caption? Não, backend espera base64 no 'mensagem' para midia?
-      // Pelo sendPayload original:
-      // tipo='imagem' -> mensagem = base64
-      // Mas se tiver caption, como manda?
-      // O backend n8n parece esperar 'mensagem' como conteudo (base64 para midia) e 'caption' como legenda opcional.
+      const uploadedItems = await Promise.all(
+        previewData.items.map(async (item) => {
+          const uploadedUrl = await uploadMediaAndGetPublicUrl(item.file, "whatsapp", profile?.company_id);
+          return {
+            url: uploadedUrl,
+            tipo: item.type,
+            mime_type: item.file.type,
+            nome: item.file.name,
+            caption: item.caption || "",
+          };
+        })
+      );
+      const urls = uploadedItems.map((m) => m.url);
+      const allSameType = uploadedItems.every((m) => m.tipo === uploadedItems[0]?.tipo);
+      const requestType = allSameType ? (uploadedItems[0]?.tipo as "imagem" | "audio" | "arquivo") : "arquivo";
+      const webhookMessage = (uploadedItems[0]?.caption || "").trim() || urls[0] || "";
 
       await sendPayload(
         targetSession,
         targetInstancia,
-        previewData.type,
-        previewData.base64,
-        previewData.file.type,
-        previewData.caption
+        requestType,
+        webhookMessage,
+        undefined,
+        uploadedItems[0]?.caption || "",
+        profile?.company_id,
+        urls[0],
+        uploadedItems.length > 1,
+        urls,
+        uploadedItems
       );
 
       toast({
-        title: `${previewData.type === 'imagem' ? 'Imagem' : previewData.type === 'audio' ? 'Áudio' : 'Arquivo'} enviado(a) com sucesso`,
+        title: previewData.items.length > 1
+          ? `${previewData.items.length} arquivos enviados com sucesso`
+          : "Arquivo enviado com sucesso",
         variant: "default",
       });
 
+      (previewData?.items || []).forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
       setPreviewData(null);
 
       // Refresh
@@ -1151,7 +1406,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
       if (!targetSession) throw new Error("Sessão inválida");
 
-      await sendPayload(targetSession, targetInstancia, "texto", val);
+      await sendPayload(targetSession, targetInstancia, "texto", val, undefined, undefined, profile?.company_id);
       setMessageInput("");
 
       if (selectedLead) {
@@ -1211,39 +1466,131 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   // AUDIO (MediaRecorder)
   const startRecord = async () => {
     try {
+      if (recording) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Seu navegador nao suporta captura de microfone");
+      }
+      if (typeof MediaRecorder === "undefined") {
+        throw new Error("Seu navegador nao suporta gravacao de audio");
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
-      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const mimeCandidates = [
+        "audio/mp4",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+      ];
+      const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+
+      // Medidor de áudio (ondas em tempo real estilo WhatsApp)
+      try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
+          audioCtxRef.current = audioCtx;
+          analyserRef.current = analyser;
+          sourceRef.current = source;
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const tick = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteTimeDomainData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              const x = (dataArray[i] - 128) / 128;
+              sum += x * x;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            const h = Math.max(6, Math.min(28, 6 + rms * 140));
+            setRecordingLevels((prev) => [...prev.slice(1), h]);
+            rafRef.current = requestAnimationFrame(tick);
+          };
+          rafRef.current = requestAnimationFrame(tick);
+        }
+      } catch (meterErr) {
+        console.warn("Medidor de audio indisponivel, continuando gravacao sem ondas:", meterErr);
+      }
 
       chunksRef.current = [];
       mr.ondataavailable = (e) => e.data && chunksRef.current.push(e.data);
       mr.onstop = async () => {
         try {
           setBusy(true);
-          const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
-          const base64 = await blobToBase64(blob);
+          const resolvedMime = mr.mimeType || mime || "audio/webm";
+          const ext =
+            resolvedMime.includes("mp4") ? "mp4" :
+              resolvedMime.includes("ogg") ? "ogg" : "webm";
+          const blob = new Blob(chunksRef.current, { type: resolvedMime });
+          const audioFile = new File([blob], `audio-${Date.now()}.${ext}`, { type: resolvedMime });
+          const audioUrl = await uploadMediaAndGetPublicUrl(audioFile, "whatsapp", profile?.company_id);
 
           const targetSession = selectedLead ? selectedLead.id : selectedConversation;
-          const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+          const targetInstancia = selectedInstance || currentConversation?.instancia || "";
 
           if (targetSession) {
-            await sendPayload(targetSession, targetInstancia, "audio", base64, mr.mimeType || "audio/webm");
+            if (!targetInstancia) throw new Error("Selecione uma instancia antes de enviar audio");
+
+            // Insert otimista direto na tabela imobipro_messages_{phone}.
+            // Faz a bolha aparecer imediatamente via realtime/polling
+            // sem depender da resposta do n8n. Em caso de erro, o webhook
+            // continua sendo a fonte de verdade.
+            if (profile?.company_id) {
+              const inserted = await insertWhatsappMessageRow({
+                companyId: profile.company_id,
+                sessionId: targetSession,
+                instancia: targetInstancia,
+                audioUrl,
+                content: "",
+              });
+              if (!inserted) {
+                console.warn("[audio] insert otimista falhou; continuando via webhook");
+              }
+            }
+
+            // Webhook em fire-and-forget para o n8n encaminhar ao WhatsApp.
+            // Nao bloqueia a UI: a bolha local ja esta aparecendo via insert.
+            sendPayload(
+              targetSession,
+              targetInstancia,
+              "audio",
+              "",
+              audioFile.type,
+              undefined,
+              profile?.company_id,
+              audioUrl
+            ).catch((err: any) => {
+              console.error("[audio] webhook falhou:", err);
+              if (err?.message === "INSTANCE_REQUIRED") {
+                toast({
+                  title: "Selecione uma instância antes de enviar",
+                  variant: "destructive",
+                });
+              } else {
+                toast({
+                  title: "Falha ao encaminhar áudio",
+                  description: "Áudio gravado localmente, mas o envio ao WhatsApp falhou.",
+                  variant: "destructive",
+                });
+              }
+            });
+
             toast({
               title: "Áudio enviado com sucesso",
               variant: "default",
             });
+            // Refetch unico imediato; realtime + polling ja existentes
+            // cobrem qualquer atualizacao posterior. setTimeout removido.
             if (selectedLead) {
               fetchLeadMessages(selectedLead);
-              setTimeout(() => fetchLeadMessages(selectedLead), 2000);
             } else {
               refetchMessages();
               refetchConversas();
-              setTimeout(() => {
-                refetchMessages();
-                refetchConversas();
-              }, 2000);
             }
           }
         } catch (err: any) {
@@ -1262,6 +1609,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         } finally {
           // cleanup
           stream.getTracks().forEach(t => t.stop());
+          cleanupAudioMeter();
           setBusy(false);
           setRecording(false);
           setSec(0);
@@ -1285,10 +1633,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           return s + 1;
         });
       }, 1000) as unknown as number;
-    } catch (err) {
+    } catch (err: any) {
+      cleanupAudioMeter();
       console.error('Erro ao acessar microfone:', err);
       toast({
-        title: "Permissão de microfone negada ou indisponível",
+        title: "Nao foi possivel iniciar a gravacao",
+        description: err?.message || "Permissao de microfone negada ou indisponivel",
         variant: "destructive",
       });
     }
@@ -1296,8 +1646,19 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   const stopRecord = () => {
     try {
-      if (recRef.current?.state === "recording") {
-        recRef.current.stop();
+      const rec = recRef.current;
+      if (rec?.state === "recording") {
+        // Atualiza UI imediatamente para nao parecer que o botao "nao clicou"
+        // enquanto upload/insert/webhook ainda rodam no onstop.
+        setRecording(false);
+        setSec(0);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        cleanupAudioMeter();
+        try { rec.requestData(); } catch { }
+        rec.stop();
       }
     } catch (err) {
       console.error('Erro ao parar gravação:', err);
@@ -1397,15 +1758,16 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </div>
           ) : (
             filteredConversas.map((conv: any) => (
-              <div
-                key={conv.sessionId}
-                onClick={() => {
-                  setSelectedConversation(conv.sessionId);
-                  openSession(conv.sessionId);
-                  setSelectedLead(null);
-                }}
-                className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--cv-hover)] transition-colors border-b border-[var(--cv-border)] ${selectedConversation === conv.sessionId ? 'bg-[var(--cv-panel-muted)]' : ''}`}
-              >
+              <ContextMenu key={conv.sessionId}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    onClick={() => {
+                      setSelectedConversation(conv.sessionId);
+                      openSession(conv.sessionId);
+                      setSelectedLead(null);
+                    }}
+                    className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--cv-hover)] transition-colors border-b border-[var(--cv-border)] ${selectedConversation === conv.sessionId ? 'bg-[var(--cv-panel-muted)]' : ''}`}
+                  >
                 <div className="w-12 h-12 rounded-full bg-slate-600 flex-shrink-0 relative overflow-hidden">
                   <Avatar className="h-full w-full">
                     <AvatarFallback>{(conv.displayName?.charAt(0) || '?').toUpperCase()}</AvatarFallback>
@@ -1413,7 +1775,22 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-0.5">
-                    <h3 className="text-[var(--cv-text)] font-normal truncate max-w-[70%] text-base">{conv.displayName}</h3>
+                    <div className="flex items-center gap-1.5 min-w-0 max-w-[78%] flex-wrap">
+                      <h3 className="text-[var(--cv-text)] font-normal truncate text-base max-w-full">{conv.displayName}</h3>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${conversationLabelListBadgeClasses(conv.leadStage)}`}
+                      >
+                        {conv.leadStage || 'AI ATIVA'}
+                      </span>
+                      {conv.hasCrmLead ? (
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${crmStageBadgeClasses(conv.crmStage || '')}`}
+                          title="Estágio no CRM (Kanban)"
+                        >
+                          {conv.crmStage?.trim() || 'CRM'}
+                        </span>
+                      ) : null}
+                    </div>
                     <span className="text-xs text-[var(--cv-text-muted)] whitespace-nowrap">
                       {conv.lastMessageDate ? formatHour(conv.lastMessageDate) : ''}
                     </span>
@@ -1422,7 +1799,81 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                     <span className="truncate">{conv.lastMessageContent || "Toque para abrir conversa"}</span>
                   </p>
                 </div>
-              </div>
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="w-52">
+                  <ContextMenuItem
+                    onClick={async () => {
+                      try {
+                        await setConversationLabel(conv.sessionId, 'humano');
+                        toast({ title: 'Etiqueta atualizada para Humano' });
+                      } catch (e: any) {
+                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Marcar como Humano
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={async () => {
+                      try {
+                        await setConversationLabel(conv.sessionId, 'humano_solicitado');
+                        toast({ title: 'Etiqueta atualizada para Humano solicitado' });
+                      } catch (e: any) {
+                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Marcar como Humano solicitado
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={async () => {
+                      try {
+                        await setConversationLabel(conv.sessionId, 'ai_ativa');
+                        toast({ title: 'Etiqueta atualizada para AI ATIVA' });
+                      } catch (e: any) {
+                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Marcar como AI ATIVA
+                  </ContextMenuItem>
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger
+                      disabled={!conv.hasCrmLead}
+                      className={!conv.hasCrmLead ? 'opacity-50' : ''}
+                    >
+                      Estágio no CRM
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="max-h-64 overflow-y-auto">
+                      {CRM_KANBAN_STAGE_TITLES.map((title) => (
+                        <ContextMenuItem
+                          key={title}
+                          onClick={async () => {
+                            try {
+                              await setConversationCrmStage(conv.sessionId, title);
+                              toast({ title: 'Estágio do lead atualizado', description: title });
+                            } catch (e: any) {
+                              toast({
+                                title: 'Não foi possível alterar o estágio',
+                                description: e?.message || 'Verifique se o contato é um lead no CRM e suas permissões.',
+                                variant: 'destructive',
+                              });
+                            }
+                          }}
+                        >
+                          <span className="flex w-full items-center justify-between gap-2">
+                            <span>{title}</span>
+                            {String(conv.crmStage || '').trim() === title ? (
+                              <span className="text-xs text-muted-foreground">atual</span>
+                            ) : null}
+                          </span>
+                        </ContextMenuItem>
+                      ))}
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+                </ContextMenuContent>
+              </ContextMenu>
             ))
           )}
         </div>
@@ -1595,19 +2046,35 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 type="file"
                 className="hidden"
                 onChange={onPickFile}
-                multiple={false}
+                multiple
+                accept="image/*,video/mp4,audio/mp4,application/pdf"
               />
 
               <div className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]">
-                <textarea
-                  value={messageInput}
-                  onChange={handleInputChange}
-                  onKeyDown={onTextareaKeyDown}
-                  placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
-                  className={`w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] ${disableFreeText ? 'placeholder:text-red-400/80' : 'placeholder:text-[var(--cv-text-muted)]'}`}
-                  rows={1}
-                  style={{ minHeight: '24px' }}
-                />
+                {recording ? (
+                  <div className="w-full flex items-center gap-3 px-1">
+                    <span className="text-xs text-red-400 font-medium whitespace-nowrap">Gravando {String(sec).padStart(2, '0')}s</span>
+                    <div className="flex items-end gap-[2px] h-8 w-full">
+                      {recordingLevels.map((h, i) => (
+                        <span
+                          key={i}
+                          className="w-1 rounded-full bg-red-400/90 transition-all duration-75"
+                          style={{ height: `${h}px` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <textarea
+                    value={messageInput}
+                    onChange={handleInputChange}
+                    onKeyDown={onTextareaKeyDown}
+                    placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
+                    className={`w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] ${disableFreeText ? 'placeholder:text-red-400/80' : 'placeholder:text-[var(--cv-text-muted)]'}`}
+                    rows={1}
+                    style={{ minHeight: '24px' }}
+                  />
+                )}
               </div>
 
               {messageInput.trim() ? (
@@ -1702,22 +2169,32 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[var(--cv-preview-bar-hover)] rounded-full">
                 <ArrowLeft className="w-6 h-6" />
               </Button>
-              <h2 className="font-medium text-[var(--cv-text)]">Visualizar {previewData.type === 'arquivo' ? 'Arquivo' : previewData.type === 'imagem' ? 'Imagem' : 'Mídia'}</h2>
+              <h2 className="font-medium text-[var(--cv-text)]">
+                Visualizar arquivo{previewData.items.length > 1 ? `s (${previewData.items.length})` : ""}
+              </h2>
               <div className="w-10"></div> {/* Spacer */}
             </div>
 
             {/* Content Preview */}
             <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
-              {previewData.type === 'imagem' ? (
-                <img src={previewData.base64} alt="Preview" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
-              ) : previewData.type === 'arquivo' ? (
+              {previewData.items[previewData.activeIndex]?.type === 'imagem' ? (
+                <img
+                  src={previewData.items[previewData.activeIndex]?.previewUrl}
+                  alt="Preview"
+                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xl"
+                />
+              ) : previewData.items[previewData.activeIndex]?.type === 'arquivo' ? (
                 <div className="flex flex-col items-center gap-4 text-[var(--cv-text)] p-10 bg-[var(--cv-panel)] rounded-xl border border-[var(--cv-border)]">
                   <div className="w-20 h-20 bg-zinc-600 rounded-full flex items-center justify-center">
                     <Paperclip className="w-10 h-10 text-white" />
                   </div>
                   <div className="text-center">
-                    <p className="font-semibold text-lg max-w-xs truncate" title={previewData.file.name}>{previewData.file.name}</p>
-                    <p className="text-sm text-zinc-400">{(previewData.file.size / 1024).toFixed(1)} KB • {previewData.file.type || 'Desconhecido'}</p>
+                    <p className="font-semibold text-lg max-w-xs truncate" title={previewData.items[previewData.activeIndex]?.file.name}>
+                      {previewData.items[previewData.activeIndex]?.file.name}
+                    </p>
+                    <p className="text-sm text-zinc-400">
+                      {((previewData.items[previewData.activeIndex]?.file.size || 0) / 1024).toFixed(1)} KB • {previewData.items[previewData.activeIndex]?.file.type || 'Desconhecido'}
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -1730,22 +2207,55 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               )}
             </div>
 
+            {previewData.items.length > 1 && (
+              <div className="w-full max-w-3xl mx-auto px-4 pb-3">
+                <div className="flex gap-2 overflow-x-auto">
+                  {previewData.items.map((item, idx) => (
+                    <button
+                      key={`${item.file.name}-${idx}`}
+                      onClick={() => setPreviewData({ ...previewData, activeIndex: idx })}
+                      className={`h-14 w-14 rounded-md border overflow-hidden shrink-0 ${
+                        previewData.activeIndex === idx ? 'border-[var(--cv-accent)]' : 'border-[var(--cv-border)]'
+                      }`}
+                      title={item.file.name}
+                    >
+                      {item.type === 'imagem' ? (
+                        <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full grid place-items-center bg-[var(--cv-panel)] text-[10px] text-[var(--cv-text-muted)]">
+                          {item.type === 'audio' ? 'AUDIO' : 'ARQ'}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Caption Input */}
             <div className="bg-[var(--cv-panel)] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg border border-[var(--cv-border)]">
               <input
                 autoFocus
-                value={previewData.caption}
-                onChange={(e) => setPreviewData({ ...previewData, caption: e.target.value })}
-                placeholder="Adicione uma legenda..."
+                value={previewData.items[previewData.activeIndex]?.caption || ""}
+                onChange={(e) =>
+                  setPreviewData({
+                    ...previewData,
+                    items: previewData.items.map((item, idx) =>
+                      idx === previewData.activeIndex ? { ...item, caption: e.target.value } : item
+                    ),
+                  })
+                }
+                placeholder={`Adicione uma legenda para ${previewData.items[previewData.activeIndex]?.file.name || "a mídia"}...`}
                 className="bg-transparent text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] w-full outline-none px-4"
                 onKeyDown={(e) => e.key === 'Enter' && sendPreview()}
               />
             </div>
 
             {/* Send Button FAB */}
-            <div className="flex justify-end px-6 pb-6 w-full max-w-5xl mx-auto">
+            <div className="flex justify-end w-full max-w-3xl mx-auto pb-6">
               <button
                 onClick={sendPreview}
+                type="button"
                 className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
               >
                 {busy ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-6 h-6 ml-0.5" />}

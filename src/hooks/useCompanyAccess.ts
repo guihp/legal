@@ -42,7 +42,9 @@ export function useCompanyAccess(): CompanyAccessHook {
     }
 
     try {
-      setLoading(true);
+      // STALE-WHILE-REVALIDATE: só mostrar loading no primeiro check.
+      // Se já temos um accessStatus, revalidar silenciosamente.
+      if (!accessStatus) setLoading(true);
       setError(null);
 
       // Chamar função RPC para verificar acesso

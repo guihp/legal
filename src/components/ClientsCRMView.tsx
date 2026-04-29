@@ -511,23 +511,23 @@ export function ClientsCRMView() {
         transition={{ delay: 1, duration: 0.8 }}
       >
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-muted/50 border border-border">
-            <TabsTrigger value="todos" className="data-[state=active]:bg-blue-600/20 data-[state=active]:text-blue-400">
+          <TabsList className="grid w-full grid-cols-6 bg-slate-100 border border-slate-200 dark:bg-muted/50 dark:border-border">
+            <TabsTrigger value="todos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-blue-600/25 dark:data-[state=active]:text-blue-300">
               Todos ({stats.total})
             </TabsTrigger>
-            <TabsTrigger value="ativos" className="data-[state=active]:bg-green-600/20 data-[state=active]:text-green-400">
+            <TabsTrigger value="ativos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-green-600/25 dark:data-[state=active]:text-green-300">
               Ativos ({stats.ativos})
             </TabsTrigger>
-            <TabsTrigger value="prospects" className="data-[state=active]:bg-yellow-600/20 data-[state=active]:text-yellow-400">
+            <TabsTrigger value="prospects" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-yellow-600/25 dark:data-[state=active]:text-yellow-300">
               Prospects ({stats.prospects})
             </TabsTrigger>
-            <TabsTrigger value="negociacao" className="data-[state=active]:bg-purple-600/20 data-[state=active]:text-purple-400">
+            <TabsTrigger value="negociacao" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-purple-600/25 dark:data-[state=active]:text-purple-300">
               Em Negociação
             </TabsTrigger>
-            <TabsTrigger value="fechados" className="data-[state=active]:bg-emerald-600/20 data-[state=active]:text-emerald-400">
+            <TabsTrigger value="fechados" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-emerald-600/25 dark:data-[state=active]:text-emerald-300">
               Fechados ({stats.fechados})
             </TabsTrigger>
-            <TabsTrigger value="perdidos" className="data-[state=active]:bg-red-600/20 data-[state=active]:text-red-400">
+            <TabsTrigger value="perdidos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-red-600/25 dark:data-[state=active]:text-red-300">
               Perdidos
             </TabsTrigger>
           </TabsList>

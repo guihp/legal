@@ -18,7 +18,10 @@ const AUDIO_BASE64_PREFIXES = ['SUQzB', 'SUQzA', '//uQ', '//sw', 'T2dnUw']; // M
 const VIDEO_BASE64_PREFIXES = ['AAAAGGZ0eXBtcDQy', 'AAAAIGZ0eXBpc29t', 'GkXfo']; // MP4, WebM/Matroska
 
 const IMG_URL_EXT = /\.(?:jpe?g|png|gif|webp|bmp|svg|heic|heif)(?:\?|#|$)/i;
-const AUDIO_URL_EXT = /\.(?:mp3|m4a|wav|ogg|opus|aac|flac)(?:\?|#|$)/i;
+// MediaRecorder grava em .webm (Chrome) e .mp4 (Safari). Incluimos os dois aqui
+// como fallback defensivo; quando o frontend insere o registro ele usa o
+// formato JSON {"audio":"<url>"}, que tem prioridade na deteccao por chave.
+const AUDIO_URL_EXT = /\.(?:mp3|m4a|wav|ogg|opus|aac|flac|webm|mp4)(?:\?|#|$)/i;
 const VIDEO_URL_EXT = /\.(?:mp4|webm|mov|avi|mkv|m3u8)(?:\?|#|$)/i;
 
 /**
@@ -87,4 +90,76 @@ export function mediaPreviewPrefix(raw: unknown): string {
   const s = String(raw).trim();
   if (!s || s.toLowerCase() === 'null') return '';
   return `${mediaPreviewLabel(raw)} `;
+}
+
+/**
+ * Extrai a URL publica de audio do campo `media` da tabela
+ * `imobipro_messages_*` quando presente.
+ *
+ * Aceita os formatos abaixo (ordem de prioridade):
+ *  1. URL direta com extensao de audio (`https://.../audio-123.webm`)
+ *  2. JSON stringificado com chave `audio` ou `audio_url`
+ *     (`{"audio":"https://..."}` / `{"audio_url":"https://..."}`)
+ *  3. JSON aninhado padrao n8n (`{"json":{"audio":"https://..."}}` ou em array)
+ *
+ * Retorna `null` quando nada for encontrado. Nao tenta interpretar base64 —
+ * para isso continua existindo `buildDataUrlFromMedia` no MessageBubble.
+ */
+export function extractMediaAudio(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === 'null') return null;
+  const lower = s.toLowerCase();
+
+  // 1) URL direta com extensao conhecida
+  if ((lower.startsWith('http://') || lower.startsWith('https://')) && AUDIO_URL_EXT.test(lower)) {
+    return s;
+  }
+
+  // 2) JSON com chave audio/audio_url (com ou sem aspas escapadas)
+  if (s.startsWith('{') || s.startsWith('[')) {
+    const tryParse = (txt: string): any | null => {
+      try { return JSON.parse(txt); } catch { return null; }
+    };
+    const cleaned = s.replace(/\\"/g, '"').replace(/^"|"$/g, '');
+    const parsed = tryParse(s) ?? tryParse(cleaned);
+
+    const pickAudioFromObj = (obj: any): string | null => {
+      if (!obj || typeof obj !== 'object') return null;
+      const direct = obj.audio || obj.audio_url || obj.voice || obj.voz;
+      if (typeof direct === 'string' && direct.trim()) return direct.trim();
+      if (obj.json && typeof obj.json === 'object') {
+        const inner = pickAudioFromObj(obj.json);
+        if (inner) return inner;
+      }
+      return null;
+    };
+
+    if (parsed) {
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (typeof item === 'string') {
+            const innerParsed = tryParse(item);
+            const url = pickAudioFromObj(innerParsed);
+            if (url) return url;
+          } else {
+            const url = pickAudioFromObj(item);
+            if (url) return url;
+          }
+        }
+      } else {
+        const url = pickAudioFromObj(parsed);
+        if (url) return url;
+      }
+    }
+
+    // 3) Fallback bruto via regex caso o JSON venha com escape duplo do n8n
+    const regex = /"(?:audio|audio_url|voice|voz)"\s*:\s*"((?:[^"\\]|\\.)+)"/i;
+    const match = s.match(regex);
+    if (match && match[1]) {
+      return match[1].replace(/\\\//g, '/').replace(/\\"/g, '"');
+    }
+  }
+
+  return null;
 }

@@ -629,6 +629,73 @@ serve(async (req) => {
       });
     }
 
+    if (action === "cancel_event_from_n8n") {
+      const calendarId = String(body?.calendar_id || "").trim();
+      const eventId = String(body?.event_id || body?.google_event_id || "").trim();
+      const leadId = String(body?.lead_id || body?.session_id || "").trim();
+
+      if (!calendarId || !eventId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "calendar_id e event_id são obrigatórios",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Remove o evento no Google Calendar.
+      await gFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        { method: "DELETE" },
+      );
+
+      // Atualiza mirror local do evento (best-effort).
+      let oncallUpdated = false;
+      try {
+        const { error } = await service
+          .from("oncall_events")
+          .update({
+            status: "Cancelado",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("company_id", profile.company_id)
+          .eq("google_event_id", eventId);
+        oncallUpdated = !error;
+      } catch {
+        oncallUpdated = false;
+      }
+
+      // Move lead para estágio "Visita Cancelada" no CRM (best-effort).
+      let leadUpdated = false;
+      if (leadId) {
+        try {
+          const { error } = await service
+            .from("leads")
+            .update({
+              stage: "Visita Cancelada",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", leadId)
+            .eq("company_id", profile.company_id);
+          leadUpdated = !error;
+        } catch {
+          leadUpdated = false;
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        calendar_id: calendarId,
+        event_id: eventId,
+        lead_id: leadId || null,
+        lead_stage_updated: leadUpdated,
+        oncall_event_updated: oncallUpdated,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "pick_broker_queue") {
       const queuePick = await pickNextBrokerFromQueue(
         service,

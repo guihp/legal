@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 import { mediaPreviewPrefix } from '@/lib/conversaMedia';
+import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
 
 /** Rótulo quando não há nome (evita texto genérico longo; RPC já envia nome para corretor quando permitido). */
 function conversaFallbackLabel(sessionId: string): string {
@@ -16,7 +17,12 @@ export interface Conversa {
   instancia: string;
   displayName: string; // lead.name ou fallback
   leadPhone?: string | null; // reservado
-  leadStage?: string | null; // reservado/label
+  /** Etiqueta operacional (Humano | Humano solicitado | AI ATIVA) em `conversation_contact_labels`. */
+  leadStage?: string | null;
+  /** Estágio do funil em `leads.stage` quando `session_id` = id do lead. */
+  crmStage?: string | null;
+  /** Há registro de lead com esse id (permite mudar estágio pelo menu). */
+  hasCrmLead?: boolean;
   lastMessageDate: string;
   messageCount: number;
   lastMessageContent: string;
@@ -143,6 +149,8 @@ export function useConversasList(selectedInstance?: string | null) {
           displayName: fromRpc,
           leadPhone: null,
           leadStage: null,
+          crmStage: null,
+          hasCrmLead: false,
           lastMessageDate: String(r.data),
           messageCount: 1, // A função RPC retorna apenas a última mensagem, então count = 1
           lastMessageContent: lastContent,
@@ -155,12 +163,14 @@ export function useConversasList(selectedInstance?: string | null) {
         const sids = list.map(l => l.sessionId);
         const { data: leadRows } = await supabase
           .from('leads')
-          .select('id, name, phone')
+          .select('id, name, phone, stage')
           .in('id', sids as any);
         const leadMap = new Map<string, string>();
+        const crmStageById = new Map<string, string | null>();
         (leadRows || []).forEach((lr: any) => {
           if (!lr?.id) return;
           const id = String(lr.id);
+          crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
           const nm = lr.name != null ? String(lr.name).trim() : '';
           const ph = lr.phone != null ? String(lr.phone).trim() : '';
           const label = nm || ph;
@@ -171,10 +181,40 @@ export function useConversasList(selectedInstance?: string | null) {
           const nm = leadMap.get(item.sessionId);
           if (nm) item.displayName = nm;
           else if (!item.displayName) item.displayName = conversaFallbackLabel(item.sessionId);
+          if (crmStageById.has(item.sessionId)) {
+            item.hasCrmLead = true;
+            item.crmStage = crmStageById.get(item.sessionId) ?? null;
+          }
         });
       }
 
       // 5) Ordenação por última mensagem desc
+      if (list.length > 0 && profile?.company_id) {
+        try {
+          const { data: labels } = await supabase
+            .from('conversation_contact_labels')
+            .select('session_id, status')
+            .eq('company_id', profile.company_id)
+            .eq('channel', 'whatsapp')
+            .in('session_id', list.map((l) => l.sessionId) as any);
+
+          const statusBySession = new Map<string, string>();
+          (labels || []).forEach((row: any) => {
+            if (!row?.session_id) return;
+            statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
+          });
+
+          list.forEach((item) => {
+            const st = statusBySession.get(item.sessionId) || 'ai_ativa';
+            item.leadStage = conversationLabelStatusToDisplay(st);
+          });
+        } catch {
+          list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        }
+      } else {
+        list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+      }
+
       list.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
 
       setConversas(list);

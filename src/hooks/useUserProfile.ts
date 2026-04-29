@@ -46,6 +46,8 @@ export function useUserProfile() {
   const isLoadingRef = useRef(false);
   const lastLoadTimeRef = useRef(0);
   const mountedRef = useRef(true);
+  const profileRef = useRef<UserProfile | null>(null);
+  const impersonationRef = useRef(false);
 
   // Verificar se é gestor
   const isManager = profile?.role === 'gestor' || profile?.role === 'admin';
@@ -94,8 +96,9 @@ export function useUserProfile() {
       isLoadingRef.current = true;
       lastLoadTimeRef.current = now;
       
-      // Só mostrar loading se for o primeiro carregamento ou não temos perfil
-      if (force || !profile) {
+      // STALE-WHILE-REVALIDATE: só mostrar spinner se NÃO temos perfil (primeiro load).
+      // Se já temos perfil, recarregar silenciosamente em background.
+      if (!profileRef.current) {
         setLoading(true);
       }
       setError(null);
@@ -173,8 +176,10 @@ export function useUserProfile() {
       }
 
       const baseProfile = profileData as UserProfile;
+      profileRef.current = baseProfile;
       setProfile(baseProfile);
       setCompany(null);
+      impersonationRef.current = false;
       setImpersonationActive(false);
 
       // Super admin com impersonação ativa: usar perfil do usuário alvo para UI e rotas (tenant), não AdminLayout.
@@ -190,7 +195,9 @@ export function useUserProfile() {
               .eq('id', targetId)
               .single();
             if (!impProfErr && impProf && impProf.is_active !== false) {
+              profileRef.current = impProf as UserProfile;
               setProfile(impProf as UserProfile);
+              impersonationRef.current = true;
               setImpersonationActive(true);
             }
           }
@@ -464,27 +471,31 @@ export function useUserProfile() {
     }
   };
 
-  // Reagir a mudanças de sessão do gerenciador centralizado
+  // Reagir a mudanças de sessão do gerenciador centralizado.
+  // IMPORTANTE: usar refs em vez de state nas dependências para evitar loops.
   useEffect(() => {
     if (session?.user) {
       setUser(session.user);
       // Com impersonação, profile.id !== auth.uid() é esperado; não disparar reload em loop.
+      const currentProfile = profileRef.current;
       const needsLoad =
-        !profile ||
-        (profile.id !== session.user.id && !impersonationActive);
+        !currentProfile ||
+        (currentProfile.id !== session.user.id && !impersonationRef.current);
       if (needsLoad) {
         loadUserData(true);
       }
     } else {
       // Limpar estado quando não há sessão
       setUser(null);
+      profileRef.current = null;
       setProfile(null);
       setCompany(null);
       setError(null);
+      impersonationRef.current = false;
       setImpersonationActive(false);
       setLoading(false);
     }
-  }, [session, impersonationActive, profile, loadUserData]);
+  }, [session, loadUserData]);
 
   // Carregamento inicial
   useEffect(() => {

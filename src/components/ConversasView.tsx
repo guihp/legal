@@ -17,6 +17,8 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { supabase } from '@/integrations/supabase/client';
+import { crmStageBadgeClasses } from '@/lib/crmKanbanStages';
+import { conversationLabelOutlineBadgeClasses } from '@/lib/conversationContactLabels';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
@@ -476,15 +478,23 @@ export function ConversasView() {
                           {conversa.lastMessageContent}
                         </p>
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {conversa.leadStage && (
                               <Badge
                                 variant="outline"
-                                className="text-xs border-purple-500/30 text-purple-300"
+                                className={`text-xs ${conversationLabelOutlineBadgeClasses(conversa.leadStage)}`}
                               >
                                 {conversa.leadStage}
                               </Badge>
                             )}
+                            {conversa.hasCrmLead && conversa.crmStage ? (
+                              <Badge
+                                variant="outline"
+                                className={`text-xs ${crmStageBadgeClasses(conversa.crmStage)}`}
+                              >
+                                {conversa.crmStage}
+                              </Badge>
+                            ) : null}
                           </div>
                           <Badge className="bg-gray-600 text-white text-xs">
                             💬 {conversa.messageCount}
@@ -521,8 +531,8 @@ export function ConversasView() {
                     </h3>
 
                     {/* Subtítulo com telefone e badge de estágio */}
-                    {(currentConversation.leadPhone || currentConversation.leadStage) && (
-                      <div className="flex items-center gap-2 mt-1">
+                    {(currentConversation.leadPhone || currentConversation.leadStage || (currentConversation.hasCrmLead && currentConversation.crmStage)) && (
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         {currentConversation.leadPhone && (
                           <span className="text-xs md:text-sm text-zinc-400">
                             {currentConversation.leadPhone.replace('@s.whatsapp.net', '')}
@@ -534,10 +544,16 @@ export function ConversasView() {
                         )}
 
                         {currentConversation.leadStage && (
-                          <span className="inline-flex items-center rounded-full border border-white/10 px-2 py-0.5 text-xs text-purple-300 border-purple-500/30">
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs border-white/10 ${conversationLabelOutlineBadgeClasses(currentConversation.leadStage)}`}>
                             {currentConversation.leadStage}
                           </span>
                         )}
+
+                        {currentConversation.hasCrmLead && currentConversation.crmStage ? (
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${crmStageBadgeClasses(currentConversation.crmStage)}`}>
+                            {currentConversation.crmStage}
+                          </span>
+                        ) : null}
                       </div>
                     )}
                   </div>

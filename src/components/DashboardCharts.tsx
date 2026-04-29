@@ -513,10 +513,10 @@ export const DashboardCharts: React.FC = () => {
 								onValueChange={(value) => value && setVgvPeriod(value as VgvPeriod)}
 								className="h-8"
 							>
-								<ToggleGroupItem value="anual" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Anual</ToggleGroupItem>
-								<ToggleGroupItem value="mensal" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Mensal</ToggleGroupItem>
-								<ToggleGroupItem value="semanal" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Semanal</ToggleGroupItem>
-								<ToggleGroupItem value="diario" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Diário</ToggleGroupItem>
+								<ToggleGroupItem value="anual" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Anual</ToggleGroupItem>
+								<ToggleGroupItem value="mensal" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Mensal</ToggleGroupItem>
+								<ToggleGroupItem value="semanal" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Semanal</ToggleGroupItem>
+								<ToggleGroupItem value="diario" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Diário</ToggleGroupItem>
 							</ToggleGroup>
 							
 							{/* Tipo de gráfico */}
@@ -526,10 +526,10 @@ export const DashboardCharts: React.FC = () => {
 								onValueChange={(value) => value && setVgvChartType(value as any)}
 								className="h-8"
 							>
-								<ToggleGroupItem value="combined" className="h-8 text-xs px-2 text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Combo</ToggleGroupItem>
-								<ToggleGroupItem value="area" className="h-8 text-xs px-2 text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Área</ToggleGroupItem>
-								<ToggleGroupItem value="line" className="h-8 text-xs px-2 text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Linha</ToggleGroupItem>
-								<ToggleGroupItem value="bar" className="h-8 text-xs px-2 text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Barra</ToggleGroupItem>
+								<ToggleGroupItem value="combined" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Combo</ToggleGroupItem>
+								<ToggleGroupItem value="area" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Área</ToggleGroupItem>
+								<ToggleGroupItem value="line" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Linha</ToggleGroupItem>
+								<ToggleGroupItem value="bar" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Barra</ToggleGroupItem>
 							</ToggleGroup>
 						</div>
 					</div>

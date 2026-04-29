@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import { startVersionChecker } from './lib/versionChecker'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { createTheme } from '@mui/material/styles'
 import { SafeThemeProvider } from './components/SafeThemeProvider'
@@ -25,3 +26,7 @@ createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
   // </React.StrictMode>
 );
+
+// Verificação automática de nova versão após deploy (só em produção).
+// Faz polling a cada 5 min no /build-meta.json e recarrega se mudou.
+startVersionChecker();
