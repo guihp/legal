@@ -98,18 +98,12 @@ export default defineConfig(({ mode }) => ({
             return 'vendor-datefns';
           }
 
-          // --- Domínios pesados do app ---
+          // --- Domínios pesados do app (já existiam antes) ---
           if (id.includes('/components/ContractsView') || id.includes('/utils/contractProcessor')) {
             return 'domain-contracts';
           }
           if (id.includes('/components/AgendaView')) {
             return 'domain-agenda';
-          }
-          if (id.includes('/components/ConversasView') || id.includes('/components/ConversasPage')) {
-            return 'domain-conversas';
-          }
-          if (id.includes('/components/PropertyList')) {
-            return 'domain-properties';
           }
           return undefined;
         },
