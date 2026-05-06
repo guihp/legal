@@ -99,11 +99,27 @@ type QueueBroker = {
   calendar_id: string;
 };
 
-async function pickNextBrokerFromQueue(
+type CalendarEventLite = {
+  id: string;
+  created: string;
+  updated?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  extendedProperties?: { private?: Record<string, string> };
+};
+
+function eventStartIso(evt: CalendarEventLite): string {
+  return String(evt?.start?.dateTime || evt?.start?.date || "");
+}
+
+function eventEndIso(evt: CalendarEventLite): string {
+  return String(evt?.end?.dateTime || evt?.end?.date || "");
+}
+
+async function listEligibleBrokers(
   service: ReturnType<typeof createClient>,
   companyId: string,
-  fallbackCalendarId?: string,
-): Promise<QueueBroker | null> {
+): Promise<QueueBroker[]> {
   const { data: schedules, error: schedulesError } = await service
     .from("oncall_schedules")
     .select("assigned_user_id, calendar_id, assigned_user_profile:assigned_user_id(full_name, email, role, is_active)")
@@ -132,14 +148,22 @@ async function pickNextBrokerFromQueue(
     })
     .filter(Boolean) as QueueBroker[];
 
-  if (!candidates.length) return null;
-
-  // Ordenação estável para round-robin previsível.
   candidates.sort((a, b) => {
     const byName = a.broker_name.localeCompare(b.broker_name, "pt-BR");
     if (byName !== 0) return byName;
     return a.broker_id.localeCompare(b.broker_id);
   });
+
+  return candidates;
+}
+
+async function pickNextBrokerFromQueue(
+  service: ReturnType<typeof createClient>,
+  companyId: string,
+  fallbackCalendarId?: string,
+): Promise<QueueBroker | null> {
+  const candidates = await listEligibleBrokers(service, companyId);
+  if (!candidates.length) return null;
 
   // Se calendar_id já veio no request e estiver vinculado, respeitamos e retornamos esse corretor.
   if (fallbackCalendarId) {
@@ -296,6 +320,96 @@ serve(async (req) => {
         throw new Error(json?.error?.message || `Erro Google API (${res.status})`);
       }
       return json;
+    };
+
+    const listEventsInWindow = async (targetCalendarId: string, timeMin: string, timeMax: string): Promise<CalendarEventLite[]> => {
+      const u = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events`);
+      u.searchParams.set("timeMin", timeMin);
+      u.searchParams.set("timeMax", timeMax);
+      u.searchParams.set("singleEvents", "true");
+      u.searchParams.set("orderBy", "startTime");
+      const json = await gFetch(u.toString());
+      return Array.isArray(json?.items) ? json.items : [];
+    };
+
+    const checkBusy = async (targetCalendarId: string, timeMinIso: string, timeMaxIso: string) => {
+      const fb = await gFetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+        method: "POST",
+        body: JSON.stringify({
+          timeMin: timeMinIso,
+          timeMax: timeMaxIso,
+          items: [{ id: targetCalendarId }],
+        }),
+      });
+      return Array.isArray(fb?.calendars?.[targetCalendarId]?.busy)
+        ? fb.calendars[targetCalendarId].busy
+        : [];
+    };
+
+    const pickFreeBrokerForSlot = async (
+      companyId: string,
+      slotStartIso: string,
+      slotEndIso: string,
+      preferredCalendarId?: string,
+    ) => {
+      const sortedBrokers = await listEligibleBrokers(service, companyId);
+      if (!sortedBrokers.length) {
+        return {
+          selected: null as (QueueBroker & { original_index: number }) | null,
+          checks: [] as Array<{ broker_id: string | null; broker_name: string | null; calendar_id: string; is_free: boolean; busy_count: number }>,
+          rotated: [] as Array<QueueBroker & { original_index: number }>,
+        };
+      }
+
+      const { data: queueState } = await service
+        .from("broker_queue_state")
+        .select("last_index")
+        .eq("company_id", companyId)
+        .maybeSingle();
+      const lastIndex = Number(queueState?.last_index ?? -1);
+      const startIndex = (lastIndex + 1) % sortedBrokers.length;
+      const rotated = sortedBrokers
+        .map((_, i) => sortedBrokers[(startIndex + i) % sortedBrokers.length])
+        .map((b) => ({
+          ...b,
+          original_index: sortedBrokers.findIndex((x) => x.broker_id === b.broker_id),
+        }));
+
+      let candidates = rotated;
+      if (preferredCalendarId) {
+        const preferred = candidates.find((c) => c.calendar_id === preferredCalendarId)
+          || sortedBrokers
+            .filter((c) => c.calendar_id === preferredCalendarId)
+            .map((b) => ({ ...b, original_index: sortedBrokers.findIndex((x) => x.broker_id === b.broker_id) }))[0];
+        if (preferred) {
+          const seen = new Set<string>();
+          candidates = [preferred, ...candidates].filter((c) => {
+            if (seen.has(c.calendar_id)) return false;
+            seen.add(c.calendar_id);
+            return true;
+          });
+        }
+      }
+
+      const checks: Array<{ broker_id: string | null; broker_name: string | null; calendar_id: string; is_free: boolean; busy_count: number }> = [];
+      let selected: (QueueBroker & { original_index: number }) | null = null;
+      for (const candidate of candidates) {
+        const busy = await checkBusy(candidate.calendar_id, slotStartIso, slotEndIso);
+        const isFree = busy.length === 0;
+        checks.push({
+          broker_id: candidate.broker_id || null,
+          broker_name: candidate.broker_name || null,
+          calendar_id: candidate.calendar_id,
+          is_free: isFree,
+          busy_count: busy.length,
+        });
+        if (isFree) {
+          selected = candidate;
+          break;
+        }
+      }
+
+      return { selected, checks, rotated };
     };
 
     if (action === "list_calendars") {
@@ -463,6 +577,105 @@ serve(async (req) => {
       });
     }
 
+    if (action === "get_company_availability") {
+      const timeMin = String(body?.time_min || body?.busca_inicio || body?.start || "").trim();
+      const timeMax = String(body?.time_max || body?.busca_final || body?.end || "").trim();
+      const preferredCalendarId = String(body?.calendar_id || "").trim() || undefined;
+
+      if (!timeMin || !timeMax) {
+        return new Response(JSON.stringify({ success: false, error: "time_min e time_max são obrigatórios" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const startMs = new Date(timeMin).getTime();
+      const endMs = new Date(timeMax).getTime();
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+        return new Response(JSON.stringify({ success: false, error: "Período inválido em time_min/time_max" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const durationMs = endMs - startMs;
+
+      const picked = await pickFreeBrokerForSlot(profile.company_id, timeMin, timeMax, preferredCalendarId);
+      if (picked.selected) {
+        await service
+          .from("broker_queue_state")
+          .upsert({
+            company_id: profile.company_id,
+            last_index: picked.selected.original_index,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "company_id" });
+
+        return new Response(JSON.stringify({
+          success: true,
+          available: true,
+          company_id: profile.company_id,
+          broker_id: picked.selected.broker_id,
+          broker_name: picked.selected.broker_name,
+          calendar_id: picked.selected.calendar_id,
+          time_min: timeMin,
+          time_max: timeMax,
+          availability_checks: picked.checks,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const step = 30 * 60 * 1000;
+      const limitMs = startMs + 3 * 24 * 60 * 60 * 1000;
+      const suggestionByStart = new Map<string, { start: string; end: string; calendar_id: string; broker_name: string; broker_id: string }>();
+      for (const candidate of picked.rotated) {
+        const horizonEnd = new Date(limitMs).toISOString();
+        const busy = await checkBusy(candidate.calendar_id, timeMin, horizonEnd);
+        const intervals = busy
+          .map((b: any) => ({
+            startMs: new Date(String(b?.start || "")).getTime(),
+            endMs: new Date(String(b?.end || "")).getTime(),
+          }))
+          .filter((x: any) => Number.isFinite(x.startMs) && Number.isFinite(x.endMs) && x.endMs > x.startMs)
+          .sort((a: any, b: any) => a.startMs - b.startMs);
+        const overlaps = (slotStart: number, slotEnd: number) =>
+          intervals.some((i: any) => slotStart < i.endMs && slotEnd > i.startMs);
+
+        let cursor = Math.ceil(startMs / step) * step;
+        while (cursor + durationMs <= limitMs && suggestionByStart.size < 3) {
+          const slotEnd = cursor + durationMs;
+          if (!overlaps(cursor, slotEnd)) {
+            const key = new Date(cursor).toISOString();
+            if (!suggestionByStart.has(key)) {
+              suggestionByStart.set(key, {
+                start: key,
+                end: new Date(slotEnd).toISOString(),
+                calendar_id: candidate.calendar_id,
+                broker_name: candidate.broker_name,
+                broker_id: candidate.broker_id,
+              });
+            }
+          }
+          cursor += step;
+        }
+        if (suggestionByStart.size >= 3) break;
+      }
+
+      return new Response(JSON.stringify({
+        success: false,
+        available: false,
+        conflict: true,
+        company_id: profile.company_id,
+        message: "O horario acabou de ser ocupado",
+        time_min: timeMin,
+        time_max: timeMax,
+        availability_checks: picked.checks,
+        suggested_slots: Array.from(suggestionByStart.values()),
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "create_event_from_n8n") {
       let calendarId = String(body?.calendar_id || "").trim();
 
@@ -485,17 +698,144 @@ serve(async (req) => {
         "",
       ).trim();
       const useBrokerQueue = Boolean(body?.use_broker_queue ?? !brokerId);
+      const autoReassignOnConflict = Boolean(body?.auto_reassign_on_conflict ?? true);
 
-      if (useBrokerQueue && (!brokerId || !calendarId)) {
-        const queuePick = await pickNextBrokerFromQueue(service, profile.company_id, calendarId || undefined);
-        if (queuePick) {
-          if (!brokerId) brokerId = queuePick.broker_id;
-          if (!brokerName) brokerName = queuePick.broker_name;
-          if (!calendarId) calendarId = queuePick.calendar_id;
+      if (!startDateTime || !endDateTime) {
+        return new Response(JSON.stringify({ success: false, error: "start e end são obrigatórios" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const requestedStartMs = new Date(startDateTime).getTime();
+      const requestedEndMs = new Date(endDateTime).getTime();
+      if (!Number.isFinite(requestedStartMs) || !Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
+        return new Response(JSON.stringify({ success: false, error: "Período inválido em start/end" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const requestedDurationMs = requestedEndMs - requestedStartMs;
+
+      const checkBusy = async (targetCalendarId: string, timeMinIso: string, timeMaxIso: string) => {
+        const fb = await gFetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+          method: "POST",
+          body: JSON.stringify({
+            timeMin: timeMinIso,
+            timeMax: timeMaxIso,
+            items: [{ id: targetCalendarId }],
+          }),
+        });
+        return Array.isArray(fb?.calendars?.[targetCalendarId]?.busy)
+          ? fb.calendars[targetCalendarId].busy
+          : [];
+      };
+
+      const buildSuggestedSlots = async (targetCalendarId: string): Promise<Array<{ start: string; end: string }>> => {
+        const horizonEnd = new Date(requestedStartMs + 3 * 24 * 60 * 60 * 1000).toISOString();
+        const busy = await checkBusy(targetCalendarId, startDateTime, horizonEnd);
+        const intervals = busy
+          .map((b: any) => ({
+            startMs: new Date(String(b?.start || "")).getTime(),
+            endMs: new Date(String(b?.end || "")).getTime(),
+          }))
+          .filter((x: any) => Number.isFinite(x.startMs) && Number.isFinite(x.endMs) && x.endMs > x.startMs)
+          .sort((a: any, b: any) => a.startMs - b.startMs);
+
+        const suggestions: Array<{ start: string; end: string }> = [];
+        const step = 30 * 60 * 1000;
+        const roundedStart = Math.ceil(requestedStartMs / step) * step;
+        const limitMs = requestedStartMs + 3 * 24 * 60 * 60 * 1000;
+        const overlaps = (slotStart: number, slotEnd: number) =>
+          intervals.some((i: any) => slotStart < i.endMs && slotEnd > i.startMs);
+
+        let cursor = roundedStart;
+        while (cursor + requestedDurationMs <= limitMs && suggestions.length < 3) {
+          const slotEnd = cursor + requestedDurationMs;
+          if (!overlaps(cursor, slotEnd)) {
+            suggestions.push({
+              start: new Date(cursor).toISOString(),
+              end: new Date(slotEnd).toISOString(),
+            });
+          }
+          cursor += step;
+        }
+        return suggestions;
+      };
+
+      type CandidateCheck = QueueBroker & { original_index: number };
+      const availabilityChecks: Array<{
+        broker_id: string | null;
+        broker_name: string | null;
+        calendar_id: string;
+        is_free: boolean;
+        busy_count: number;
+      }> = [];
+
+      const uniqueByCalendar = (arr: CandidateCheck[]) => {
+        const seen = new Set<string>();
+        return arr.filter((c) => {
+          if (seen.has(c.calendar_id)) return false;
+          seen.add(c.calendar_id);
+          return true;
+        });
+      };
+
+      const sortedBrokers = await listEligibleBrokers(service, profile.company_id);
+      let selectedBrokerOriginalIndex: number | null = null;
+      let preferredCandidate: CandidateCheck | null = null;
+
+      if (calendarId || brokerId) {
+        const found = sortedBrokers.find((b) =>
+          (brokerId && b.broker_id === brokerId) || (calendarId && b.calendar_id === calendarId),
+        );
+        if (found) {
+          preferredCandidate = {
+            ...found,
+            original_index: sortedBrokers.findIndex((x) => x.broker_id === found.broker_id),
+          };
+        } else if (calendarId) {
+          preferredCandidate = {
+            broker_id: brokerId,
+            broker_name: brokerName,
+            calendar_id: calendarId,
+            original_index: -1,
+          };
         }
       }
 
-      if (!calendarId) {
+      let candidatesToCheck: CandidateCheck[] = [];
+      if (useBrokerQueue && sortedBrokers.length > 0) {
+        const { data: queueState } = await service
+          .from("broker_queue_state")
+          .select("last_index")
+          .eq("company_id", profile.company_id)
+          .maybeSingle();
+        const lastIndex = Number(queueState?.last_index ?? -1);
+        const startIndex = (lastIndex + 1) % sortedBrokers.length;
+        const rotated = sortedBrokers.map((_, i) => sortedBrokers[(startIndex + i) % sortedBrokers.length]);
+        candidatesToCheck = rotated.map((b) => ({
+          ...b,
+          original_index: sortedBrokers.findIndex((x) => x.broker_id === b.broker_id),
+        }));
+      }
+
+      if (preferredCandidate) {
+        candidatesToCheck = uniqueByCalendar([preferredCandidate, ...candidatesToCheck]);
+      } else if (!candidatesToCheck.length && calendarId) {
+        candidatesToCheck = [{
+          broker_id: brokerId,
+          broker_name: brokerName,
+          calendar_id: calendarId,
+          original_index: -1,
+        }];
+      }
+
+      if (!candidatesToCheck.length && autoReassignOnConflict) {
+        candidatesToCheck = sortedBrokers.map((b, i) => ({ ...b, original_index: i }));
+      }
+
+      if (!candidatesToCheck.length && !calendarId) {
         return new Response(JSON.stringify({
           success: false,
           error: "calendar_id é obrigatório (ou use_broker_queue=true com fila configurada)",
@@ -503,6 +843,64 @@ serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      for (let i = 0; i < candidatesToCheck.length; i++) {
+        const candidate = candidatesToCheck[i];
+        if (!candidate?.calendar_id) continue;
+        const busy = await checkBusy(candidate.calendar_id, startDateTime, endDateTime);
+        const isFree = busy.length === 0;
+        availabilityChecks.push({
+          broker_id: candidate.broker_id || null,
+          broker_name: candidate.broker_name || null,
+          calendar_id: candidate.calendar_id,
+          is_free: isFree,
+          busy_count: busy.length,
+        });
+
+        if (isFree) {
+          calendarId = candidate.calendar_id;
+          if (candidate.broker_id) brokerId = candidate.broker_id;
+          if (candidate.broker_name) brokerName = candidate.broker_name;
+          selectedBrokerOriginalIndex = candidate.original_index;
+          break;
+        }
+        if (!autoReassignOnConflict) break;
+      }
+
+      const hasFreeCandidate = availabilityChecks.some((x) => x.is_free);
+      if (!hasFreeCandidate) {
+        const suggestionCalendarId =
+          preferredCandidate?.calendar_id ||
+          candidatesToCheck[0]?.calendar_id ||
+          calendarId;
+        const suggestedSlots = suggestionCalendarId
+          ? await buildSuggestedSlots(suggestionCalendarId)
+          : [];
+
+        return new Response(JSON.stringify({
+          success: false,
+          conflict: true,
+          message: "O horario acabou de ser ocupado",
+          broker_id: preferredCandidate?.broker_id || brokerId || null,
+          broker_name: preferredCandidate?.broker_name || brokerName || null,
+          calendar_id: suggestionCalendarId || null,
+          suggested_slots: suggestedSlots,
+          availability_checks: availabilityChecks,
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (useBrokerQueue && selectedBrokerOriginalIndex !== null && selectedBrokerOriginalIndex >= 0) {
+        await service
+          .from("broker_queue_state")
+          .upsert({
+            company_id: profile.company_id,
+            last_index: selectedBrokerOriginalIndex,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "company_id" });
       }
 
       // attendees pode chegar como array ou string (n8n às vezes manda string)
@@ -515,13 +913,6 @@ serve(async (req) => {
       }
 
       const reminders = Array.isArray(body?.reminders) ? body.reminders : [];
-
-      if (!startDateTime || !endDateTime) {
-        return new Response(JSON.stringify({ success: false, error: "start e end são obrigatórios" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
 
       // ⚡ Lookup do lead via lead_id (também aceita session_id como alias).
       // Se o nome estiver vazio, cai no nome_instagram_cliente; o @arroba vai como sufixo "(@handle)".
@@ -583,6 +974,33 @@ serve(async (req) => {
         eventBody.extendedProperties = { private: priv };
       }
 
+      // Idempotência defensiva: se já houver evento exatamente no mesmo slot
+      // para a mesma agenda (e, quando possível, mesmo lead), não cria duplicado.
+      const existingInSlot = await listEventsInWindow(calendarId, startDateTime, endDateTime);
+      const sameSlotEvents = existingInSlot.filter((evt) =>
+        eventStartIso(evt) === startDateTime && eventEndIso(evt) === endDateTime,
+      );
+      const duplicateByLead = leadId
+        ? sameSlotEvents.find((evt) => String(evt?.extendedProperties?.private?.lead_id || "") === leadId)
+        : null;
+      const duplicateAny = sameSlotEvents[0] || null;
+      const duplicateEvent = duplicateByLead || duplicateAny;
+      if (duplicateEvent?.id) {
+        return new Response(JSON.stringify({
+          success: true,
+          deduplicated: true,
+          duplicate_detected: true,
+          id: duplicateEvent.id,
+          calendar_id: calendarId,
+          broker_id: brokerId || null,
+          broker_name: brokerName || null,
+          availability_checked: availabilityChecks,
+          message: "Evento já existente para o mesmo horário; criação duplicada evitada",
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const created = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
         method: "POST",
         body: JSON.stringify(eventBody),
@@ -618,12 +1036,127 @@ serve(async (req) => {
         success: true,
         broker_id: brokerId || null,
         broker_name: brokerName || null,
+        calendar_id: calendarId,
+        availability_checked: availabilityChecks,
         client_resolved: leadInfo.displayName ? {
           name: leadInfo.displayName,
           handle: leadInfo.handle || null,
           phone: leadInfo.phone || null,
           email: leadInfo.email || null,
         } : null,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "cleanup_duplicate_events") {
+      const windowDaysPast = Number(body?.window_days_past ?? 90);
+      const windowDaysFuture = Number(body?.window_days_future ?? 90);
+
+      const now = Date.now();
+      const timeMin = new Date(now - windowDaysPast * 24 * 60 * 60 * 1000).toISOString();
+      const timeMax = new Date(now + windowDaysFuture * 24 * 60 * 60 * 1000).toISOString();
+
+      const calendarsJson = await gFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList");
+      const allCalendars = Array.isArray(calendarsJson?.items) ? calendarsJson.items : [];
+      const calendarIds: string[] = allCalendars
+        .map((c: any) => String(c?.id || ""))
+        .filter(Boolean);
+
+      const cancelled: Array<{
+        calendar_id: string;
+        kept_event_id: string;
+        removed_event_id: string;
+        start: string;
+        end: string;
+      }> = [];
+      const perCalendarSummary: Array<{
+        calendar_id: string;
+        scanned_events: number;
+        duplicate_groups: number;
+        removed: number;
+      }> = [];
+
+      for (const calendarId of calendarIds) {
+        const events = await listEventsInWindow(calendarId, timeMin, timeMax);
+        const bySlot = new Map<string, CalendarEventLite[]>();
+
+        for (const evt of events) {
+          const start = eventStartIso(evt);
+          const end = eventEndIso(evt);
+          if (!evt?.id || !start || !end) continue;
+          const key = `${start}__${end}`;
+          const arr = bySlot.get(key) || [];
+          arr.push(evt);
+          bySlot.set(key, arr);
+        }
+
+        let duplicateGroups = 0;
+        let removedCount = 0;
+
+        for (const [slotKey, arr] of bySlot.entries()) {
+          if (arr.length <= 1) continue;
+          duplicateGroups += 1;
+          const sorted = [...arr].sort((a, b) => {
+            const ca = new Date(String(a?.created || 0)).getTime();
+            const cb = new Date(String(b?.created || 0)).getTime();
+            if (ca !== cb) return ca - cb;
+            return String(a?.id || "").localeCompare(String(b?.id || ""));
+          });
+          const keeper = sorted[0];
+          const toRemove = sorted.slice(1);
+          const [slotStart, slotEnd] = slotKey.split("__");
+
+          for (const evt of toRemove) {
+            const eventId = String(evt?.id || "");
+            if (!eventId) continue;
+            await gFetch(
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+              { method: "DELETE" },
+            );
+            removedCount += 1;
+            cancelled.push({
+              calendar_id: calendarId,
+              kept_event_id: String(keeper?.id || ""),
+              removed_event_id: eventId,
+              start: slotStart || "",
+              end: slotEnd || "",
+            });
+
+            // Best-effort mirror update.
+            try {
+              await service
+                .from("oncall_events")
+                .update({
+                  status: "Cancelado",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("company_id", profile.company_id)
+                .eq("google_event_id", eventId);
+            } catch {
+              // silencioso
+            }
+          }
+        }
+
+        perCalendarSummary.push({
+          calendar_id: calendarId,
+          scanned_events: events.length,
+          duplicate_groups: duplicateGroups,
+          removed: removedCount,
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        action: "cleanup_duplicate_events",
+        company_id: profile.company_id,
+        time_min: timeMin,
+        time_max: timeMax,
+        calendars_scanned: calendarIds.length,
+        total_removed: cancelled.length,
+        per_calendar_summary: perCalendarSummary,
+        cancelled_duplicates: cancelled,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

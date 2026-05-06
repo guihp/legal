@@ -152,6 +152,12 @@ export type Database = {
       companies: {
         Row: {
           address: string | null
+          address_city: string | null
+          address_complement: string | null
+          address_neighborhood: string | null
+          address_number: string | null
+          address_state: string | null
+          address_zip_code: string | null
           admin_notes: string | null
           APIOficial: boolean | null
           arroba_instagram_empresa: string | null
@@ -162,6 +168,7 @@ export type Database = {
           created_at: string | null
           contact_name: string | null
           email: string | null
+          business_hours: string | null
           grace_period_days: number | null
           id: string
           id_instagram: string | null
@@ -181,6 +188,12 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_zip_code?: string | null
           admin_notes?: string | null
           APIOficial?: boolean | null
           arroba_instagram_empresa?: string | null
@@ -191,6 +204,7 @@ export type Database = {
           created_at?: string | null
           contact_name?: string | null
           email?: string | null
+          business_hours?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -210,6 +224,12 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_zip_code?: string | null
           admin_notes?: string | null
           APIOficial?: boolean | null
           arroba_instagram_empresa?: string | null
@@ -220,6 +240,7 @@ export type Database = {
           created_at?: string | null
           contact_name?: string | null
           email?: string | null
+          business_hours?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -1890,6 +1911,13 @@ export type Database = {
         Args: never
         Returns: {
           address: string
+          address_city: string
+          address_complement: string
+          address_neighborhood: string
+          address_number: string
+          address_state: string
+          address_zip_code: string
+          business_hours: string
           cnpj: string
           contact_name: string
           created_at: string
@@ -2037,6 +2065,13 @@ export type Database = {
       update_own_company: {
         Args: {
           p_address?: string
+          p_address_city?: string
+          p_address_complement?: string
+          p_address_neighborhood?: string
+          p_address_number?: string
+          p_address_state?: string
+          p_address_zip_code?: string
+          p_business_hours?: string
           p_cnpj?: string
           p_contact_name?: string
           p_email?: string

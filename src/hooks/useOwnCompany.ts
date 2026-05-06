@@ -11,6 +11,13 @@ export interface OwnCompanyData {
   cnpj: string | null;
   phone: string | null;
   address: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  address_neighborhood: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip_code: string | null;
+  business_hours: string | null;
   logo_url: string | null;
   plan: string;
   max_users: number;
@@ -62,6 +69,13 @@ export function useOwnCompany() {
     cnpj?: string;
     phone?: string;
     address?: string;
+    address_number?: string;
+    address_complement?: string;
+    address_neighborhood?: string;
+    address_city?: string;
+    address_state?: string;
+    address_zip_code?: string;
+    business_hours?: string;
   }): Promise<boolean> => {
     if (!isManager) {
       toast.error('Sem permissão para editar dados da empresa');
@@ -79,6 +93,13 @@ export function useOwnCompany() {
         p_cnpj: data.cnpj || null,
         p_phone: data.phone || null,
         p_address: data.address || null,
+        p_address_number: data.address_number || null,
+        p_address_complement: data.address_complement || null,
+        p_address_neighborhood: data.address_neighborhood || null,
+        p_address_city: data.address_city || null,
+        p_address_state: data.address_state || null,
+        p_address_zip_code: data.address_zip_code || null,
+        p_business_hours: data.business_hours || null,
       });
 
       if (rpcError) throw rpcError;
