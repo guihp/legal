@@ -27,6 +27,8 @@ export interface OwnCompanyData {
   ai_payment_methods: string | null;
   ai_visit_policy: string | null;
   ai_target_audience: string | null;
+  ai_rules: string | null;
+  ai_additional_info: string | null;
   logo_url: string | null;
   plan: string;
   max_users: number;
@@ -93,6 +95,8 @@ export function useOwnCompany() {
     ai_payment_methods?: string | null;
     ai_visit_policy?: string | null;
     ai_target_audience?: string | null;
+    ai_rules?: string | null;
+    ai_additional_info?: string | null;
   }): Promise<boolean> => {
     if (!isManager) {
       toast.error('Sem permissão para editar dados da empresa');
@@ -132,6 +136,9 @@ export function useOwnCompany() {
           data.ai_visit_policy !== undefined ? data.ai_visit_policy : null,
         p_ai_target_audience:
           data.ai_target_audience !== undefined ? data.ai_target_audience : null,
+        p_ai_rules: data.ai_rules !== undefined ? data.ai_rules : null,
+        p_ai_additional_info:
+          data.ai_additional_info !== undefined ? data.ai_additional_info : null,
       });
 
       if (rpcError) throw rpcError;

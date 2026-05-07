@@ -178,6 +178,8 @@ export type Database = {
           ai_unknown_info_message: string | null
           ai_target_audience: string | null
           ai_visit_policy: string | null
+          ai_rules: string | null
+          ai_additional_info: string | null
           grace_period_days: number | null
           id: string
           id_instagram: string | null
@@ -223,6 +225,8 @@ export type Database = {
           ai_unknown_info_message?: string | null
           ai_target_audience?: string | null
           ai_visit_policy?: string | null
+          ai_rules?: string | null
+          ai_additional_info?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -268,6 +272,8 @@ export type Database = {
           ai_unknown_info_message?: string | null
           ai_target_audience?: string | null
           ai_visit_policy?: string | null
+          ai_rules?: string | null
+          ai_additional_info?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -1954,6 +1960,8 @@ export type Database = {
           ai_payment_methods: string
           ai_visit_policy: string
           ai_target_audience: string
+          ai_rules: string
+          ai_additional_info: string
           cnpj: string
           contact_name: string
           created_at: string
@@ -2116,6 +2124,8 @@ export type Database = {
           p_ai_payment_methods?: string
           p_ai_visit_policy?: string
           p_ai_target_audience?: string
+          p_ai_rules?: string
+          p_ai_additional_info?: string
           p_cnpj?: string
           p_contact_name?: string
           p_email?: string

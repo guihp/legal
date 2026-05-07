@@ -20,23 +20,24 @@ import {
   type DaySchedule,
 } from '@/lib/businessHours';
 
-const INITIAL_MESSAGE_HINT =
-  'Ex.: Oiê! Que alegria ter você aqui 😊 Seja bem-vindo(a) à {nome_empresa} Qual é o seu nome? — use {nome_empresa} para o nome da empresa logada.';
+const TONE_PLACEHOLDER = `Ex.: Comunicação consultiva, humana e objetiva. Linguagem simples, sem termos técnicos em excesso. Sempre educada e proativa: responde com clareza, oferece próximos passos e evita pressão comercial. Pode usar emojis com moderação quando fizer sentido.`;
 
-const TONE_PLACEHOLDER = `Ex.: Natural, humanizado, acolhedor e empático. Leve, persuasivo sem forçar a barra. Fala como num atendimento real de WhatsApp — direto, próximo, sem formalidade excessiva.`;
+const VISIT_POLICY_PLACEHOLDER = `Ex.: Visitas somente com agendamento mínimo de 24h. Atendimento presencial de segunda a sexta, das 9h às 18h, e sábado até 12h. Todo atendimento é acompanhado por corretor. Para condomínios fechados, solicitar documento com foto na portaria.`;
 
-const VISIT_POLICY_PLACEHOLDER = `Ex.: Visitas apenas com hora marcada; seg a sex 9h–18h; não atendemos sáb/dom; visita acompanhada por corretor; documento com foto para acesso ao condomínio...`;
+const TARGET_AUDIENCE_PLACEHOLDER = `Ex.: Famílias de classe média que buscam primeiro imóvel com financiamento; investidores que procuram apartamentos compactos para locação; clientes de alto padrão interessados em casas em condomínio fechado na Zona Sul.`;
 
-const TARGET_AUDIENCE_PLACEHOLDER = `Ex.: Famílias buscando primeira casa; investidores de renda passiva; imóveis de alto padrão na Zona Sul...`;
+const RULES_PLACEHOLDER = `Ex.: Nunca inventar valor, metragem ou condição comercial. Sempre confirmar disponibilidade antes de prometer visita. Não negociar preço final no chat: direcionar para corretor responsável. Quando faltar dado, informar com transparência e oferecer retorno humano.`;
+
+const ADDITIONAL_INFO_PLACEHOLDER = `Ex.: Diferenciais da empresa: aprovação de crédito com parceiros bancários, acompanhamento documental até a assinatura e suporte pós-venda por 90 dias. Regiões com maior atuação: Centro, Zona Sul e bairros com alta procura para aluguel.`;
 
 const UNKNOWN_INFO_PLACEHOLDER =
-  'Ex.: Esse detalhe ainda não está nas minhas informações aqui. Posso anotar e um consultor te retorna com precisão, tudo bem?';
+  'Ex.: Ótima pergunta. No momento esse detalhe não está disponível no meu cadastro com segurança. Se você quiser, eu registro agora e um corretor da nossa equipe te retorna com a informação exata.';
 
 const UNKNOWN_INFO_TOOLTIP =
   'Use quando o cliente pergunta algo que a assistente não tem como saber só pelo que está cadastrado — por exemplo: valor que ainda não foi consultado, condição de pagamento que vocês não descreveram aqui, ou detalhes do imóvel que não aparecem nos dados (metragem de um quarto, quantas pias tem a casa, quantas vagas na garagem, orientação do apartamento, etc.). A ideia é evitar que ela invente: ela segue o texto que você escreve no campo abaixo e pode oferecer anotar ou passar para um corretor.';
 
 const TOOLTIP_INITIAL_MESSAGE =
-  'É a primeira mensagem que a assistente usa para receber o cliente no WhatsApp (ou outro canal). Aqui você define o tom de boas-vindas e pode usar {nome_empresa} onde quiser que apareça o nome da sua imobiliária. Quanto mais claro você escrever, mais fácil fica para o cliente entender e responder.';
+  'É a primeira mensagem que a assistente usa para receber o cliente no WhatsApp (ou outro canal). Escreva o texto final exatamente como você quer que o cliente receba, já com o nome da sua empresa.';
 
 const TOOLTIP_ASSISTANT_NAME =
   'Nome que a assistente usa para se apresentar (ex.: “Oi, sou a Marina…”). Ajuda a humanizar o atendimento e a manter a mesma “persona” em todas as conversas.';
@@ -55,6 +56,12 @@ const TOOLTIP_VISIT_POLICY =
 
 const TOOLTIP_TARGET_AUDIENCE =
   'Quem vocês mais atendem ou querem atrair (primeira casa, investidor, alto padrão, famílias…). Ajuda a assistente a usar exemplos e linguagem adequados, sem parecer desconectada do seu público.';
+
+const TOOLTIP_RULES =
+  'Defina limites e combinados que a IA deve seguir em toda conversa. Exemplo: não prometer disponibilidade sem confirmar, não fechar desconto no chat, não inventar dados, sempre encaminhar para corretor em decisões comerciais.';
+
+const TOOLTIP_ADDITIONAL_INFO =
+  'Use este campo para contexto estratégico que melhora o atendimento, mas não cabe nos campos acima: diferenciais da empresa, regiões foco, perfis de imóvel com maior giro, políticas internas e observações importantes para o time comercial.';
 
 const TOOLTIP_BUSINESS_HOURS =
   'Marque em cada dia se a loja ou o atendimento presencial fecha e, nos dias abertos, preencha os horários (abertura, intervalo de almoço e fechamento). Depois de salvar, a assistente pode usar esses horários para falar de disponibilidade e visitas de forma alinhada com a sua rotina.';
@@ -97,6 +104,8 @@ export function AiConfigurationView() {
     aiPaymentMethods: '',
     aiVisitPolicy: '',
     aiTargetAudience: '',
+    aiRules: '',
+    aiAdditionalInfo: '',
     businessHoursSchedule: DEFAULT_BUSINESS_SCHEDULE as DaySchedule[],
   });
   const [hasChanges, setHasChanges] = useState(false);
@@ -112,6 +121,8 @@ export function AiConfigurationView() {
       aiPaymentMethods: company.ai_payment_methods || '',
       aiVisitPolicy: company.ai_visit_policy || '',
       aiTargetAudience: company.ai_target_audience || '',
+      aiRules: company.ai_rules || '',
+      aiAdditionalInfo: company.ai_additional_info || '',
       businessHoursSchedule: parseBusinessHours(company.business_hours),
     });
   }, [company]);
@@ -127,6 +138,8 @@ export function AiConfigurationView() {
       form.aiPaymentMethods === (company.ai_payment_methods || '') &&
       form.aiVisitPolicy === (company.ai_visit_policy || '') &&
       form.aiTargetAudience === (company.ai_target_audience || '') &&
+      form.aiRules === (company.ai_rules || '') &&
+      form.aiAdditionalInfo === (company.ai_additional_info || '') &&
       serializeBusinessHours(form.businessHoursSchedule) === (company.business_hours || '');
     setHasChanges(!same);
   }, [form, company]);
@@ -151,6 +164,8 @@ export function AiConfigurationView() {
       ai_payment_methods: form.aiPaymentMethods,
       ai_visit_policy: form.aiVisitPolicy,
       ai_target_audience: form.aiTargetAudience,
+      ai_rules: form.aiRules,
+      ai_additional_info: form.aiAdditionalInfo,
     });
     if (ok) setHasChanges(false);
   };
@@ -204,11 +219,9 @@ export function AiConfigurationView() {
               value={form.aiInitialMessage}
               onChange={(e) => setForm((p) => ({ ...p, aiInitialMessage: e.target.value }))}
               disabled={!isManager}
-              placeholder={INITIAL_MESSAGE_HINT}
               rows={4}
               className="bg-gray-900/50 border-gray-600 text-white resize-y min-h-[100px]"
             />
-            <p className="text-xs text-gray-500">{INITIAL_MESSAGE_HINT}</p>
           </div>
 
           <div className="space-y-2">
@@ -314,6 +327,38 @@ export function AiConfigurationView() {
             <p className="text-xs text-gray-500">
               Quem a imobiliária atende com mais frequência — ajuda a IA a priorizar linguagem e exemplos.
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <LabelWithHelp label="Regras da IA:" tooltip={TOOLTIP_RULES} htmlFor="ai-rules" />
+            <Textarea
+              id="ai-rules"
+              value={form.aiRules}
+              onChange={(e) => setForm((p) => ({ ...p, aiRules: e.target.value }))}
+              disabled={!isManager}
+              placeholder={RULES_PLACEHOLDER}
+              rows={4}
+              className="bg-gray-900/50 border-gray-600 text-white resize-y min-h-[100px]"
+            />
+            <p className="text-xs text-gray-500">{RULES_PLACEHOLDER}</p>
+          </div>
+
+          <div className="space-y-2">
+            <LabelWithHelp
+              label="Informações adicionais:"
+              tooltip={TOOLTIP_ADDITIONAL_INFO}
+              htmlFor="ai-additional-info"
+            />
+            <Textarea
+              id="ai-additional-info"
+              value={form.aiAdditionalInfo}
+              onChange={(e) => setForm((p) => ({ ...p, aiAdditionalInfo: e.target.value }))}
+              disabled={!isManager}
+              placeholder={ADDITIONAL_INFO_PLACEHOLDER}
+              rows={4}
+              className="bg-gray-900/50 border-gray-600 text-white resize-y min-h-[100px]"
+            />
+            <p className="text-xs text-gray-500">{ADDITIONAL_INFO_PLACEHOLDER}</p>
           </div>
 
           <div className="space-y-2">
