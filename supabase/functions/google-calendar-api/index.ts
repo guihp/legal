@@ -202,7 +202,14 @@ serve(async (req) => {
 
     const bearerToken = getBearerToken(req);
     const jwtRole = getJwtRole(bearerToken);
-    const isServiceRoleRequest = jwtRole === "service_role";
+    const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+    const apikeyHeader = req.headers.get("apikey") || "";
+    const isServiceRoleJwt = jwtRole === "service_role";
+    // Supports modern non-JWT service keys for trusted server-to-server calls.
+    const isServiceRoleByKey =
+      !!serviceRoleKey &&
+      (apikeyHeader === serviceRoleKey || bearerToken === serviceRoleKey);
+    const isServiceRoleRequest = isServiceRoleJwt || isServiceRoleByKey;
     const internalKey = req.headers.get("x-n8n-secret") || "";
     const isInternalRequest = !!internalKey && internalKey === env("N8N_INTERNAL_API_KEY");
     const isInternalAllowed = isInternalRequest || isServiceRoleRequest;

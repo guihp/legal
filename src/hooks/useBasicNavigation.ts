@@ -5,7 +5,7 @@ export type View =
   | "dashboard" | "properties" | "contracts" | "agenda" | "plantao"
   | "reports" | "clients" | "clients-crm" | "connections" | "users"
   | "permissions" | "inquilinato" | "disparador" | "conversas"
-  | "configurations" | "profile" | "landing" | "marketing" | "marketing-site"
+  | "configurations" | "ai-configuration" | "profile" | "landing" | "marketing" | "marketing-site"
   | "marketing-lps" | "marketing-visitas"
   | "partnerships" | "n8n-leads-api";
 

@@ -617,7 +617,7 @@ export const DashboardCharts: React.FC = () => {
 					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72 relative">
+					<div className="h-72 relative min-w-0 overflow-hidden">
 						{showAvailabilityChart ? (
 							renderChartWithStates(
 								'gauge',
@@ -647,9 +647,9 @@ export const DashboardCharts: React.FC = () => {
 								'imoveis',
 								imoveisProcurados,
 								() => (
-							<div className="flex flex-col h-full">
-								{/* Gráfico de barras horizontais */}
-								<div className="flex-1">
+							<div className="flex flex-col h-full min-w-0">
+								{/* Gráfico de barras horizontais — eixo Y usa #1..#n porque imovel_interesse pode ser texto longo */}
+								<div className="flex-1 min-w-0 overflow-hidden">
 									<ChartContainer
 										xAxis={[{ 
 											scaleType: 'linear', 
@@ -660,7 +660,7 @@ export const DashboardCharts: React.FC = () => {
 										yAxis={[{ 
 											scaleType: 'band', 
 											position: 'left', 
-											data: imoveisProcurados.map(i => i.id),
+											data: imoveisProcurados.map((_, idx) => `#${idx + 1}`),
 											tickLabelStyle: { 
 												fill: chartPalette.textPrimary, 
 												fontSize: '0.75rem', 
@@ -674,7 +674,7 @@ export const DashboardCharts: React.FC = () => {
 											];
 											return {
 												type: 'bar' as const,
-												data: imoveisProcurados.map(im => im.id === imovel.id ? imovel.value : 0),
+												data: imoveisProcurados.map((_, j) => (j === i ? imovel.value : 0)),
 												label: imovel.name,
 												color: colors[i % colors.length],
 												layout: 'horizontal' as const
@@ -682,7 +682,7 @@ export const DashboardCharts: React.FC = () => {
 										})}
 										height={180}
 										margin={{
-											left: 80,
+											left: 44,
 											right: 40,
 											top: 10,
 											bottom: 20
@@ -695,23 +695,26 @@ export const DashboardCharts: React.FC = () => {
 								</div>
 								
 								{/* Legenda clicável */}
-								<div className="mt-4 flex flex-wrap gap-2 justify-center">
+								<div className="mt-4 flex flex-wrap gap-2 justify-center max-w-full">
 									{imoveisProcurados.map((imovel, i) => {
 										const colors = [
 											'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', '#22d3ee'
 										];
 										return (
 											<div
-												key={imovel.id}
+												key={`procurado-${i}`}
 												onMouseEnter={(e) => handlePropertyHover(imovel.id, e)}
 												onMouseLeave={handlePropertyHoverExit}
-												className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors text-xs cursor-pointer"
+												className="flex max-w-full min-w-0 items-center gap-2 px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors text-xs cursor-pointer"
 											>
 												<div 
-													className="w-3 h-3 rounded-full"
+													className="w-3 h-3 shrink-0 rounded-full"
 													style={{ backgroundColor: colors[i % colors.length] }}
 												></div>
-												<span className="text-gray-200">{imovel.id}</span>
+												<span className="text-gray-200 min-w-0 shrink truncate" title={imovel.id}>
+													<span className="text-gray-400 mr-1">#{i + 1}</span>
+													{imovel.id}
+												</span>
 											</div>
 										);
 									})}

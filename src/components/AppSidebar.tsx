@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, Sun, Moon, LayoutDashboard, Globe, Layers, KeyRound } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -171,6 +171,13 @@ const secondaryItems = [
     permissionKey: "menu_configurations",
   },
   {
+    title: "Configuração para IA",
+    url: "#",
+    icon: Bot,
+    view: "ai-configuration" as const,
+    permissionKey: "menu_configurations",
+  },
+  {
     title: "API Leads n8n",
     url: "#",
     icon: KeyRound,
@@ -197,6 +204,7 @@ interface AppSidebarProps {
       | 'disparador'
       | 'conversas'
       | 'configurations'
+      | 'ai-configuration'
       | 'profile'
       | 'marketing'
       | 'marketing-site'
@@ -215,7 +223,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const { company } = useOwnCompany();
   const companyPlanRaw = String(company?.plan || 'essential').toLowerCase();
   const normalizePlan = (plan: string): 'essential' | 'growth' | 'professional' => {
@@ -649,6 +657,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
               Versão 1.0.0
             </div>
 
+            {/* REATIVAR_MODO_CLARO_ESCURO_SIDEBAR — busque por este token no projeto. Ao reativar: descomente o bloco abaixo, restaure `toggleTheme` em useTheme() e Sun, Moon no import lucide-react. */}
+            {/*
             <Button
               onClick={toggleTheme}
               variant="outline"
@@ -660,6 +670,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 <><Moon className="mr-2 h-4 w-4 text-blue-400" /> Modo Escuro</>
               )}
             </Button>
+            */}
 
             <Button
               onClick={async () => {

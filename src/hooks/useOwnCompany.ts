@@ -18,6 +18,15 @@ export interface OwnCompanyData {
   address_state: string | null;
   address_zip_code: string | null;
   business_hours: string | null;
+  business_hours_summary: string | null;
+  ai_initial_message: string | null;
+  ai_assistant_name: string | null;
+  ai_unknown_info_message: string | null;
+  ai_company_mission: string | null;
+  ai_tone: string | null;
+  ai_payment_methods: string | null;
+  ai_visit_policy: string | null;
+  ai_target_audience: string | null;
   logo_url: string | null;
   plan: string;
   max_users: number;
@@ -76,6 +85,14 @@ export function useOwnCompany() {
     address_state?: string;
     address_zip_code?: string;
     business_hours?: string;
+    ai_initial_message?: string | null;
+    ai_assistant_name?: string | null;
+    ai_unknown_info_message?: string | null;
+    ai_company_mission?: string | null;
+    ai_tone?: string | null;
+    ai_payment_methods?: string | null;
+    ai_visit_policy?: string | null;
+    ai_target_audience?: string | null;
   }): Promise<boolean> => {
     if (!isManager) {
       toast.error('Sem permissão para editar dados da empresa');
@@ -87,19 +104,34 @@ export function useOwnCompany() {
       setError(null);
 
       const { error: rpcError } = await supabase.rpc('update_own_company', {
-        p_name: data.name || null,
-        p_contact_name: data.contact_name || null,
-        p_email: data.email || null,
-        p_cnpj: data.cnpj || null,
-        p_phone: data.phone || null,
-        p_address: data.address || null,
-        p_address_number: data.address_number || null,
-        p_address_complement: data.address_complement || null,
-        p_address_neighborhood: data.address_neighborhood || null,
-        p_address_city: data.address_city || null,
-        p_address_state: data.address_state || null,
-        p_address_zip_code: data.address_zip_code || null,
-        p_business_hours: data.business_hours || null,
+        p_name: data.name !== undefined ? data.name || null : null,
+        p_contact_name: data.contact_name !== undefined ? data.contact_name || null : null,
+        p_email: data.email !== undefined ? data.email || null : null,
+        p_cnpj: data.cnpj !== undefined ? data.cnpj || null : null,
+        p_phone: data.phone !== undefined ? data.phone || null : null,
+        p_address: data.address !== undefined ? data.address || null : null,
+        p_address_number: data.address_number !== undefined ? data.address_number || null : null,
+        p_address_complement: data.address_complement !== undefined ? data.address_complement || null : null,
+        p_address_neighborhood: data.address_neighborhood !== undefined ? data.address_neighborhood || null : null,
+        p_address_city: data.address_city !== undefined ? data.address_city || null : null,
+        p_address_state: data.address_state !== undefined ? data.address_state || null : null,
+        p_address_zip_code: data.address_zip_code !== undefined ? data.address_zip_code || null : null,
+        p_business_hours: data.business_hours !== undefined ? data.business_hours || null : null,
+        p_ai_initial_message:
+          data.ai_initial_message !== undefined ? data.ai_initial_message : null,
+        p_ai_assistant_name:
+          data.ai_assistant_name !== undefined ? data.ai_assistant_name : null,
+        p_ai_unknown_info_message:
+          data.ai_unknown_info_message !== undefined ? data.ai_unknown_info_message : null,
+        p_ai_company_mission:
+          data.ai_company_mission !== undefined ? data.ai_company_mission : null,
+        p_ai_tone: data.ai_tone !== undefined ? data.ai_tone : null,
+        p_ai_payment_methods:
+          data.ai_payment_methods !== undefined ? data.ai_payment_methods : null,
+        p_ai_visit_policy:
+          data.ai_visit_policy !== undefined ? data.ai_visit_policy : null,
+        p_ai_target_audience:
+          data.ai_target_audience !== undefined ? data.ai_target_audience : null,
       });
 
       if (rpcError) throw rpcError;

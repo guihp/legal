@@ -12,7 +12,7 @@ import NotFound from "@/pages/NotFound";
 const VALID_VIEWS: ReadonlyArray<string> = [
   "dashboard", "properties", "contracts", "agenda", "plantao", "reports",
   "clients", "clients-crm", "connections", "users", "permissions",
-  "inquilinato", "disparador", "conversas", "configurations", "profile",
+  "inquilinato", "disparador", "conversas", "configurations", "ai-configuration", "profile",
   "landing", "marketing", "marketing-site", "marketing-lps", "marketing-visitas",
   "partnerships", "n8n-leads-api",
 ];
@@ -135,6 +135,10 @@ const PartnershipsView = createLazyComponent(
 const N8nLeadsApiView = createLazyComponent(
   () => import("@/components/N8nLeadsApiView").then(m => ({ default: m.N8nLeadsApiView })),
   "N8nLeadsApiView"
+);
+const AiConfigurationView = createLazyComponent(
+  () => import("@/components/AiConfigurationView").then(m => ({ default: m.AiConfigurationView })),
+  "AiConfigurationView"
 );
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
@@ -342,6 +346,18 @@ const Index = () => {
             </div>
           );
         }
+      case "ai-configuration":
+        if (!hasPermission('menu_configurations')) {
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <div className="text-gray-400 text-sm">
+                Você não tem permissão para acessar a Configuração para IA.
+              </div>
+            </div>
+          );
+        }
+        return <AiConfigurationView />;
       case "profile":
         return <UserProfileView />;
       default:

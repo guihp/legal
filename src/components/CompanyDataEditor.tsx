@@ -5,55 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
-
-type DaySchedule = {
-  dayKey: string;
-  label: string;
-  closed: boolean;
-  openTime: string;
-  lunchStart: string;
-  lunchEnd: string;
-  closeTime: string;
-};
-
-const DEFAULT_SCHEDULE: DaySchedule[] = [
-  { dayKey: 'monday', label: 'Segunda', closed: false, openTime: '08:00', lunchStart: '12:00', lunchEnd: '13:00', closeTime: '18:00' },
-  { dayKey: 'tuesday', label: 'Terca', closed: false, openTime: '08:00', lunchStart: '12:00', lunchEnd: '13:00', closeTime: '18:00' },
-  { dayKey: 'wednesday', label: 'Quarta', closed: false, openTime: '08:00', lunchStart: '12:00', lunchEnd: '13:00', closeTime: '18:00' },
-  { dayKey: 'thursday', label: 'Quinta', closed: false, openTime: '08:00', lunchStart: '12:00', lunchEnd: '13:00', closeTime: '18:00' },
-  { dayKey: 'friday', label: 'Sexta', closed: false, openTime: '08:00', lunchStart: '12:00', lunchEnd: '13:00', closeTime: '18:00' },
-  { dayKey: 'saturday', label: 'Sabado', closed: false, openTime: '08:00', lunchStart: '', lunchEnd: '', closeTime: '12:00' },
-  { dayKey: 'sunday', label: 'Domingo', closed: true, openTime: '', lunchStart: '', lunchEnd: '', closeTime: '' },
-];
-
-function parseBusinessHours(value: string | null | undefined): DaySchedule[] {
-  if (!value) return DEFAULT_SCHEDULE;
-
-  try {
-    const parsed = JSON.parse(value) as { days?: DaySchedule[] };
-    if (!Array.isArray(parsed.days)) return DEFAULT_SCHEDULE;
-
-    const mappedDays = DEFAULT_SCHEDULE.map((defaultDay) => {
-      const savedDay = parsed.days?.find((day) => day.dayKey === defaultDay.dayKey);
-      if (!savedDay) return defaultDay;
-
-      return {
-        ...defaultDay,
-        ...savedDay,
-      };
-    });
-
-    return mappedDays;
-  } catch {
-    return DEFAULT_SCHEDULE;
-  }
-}
-
-function serializeBusinessHours(schedule: DaySchedule[]): string {
-  return JSON.stringify({ days: schedule });
-}
 
 export function CompanyDataEditor() {
   const { company, loading, updating, isManager, updateCompany, daysRemaining } = useOwnCompany();
@@ -70,7 +22,6 @@ export function CompanyDataEditor() {
     addressCity: '',
     addressState: '',
     addressZipCode: '',
-    businessHoursSchedule: DEFAULT_SCHEDULE,
   });
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -90,7 +41,6 @@ export function CompanyDataEditor() {
         addressCity: company.address_city || '',
         addressState: company.address_state || '',
         addressZipCode: company.address_zip_code || '',
-        businessHoursSchedule: parseBusinessHours(company.business_hours),
       });
     }
   }, [company]);
@@ -110,8 +60,7 @@ export function CompanyDataEditor() {
       formData.addressNeighborhood !== (company.address_neighborhood || '') ||
       formData.addressCity !== (company.address_city || '') ||
       formData.addressState !== (company.address_state || '') ||
-      formData.addressZipCode !== (company.address_zip_code || '') ||
-      serializeBusinessHours(formData.businessHoursSchedule) !== (company.business_hours || '');
+      formData.addressZipCode !== (company.address_zip_code || '');
     setHasChanges(changed);
   }, [formData, company]);
 
@@ -129,20 +78,10 @@ export function CompanyDataEditor() {
       address_city: formData.addressCity,
       address_state: formData.addressState,
       address_zip_code: formData.addressZipCode,
-      business_hours: serializeBusinessHours(formData.businessHoursSchedule),
     });
     if (success) {
       setHasChanges(false);
     }
-  };
-
-  const updateSchedule = (dayKey: string, patch: Partial<DaySchedule>) => {
-    setFormData((previous) => ({
-      ...previous,
-      businessHoursSchedule: previous.businessHoursSchedule.map((day) =>
-        day.dayKey === dayKey ? { ...day, ...patch } : day
-      ),
-    }));
   };
 
   const getStatusBadge = () => {
@@ -384,74 +323,6 @@ export function CompanyDataEditor() {
                 className="bg-gray-900/50 border-gray-600 text-white"
                 placeholder="00000-000"
               />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label className="text-gray-300">Horario de funcionamento detalhado</Label>
-              <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/30 p-3">
-                {formData.businessHoursSchedule.map((day) => (
-                  <div key={day.dayKey} className="rounded-md border border-gray-700 p-3">
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="font-medium text-gray-200">{day.label}</p>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={day.closed}
-                          onCheckedChange={(checked) => updateSchedule(day.dayKey, { closed: checked === true })}
-                          disabled={!isManager}
-                          id={`closed-${day.dayKey}`}
-                        />
-                        <Label htmlFor={`closed-${day.dayKey}`} className="text-sm text-gray-300">
-                          Fechado neste dia
-                        </Label>
-                      </div>
-                    </div>
-
-                    {!day.closed && (
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">Abre as</Label>
-                          <Input
-                            type="time"
-                            value={day.openTime}
-                            onChange={(e) => updateSchedule(day.dayKey, { openTime: e.target.value })}
-                            disabled={!isManager}
-                            className="bg-gray-900/50 border-gray-600 text-white"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">Fecha para almoco</Label>
-                          <Input
-                            type="time"
-                            value={day.lunchStart}
-                            onChange={(e) => updateSchedule(day.dayKey, { lunchStart: e.target.value })}
-                            disabled={!isManager}
-                            className="bg-gray-900/50 border-gray-600 text-white"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">Reabre apos almoco</Label>
-                          <Input
-                            type="time"
-                            value={day.lunchEnd}
-                            onChange={(e) => updateSchedule(day.dayKey, { lunchEnd: e.target.value })}
-                            disabled={!isManager}
-                            className="bg-gray-900/50 border-gray-600 text-white"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">Fecha as</Label>
-                          <Input
-                            type="time"
-                            value={day.closeTime}
-                            onChange={(e) => updateSchedule(day.dayKey, { closeTime: e.target.value })}
-                            disabled={!isManager}
-                            className="bg-gray-900/50 border-gray-600 text-white"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
 

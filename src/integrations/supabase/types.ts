@@ -169,6 +169,15 @@ export type Database = {
           contact_name: string | null
           email: string | null
           business_hours: string | null
+          business_hours_summary: string | null
+          ai_assistant_name: string | null
+          ai_company_mission: string | null
+          ai_initial_message: string | null
+          ai_payment_methods: string | null
+          ai_tone: string | null
+          ai_unknown_info_message: string | null
+          ai_target_audience: string | null
+          ai_visit_policy: string | null
           grace_period_days: number | null
           id: string
           id_instagram: string | null
@@ -205,6 +214,15 @@ export type Database = {
           contact_name?: string | null
           email?: string | null
           business_hours?: string | null
+          business_hours_summary?: string | null
+          ai_assistant_name?: string | null
+          ai_company_mission?: string | null
+          ai_initial_message?: string | null
+          ai_payment_methods?: string | null
+          ai_tone?: string | null
+          ai_unknown_info_message?: string | null
+          ai_target_audience?: string | null
+          ai_visit_policy?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -241,6 +259,15 @@ export type Database = {
           contact_name?: string | null
           email?: string | null
           business_hours?: string | null
+          business_hours_summary?: string | null
+          ai_assistant_name?: string | null
+          ai_company_mission?: string | null
+          ai_initial_message?: string | null
+          ai_payment_methods?: string | null
+          ai_tone?: string | null
+          ai_unknown_info_message?: string | null
+          ai_target_audience?: string | null
+          ai_visit_policy?: string | null
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -1918,6 +1945,15 @@ export type Database = {
           address_state: string
           address_zip_code: string
           business_hours: string
+          business_hours_summary: string
+          ai_initial_message: string
+          ai_assistant_name: string
+          ai_unknown_info_message: string
+          ai_company_mission: string
+          ai_tone: string
+          ai_payment_methods: string
+          ai_visit_policy: string
+          ai_target_audience: string
           cnpj: string
           contact_name: string
           created_at: string
@@ -2072,6 +2108,14 @@ export type Database = {
           p_address_state?: string
           p_address_zip_code?: string
           p_business_hours?: string
+          p_ai_initial_message?: string
+          p_ai_assistant_name?: string
+          p_ai_unknown_info_message?: string
+          p_ai_company_mission?: string
+          p_ai_tone?: string
+          p_ai_payment_methods?: string
+          p_ai_visit_policy?: string
+          p_ai_target_audience?: string
           p_cnpj?: string
           p_contact_name?: string
           p_email?: string

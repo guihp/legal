@@ -3,27 +3,59 @@ import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useUserProfile } from './useUserProfile';
 
+/** Normaliza `message.content` quando vem string, array (LangChain/OpenAI) ou objeto `{ text }`. */
+export function coerceTextContent(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) {
+    return v
+      .map((part: any) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
+          return part.text;
+        }
+        return '';
+      })
+      .join('');
+  }
+  if (typeof v === 'object' && v !== null && 'text' in (v as any) && typeof (v as any).text === 'string') {
+    return (v as any).text;
+  }
+  return '';
+}
+
 /**
  * Extrai o conteúdo limpo da mensagem.
  * Se a mensagem vier no formato "[MENSAGEM DE TEXTO ENVIADA]: (conteúdo)", 
  * extrai apenas o conteúdo entre parênteses.
  */
-export function extractMessageContent(content: string): string {
-  if (!content) return '';
+export function extractMessageContent(content: unknown): string {
+  const text = coerceTextContent(content);
+  if (!text) return '';
   
   // Padrão: [QUALQUER COISA]: (conteúdo)
   // Exemplos:
   // [MENSAGEM DE TEXTO ENVIADA]: (Guilherme e queria saber o valor da casa)
   // [MENSAGEM DE ÁUDIO ENVIADA]: (transcrição do áudio)
   // O \s* permite zero ou mais espaços entre : e (
-  const match = content.match(/^\[.*?\]:\s*\(([\s\S]*)\)$/);
+  const match = text.match(/^\[.*?\]:\s*\(([\s\S]*)\)$/);
   
   if (match && match[1]) {
     return match[1].trim();
   }
+
+  // Integrações às vezes prefixam lixo ("Na terça) ") ou omitem o ')' final.
+  // Qualquer ocorrência de [rótulo]: ( → corpo é o que vem depois do '('.
+  const bracket = text.match(/\[[^\]]+\]:\s*\(/);
+  if (bracket && bracket.index !== undefined) {
+    let inner = text.slice(bracket.index + bracket[0].length);
+    inner = inner.replace(/\)\s*$/, '').trim();
+    if (inner.length > 0) return inner;
+  }
   
   // Se não encontrar o padrão, retorna o conteúdo original
-  return content;
+  return text;
 }
 
 /**
@@ -121,6 +153,46 @@ export interface ConversaMessage {
   handoff_ts?: string | null;
 }
 
+/**
+ * Uma linha da tabela CRM → formato usado no chat (inclui limpeza de rótulos n8n/WhatsApp).
+ * Usar em fetch, lead RPC e em INSERT/UPDATE realtime (antes a linha crua ia direto para o estado).
+ */
+export function mapRowToConversaMessage(row: any): ConversaMessage {
+  let parsedMessage: any;
+  if (typeof row?.message === 'string') {
+    try {
+      parsedMessage = JSON.parse(row.message);
+    } catch {
+      parsedMessage = { type: 'human', content: row.message };
+    }
+  } else {
+    parsedMessage = row?.message;
+  }
+
+  const rawContent = coerceTextContent(parsedMessage?.content);
+  const cleanContent = extractMessageContent(rawContent);
+  const mediaImages = extractMediaImages(row?.media);
+
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    instancia: row.instancia || '(sem instância)',
+    message: {
+      type: parsedMessage?.type || 'human',
+      content: cleanContent,
+      additional_kwargs: parsedMessage?.additional_kwargs,
+      response_metadata: parsedMessage?.response_metadata,
+      tool_calls: parsedMessage?.tool_calls,
+      invalid_tool_calls: parsedMessage?.invalid_tool_calls,
+    },
+    data: row.data,
+    media: row.media ?? null,
+    mediaImages,
+    before_handoff: (row as any).before_handoff ?? false,
+    handoff_ts: (row as any).handoff_ts ?? null,
+  } as ConversaMessage;
+}
+
 export function useConversaMessages() {
   const [messages, setMessages] = useState<ConversaMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -142,44 +214,7 @@ export function useConversaMessages() {
   const refetchThrottleMs = 250;
 
   const mapRows = useCallback((data: any[]): ConversaMessage[] => {
-    return (data || []).map((row: any) => {
-      let parsedMessage: any;
-      if (typeof row.message === 'string') {
-        try {
-          parsedMessage = JSON.parse(row.message);
-        } catch {
-          parsedMessage = { type: 'human', content: row.message };
-        }
-      } else {
-        parsedMessage = row.message;
-      }
-      
-      // Extrair conteúdo limpo (remove prefixos como "[MENSAGEM DE TEXTO ENVIADA]: ()")
-      const rawContent = parsedMessage?.content || '';
-      const cleanContent = extractMessageContent(rawContent);
-      
-      // Extrair imagens do campo media
-      const mediaImages = extractMediaImages(row.media);
-      
-      return {
-        id: row.id,
-        sessionId: row.session_id,
-        instancia: row.instancia || '(sem instância)',
-        message: {
-          type: parsedMessage?.type || 'human',
-          content: cleanContent,
-          additional_kwargs: parsedMessage?.additional_kwargs,
-          response_metadata: parsedMessage?.response_metadata,
-          tool_calls: parsedMessage?.tool_calls,
-          invalid_tool_calls: parsedMessage?.invalid_tool_calls,
-        },
-        data: row.data,
-        media: row.media ?? null,
-        mediaImages,
-        before_handoff: (row as any).before_handoff ?? false,
-        handoff_ts: (row as any).handoff_ts ?? null,
-      } as ConversaMessage;
-    });
+    return (data || []).map(mapRowToConversaMessage);
   }, []);
 
   // Helpers de handoff
@@ -337,7 +372,7 @@ export function useConversaMessages() {
 
       switch (evt) {
         case 'INSERT': {
-          const msg = rowNew;
+          const msg = mapRowToConversaMessage(rowNew);
           next = upsertSorted(next, msg);
           if (mi && msg?.instancia && String(msg.instancia).toLowerCase() === String(mi).toLowerCase()) {
             const hts = handoffTsRef.current ? new Date(handoffTsRef.current).getTime() : Infinity;
@@ -352,7 +387,7 @@ export function useConversaMessages() {
           break;
         }
         case 'UPDATE': {
-          const msg = rowNew;
+          const msg = mapRowToConversaMessage(rowNew);
           next = upsertSorted(next, msg);
           recomputeHandoff();
           break;

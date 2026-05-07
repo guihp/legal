@@ -46,7 +46,7 @@ import { CRM_KANBAN_STAGE_TITLES, crmStageBadgeClasses } from '@/lib/crmKanbanSt
 import { conversationLabelListBadgeClasses } from '@/lib/conversationContactLabels';
 import type { LeadStage } from '@/types/kanban';
 import { useConversasList } from '@/hooks/useConversasList';
-import { useConversaMessages } from '@/hooks/useConversaMessages';
+import { useConversaMessages, mapRowToConversaMessage } from '@/hooks/useConversaMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
@@ -1098,39 +1098,13 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       const messagesArray = Array.isArray(messagesData) ? messagesData : [];
       console.log('[ConversasViewPremium] Mensagens encontradas:', messagesArray.length);
 
-      // Filtrar apenas mensagens do tipo 'ai' e 'human' e mapear
+      // Mesmo mapeamento que fetch + realtime (inclui limpeza de rótulos n8n).
       const filteredMessages = messagesArray
-        .map((row: any) => {
-          let parsedMessage: any;
-          if (typeof row.message === 'string') {
-            try {
-              parsedMessage = JSON.parse(row.message);
-            } catch {
-              parsedMessage = { type: 'human', content: row.message };
-            }
-          } else {
-            parsedMessage = row.message;
-          }
-
-          const messageType = String(parsedMessage?.type || '').toLowerCase();
-
-          // Filtrar apenas 'ai' e 'human'
-          if (messageType !== 'ai' && messageType !== 'human') {
-            return null;
-          }
-
-          return {
-            id: row.id,
-            sessionId: row.session_id,
-            message: {
-              type: messageType as 'ai' | 'human',
-              content: parsedMessage?.content || '',
-            },
-            data: row.data,
-            media: row.media ?? null,
-          };
+        .map((row: any) => mapRowToConversaMessage(row))
+        .filter((msg: any) => {
+          const t = String(msg.message?.type || '').toLowerCase();
+          return t === 'ai' || t === 'human';
         })
-        .filter((msg: any) => msg !== null)
         .sort((a: any, b: any) => new Date(a.data).getTime() - new Date(b.data).getTime());
 
       setLeadMessages(filteredMessages);
