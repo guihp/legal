@@ -22,6 +22,7 @@ interface AgendaEvent {
   status: string;
   corretor?: string; // Campo opcional para identificar o corretor
   calendarId?: string; // ID do Google Calendar associado ao evento
+  channel?: string; // Canal de origem do agendamento (WhatsApp, Instagram, Facebook, etc)
 }
 
 const mockEvents: AgendaEvent[] = [
@@ -500,11 +501,19 @@ export function AgendaView() {
 
           // 3. Extrair cliente da description com múltiplas estratégias
           let clientName = 'Cliente não informado';
+          let eventChannel = '';
+
+          // Estratégia 0 (PRIORIDADE): extendedProperties.private.client_name (fonte canônica da API)
+          if (event.extendedProperties?.private?.client_name) {
+            clientName = String(event.extendedProperties.private.client_name).trim();
+          }
           
           // Estratégia 1: Regex melhorado para capturar "com o cliente NOME" ou "com a cliente NOME"
-          const clientMatch1 = description.match(/com (?:o cliente |a cliente )?([^(\n\r]+?)(?:\s*\(|$)/i);
-          if (clientMatch1 && clientMatch1[1]) {
-            clientName = clientMatch1[1].trim();
+          if (clientName === 'Cliente não informado') {
+            const clientMatch1 = description.match(/com (?:o cliente |a cliente )?([^(\n\r]+?)(?:\s*\(|$)/i);
+            if (clientMatch1 && clientMatch1[1]) {
+              clientName = clientMatch1[1].trim();
+            }
           }
           
           // Estratégia 2: Buscar padrão "Cliente: NOME" ou "Cliente - NOME"
@@ -520,7 +529,6 @@ export function AgendaView() {
             const parts = summary.split(' - ');
             if (parts.length >= 2) {
               const potentialClient = parts[parts.length - 1].trim();
-              // Validar se não é muito curto ou muito longo (provavelmente é um nome)
               if (potentialClient.length >= 3 && potentialClient.length <= 50) {
                 clientName = potentialClient;
               }
@@ -532,7 +540,6 @@ export function AgendaView() {
             const parenMatch = (summary + ' ' + description).match(/\(([^)]{3,50})\)/);
             if (parenMatch && parenMatch[1]) {
               const potentialClient = parenMatch[1].trim();
-              // Validar se parece um nome (não contém números, URLs, etc)
               if (!/\d/.test(potentialClient) && !potentialClient.includes('http')) {
                 clientName = potentialClient;
               }
@@ -542,14 +549,13 @@ export function AgendaView() {
           // Limpar o nome do cliente (remover espaços extras, caracteres especiais no final)
           if (clientName !== 'Cliente não informado') {
             clientName = clientName.replace(/\s+/g, ' ').trim();
-            // Remover caracteres especiais no final se houver
             clientName = clientName.replace(/[.,;:!?]+$/, '').trim();
           }
 
           // 3.5. Se ainda não encontrou o cliente, buscar na tabela leads pelo email do evento
-          if (clientName === 'Cliente não informado' && profile?.company_id) {
+          // Também buscar nome_instagram_cliente como fallback e source para o canal
+          if (profile?.company_id) {
             try {
-              // Extrair email do evento (prioridade: attendees[0] > creator > organizer)
               let eventEmail: string | null = null;
               
               if (event.attendees && event.attendees.length > 0 && event.attendees[0].email) {
@@ -560,23 +566,46 @@ export function AgendaView() {
                 eventEmail = event.organizer.email.toLowerCase().trim();
               }
 
-              // Se encontrou um email, buscar na tabela leads
-              if (eventEmail) {
-                const { data: lead } = await supabase
+              // Tentar buscar por lead_id (extendedProperties) primeiro, senão por email
+              const leadId = event.extendedProperties?.private?.lead_id || '';
+              let lead: any = null;
+
+              if (leadId) {
+                const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email')
+                  .select('name, email, nome_instagram_cliente, source')
+                  .eq('id', leadId)
+                  .eq('company_id', profile.company_id)
+                  .maybeSingle();
+                lead = leadById;
+              }
+
+              if (!lead && eventEmail) {
+                const { data: leadByEmail } = await supabase
+                  .from('leads')
+                  .select('name, email, nome_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
-                  .single();
+                  .maybeSingle();
+                lead = leadByEmail;
+              }
 
-                if (lead?.name) {
-                  clientName = lead.name;
-                  console.log(`✅ Cliente encontrado na tabela leads pelo email ${eventEmail}: ${lead.name}`);
+              if (lead) {
+                // Preencher nome se ainda não encontrado
+                if (clientName === 'Cliente não informado') {
+                  if (lead.name) {
+                    clientName = lead.name;
+                  } else if (lead.nome_instagram_cliente) {
+                    clientName = lead.nome_instagram_cliente;
+                  }
+                }
+                // Preencher canal de origem
+                if (lead.source) {
+                  eventChannel = lead.source;
                 }
               }
             } catch (error) {
-              // Ignorar erros silenciosamente (pode não ter encontrado ou não ter email)
               console.debug('Erro ao buscar cliente na tabela leads:', error);
             }
           }
@@ -676,12 +705,13 @@ export function AgendaView() {
             id: event.id || `event_${index + 1}`,
             date: eventDate,
             client: clientName,
-            property: summary, // Usar o summary ao invés da description
+            property: summary,
             address: location,
             type: eventType,
             status: attendeeStatus,
             corretor: corretor,
-            calendarId
+            calendarId,
+            channel: eventChannel || undefined
           };
 
           // Evento processado com sucesso
@@ -695,15 +725,13 @@ export function AgendaView() {
           const startDateTime = event.start?.dateTime || event.start?.date;
           const eventDate = startDateTime ? new Date(startDateTime) : new Date();
 
-          // Extrair cliente (inicialmente do email do creator como fallback)
-          let clientName = event.creator?.email?.split('@')[0] || 'Cliente não informado';
+          // Extrair cliente: prioridade extendedProperties > leads.name > leads.nome_instagram_cliente
+          let clientName = event.extendedProperties?.private?.client_name || event.creator?.email?.split('@')[0] || 'Cliente não informado';
+          let eventChannel = '';
           
-          // Se ainda não encontrou o cliente, buscar na tabela leads pelo email do evento
-          if (clientName === 'Cliente não informado' && profile?.company_id) {
+          if (profile?.company_id) {
             try {
-              // Extrair email do evento (prioridade: attendees[0] > creator > organizer)
               let eventEmail: string | null = null;
-              
               if (event.attendees && event.attendees.length > 0 && event.attendees[0].email) {
                 eventEmail = event.attendees[0].email.toLowerCase().trim();
               } else if (event.creator?.email) {
@@ -712,23 +740,35 @@ export function AgendaView() {
                 eventEmail = event.organizer.email.toLowerCase().trim();
               }
 
-              // Se encontrou um email, buscar na tabela leads
-              if (eventEmail) {
-                const { data: lead } = await supabase
+              const leadId = event.extendedProperties?.private?.lead_id || '';
+              let lead: any = null;
+              if (leadId) {
+                const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email')
+                  .select('name, email, nome_instagram_cliente, source')
+                  .eq('id', leadId)
+                  .eq('company_id', profile.company_id)
+                  .maybeSingle();
+                lead = leadById;
+              }
+              if (!lead && eventEmail) {
+                const { data: leadByEmail } = await supabase
+                  .from('leads')
+                  .select('name, email, nome_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
-                  .single();
-
-                if (lead?.name) {
-                  clientName = lead.name;
-                  console.log(`✅ Cliente encontrado na tabela leads pelo email ${eventEmail}: ${lead.name}`);
+                  .maybeSingle();
+                lead = leadByEmail;
+              }
+              if (lead) {
+                if (clientName === 'Cliente não informado') {
+                  if (lead.name) clientName = lead.name;
+                  else if (lead.nome_instagram_cliente) clientName = lead.nome_instagram_cliente;
                 }
+                if (lead.source) eventChannel = lead.source;
               }
             } catch (error) {
-              // Ignorar erros silenciosamente (pode não ter encontrado ou não ter email)
               console.debug('Erro ao buscar cliente na tabela leads:', error);
             }
           }
@@ -772,7 +812,8 @@ export function AgendaView() {
             type: 'Visita',
             status: event.status === 'confirmed' ? 'confirmada' : 'agendada',
             corretor: corretor,
-            calendarId
+            calendarId,
+            channel: eventChannel || undefined
           };
         }));
       } else {

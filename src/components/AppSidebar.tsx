@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound, Sun, Moon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -223,7 +223,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
-  const { theme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const { company } = useOwnCompany();
   const companyPlanRaw = String(company?.plan || 'essential').toLowerCase();
   const normalizePlan = (plan: string): 'essential' | 'growth' | 'professional' => {
@@ -657,22 +657,32 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
               Versão 1.0.0
             </div>
 
-            {/* REATIVAR_MODO_CLARO_ESCURO_SIDEBAR — busque por este token no projeto. Ao reativar: descomente o bloco abaixo, restaure `toggleTheme` em useTheme() e Sun, Moon no import lucide-react. */}
-            {/*
             <Button
+              type="button"
               onClick={toggleTheme}
               variant="outline"
-              className="w-full border-theme-primary text-theme-secondary hover:bg-theme-tertiary transition-all"
+              className={
+                'w-full gap-2 border-theme-primary transition-all ' +
+                (theme === 'dark'
+                  ? 'text-amber-100/95 hover:bg-amber-500/15 hover:border-amber-400/40 hover:text-amber-50'
+                  : 'text-slate-800 hover:bg-slate-100 hover:border-slate-400')
+              }
             >
               {theme === 'dark' ? (
-                <><Sun className="mr-2 h-4 w-4 text-yellow-400" /> Modo Claro</>
+                <>
+                  <Sun className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+                  Modo claro
+                </>
               ) : (
-                <><Moon className="mr-2 h-4 w-4 text-blue-400" /> Modo Escuro</>
+                <>
+                  <Moon className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
+                  Modo escuro
+                </>
               )}
             </Button>
-            */}
 
             <Button
+              type="button"
               onClick={async () => {
                 await supabase.auth.signOut();
               }}

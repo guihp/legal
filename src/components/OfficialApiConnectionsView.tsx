@@ -1,14 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageCircle, CheckCircle, Calendar, MessageSquare } from "lucide-react";
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useConversasList } from '@/hooks/useConversasList';
+import { useInstagramConversasList } from '@/hooks/useInstagramConversasList';
+import { useInstagramInstances } from '@/hooks/useInstagramInstances';
 import { supabase } from '@/integrations/supabase/client';
 import { CompanyInstagramConnectionsSection } from '@/components/CompanyInstagramConnectionsSection';
+
+function isSameLocalCalendarDay(isoOrDate: string | Date, ref: Date = new Date()): boolean {
+  const d = typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate;
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getDate() === ref.getDate() &&
+    d.getMonth() === ref.getMonth() &&
+    d.getFullYear() === ref.getFullYear()
+  );
+}
 
 export function OfficialApiConnectionsView() {
   const { profile } = useUserProfile();
   const { conversas, loading: loadingConversas } = useConversasList(null);
+  const { companyInstagramId, scopedInstance } = useInstagramInstances();
+  const { conversas: conversasInstagram, loading: loadingConversasInstagram } = useInstagramConversasList(
+    scopedInstance,
+    companyInstagramId
+  );
   const [totalMessages, setTotalMessages] = useState<number>(0);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [agendamentosHoje, setAgendamentosHoje] = useState(0);
@@ -21,18 +38,22 @@ export function OfficialApiConnectionsView() {
   if (!loadingConversas && !hasLoadedConversasOnce.current) {
     hasLoadedConversasOnce.current = true;
   }
-  const showConversasLoading = loadingConversas && !hasLoadedConversasOnce.current;
+  const hasLoadedInstagramOnce = useRef(false);
+  if (!loadingConversasInstagram && !hasLoadedInstagramOnce.current) {
+    hasLoadedInstagramOnce.current = true;
+  }
+  const showConversasLoading =
+    (loadingConversas && !hasLoadedConversasOnce.current) ||
+    (loadingConversasInstagram && !hasLoadedInstagramOnce.current);
 
-  // Calcular número de conversas iniciadas SÓ hoje
-  const conversasHoje = conversas.filter(c => {
-    const d = new Date(c.lastMessageDate);
+  const conversasHoje = useMemo(() => {
     const today = new Date();
-    return (
-      d.getDate() === today.getDate() &&
-      d.getMonth() === today.getMonth() &&
-      d.getFullYear() === today.getFullYear()
-    );
-  }).length;
+    const wa = conversas.filter((c) => isSameLocalCalendarDay(c.lastMessageDate, today)).length;
+    const ig = conversasInstagram.filter((c) => isSameLocalCalendarDay(c.lastMessageDate, today)).length;
+    return wa + ig;
+  }, [conversas, conversasInstagram]);
+
+  const totalChatsAtivos = conversas.length + conversasInstagram.length;
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -65,26 +86,35 @@ export function OfficialApiConnectionsView() {
         setLoadingLeads(false);
       }
 
-      // 2. Fetch Messages total count (using company phone dynamic table)
+      // 2. Contagem global de mensagens: WhatsApp (tabela dinâmica legada) + Instagram (CRM unificado)
       try {
         const { data: cData } = await supabase
           .from('companies')
-          .select('phone')
+          .select('phone, whatsapp_ai_phone')
           .eq('id', profile.company_id)
           .single();
 
-        if (cData?.phone) {
-          const cleanPhone = cData.phone.replace(/\D/g, '');
-          const tableName = `imobipro_messages_${cleanPhone}`;
-
-          const { count, error: mErr } = await supabase
-            .from(tableName as any)
-            .select('*', { count: 'exact', head: true });
-
-          if (!mErr && count !== null) {
-            setTotalMessages(count);
+        let waCount = 0;
+        const rawPhone = (cData as any)?.whatsapp_ai_phone || (cData as any)?.phone;
+        if (rawPhone) {
+          const cleanPhone = String(rawPhone).replace(/\D/g, '');
+          if (cleanPhone) {
+            const tableName = `imobipro_messages_${cleanPhone}`;
+            const { count, error: mErr } = await supabase
+              .from(tableName as any)
+              .select('*', { count: 'exact', head: true });
+            if (!mErr && count !== null) waCount = count;
           }
         }
+
+        let igCount = 0;
+        const { count: igTotal, error: igErr } = await supabase
+          .from('crm_instagram_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', profile.company_id);
+        if (!igErr && igTotal !== null) igCount = igTotal;
+
+        setTotalMessages(waCount + igCount);
       } catch (err) {
         console.error('Erro ao contar mensagens totais:', err);
       } finally {
@@ -154,7 +184,7 @@ export function OfficialApiConnectionsView() {
               <div className="text-3xl font-bold text-foreground">{conversasHoje}</div>
             )}
             <p className="text-sm text-muted-foreground mt-2">
-              Total de {conversas.length} chats ativos no momento
+              Total de {totalChatsAtivos} conversas ativas (WhatsApp e Instagram)
             </p>
           </CardContent>
         </Card>
@@ -175,7 +205,9 @@ export function OfficialApiConnectionsView() {
                 {totalMessages.toLocaleString('pt-BR')}
               </div>
             )}
-            <p className="text-sm text-muted-foreground mt-2">Envolvendo a IA e seus corretores</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              WhatsApp (instância oficial) + Instagram (CRM), incluindo IA e corretores
+            </p>
           </CardContent>
         </Card>
 

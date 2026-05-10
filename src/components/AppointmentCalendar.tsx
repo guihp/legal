@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Calendar, Clock, User, MapPin, Edit, Trash2, CheckCircle } from "lucide-react";
@@ -18,6 +18,7 @@ interface Appointment {
   type: string;
   status: string;
   corretor?: string;
+  channel?: string;
 }
 
 interface AppointmentCalendarProps {
@@ -30,6 +31,20 @@ interface AppointmentCalendarProps {
   selectedAgenda?: string;
   selectedAgendaName?: string;
 }
+
+/** Uma cor por corretor na legenda / pontos do calendário (ordem alfabética dos nomes). */
+const CORRETOR_DOT_COLORS = [
+  'bg-pink-400',
+  'bg-indigo-400',
+  'bg-amber-400',
+  'bg-cyan-400',
+  'bg-rose-400',
+  'bg-violet-400',
+  'bg-teal-400',
+  'bg-orange-400',
+  'bg-lime-400',
+  'bg-sky-400',
+] as const;
 
 // Mock data para agendamentos (fallback)
 const mockAppointments: Appointment[] = [
@@ -303,6 +318,23 @@ export function AppointmentCalendar({
   } else {
     console.log(`📭 AppointmentCalendar: Nenhum evento para exibir`);
   }
+
+  const uniqueCorretoresSorted = useMemo(() => {
+    const names = new Set<string>();
+    for (const apt of localAppointments) {
+      if (!apt?.corretor?.trim()) continue;
+      if (!apt.date || !apt.client || !apt.property) continue;
+      if (!(apt.date instanceof Date) || isNaN(apt.date.getTime())) continue;
+      names.add(apt.corretor.trim());
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  }, [localAppointments]);
+
+  const getCorretorDotClass = (corretor: string) => {
+    const idx = uniqueCorretoresSorted.indexOf(corretor.trim());
+    const i = idx >= 0 ? idx : 0;
+    return CORRETOR_DOT_COLORS[i % CORRETOR_DOT_COLORS.length];
+  };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
@@ -678,18 +710,18 @@ export function AppointmentCalendar({
                         </div>
                         
                         {/* Indicadores por corretor quando "Todos" está selecionado */}
-                        {selectedAgenda === "Todos" && dayAppointments.length > 0 && (
+                        {selectedAgenda === "Todos" && dayAppointments.length > 0 && uniqueCorretoresSorted.length > 0 && (
                           <div className="flex gap-0.5">
-                            {['Isis', 'Arthur'].map(corretor => {
-                              const corretorCount = dayAppointments.filter(apt => apt.corretor === corretor).length;
+                            {uniqueCorretoresSorted.map((corretor) => {
+                              const corretorCount = dayAppointments.filter(
+                                (apt) => (apt.corretor || '').trim() === corretor
+                              ).length;
                               if (corretorCount === 0) return null;
-                              
+
                               return (
-                                <div 
+                                <div
                                   key={corretor}
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    corretor === 'Isis' ? 'bg-pink-400' : 'bg-indigo-400'
-                                  }`}
+                                  className={`w-1.5 h-1.5 rounded-full ${getCorretorDotClass(corretor)}`}
                                   title={`${corretorCount} evento(s) - ${corretor}`}
                                 />
                               );
@@ -732,18 +764,15 @@ export function AppointmentCalendar({
                 <div className="w-3 h-3 bg-gradient-to-br from-emerald-600/10 to-emerald-700/20 border border-emerald-500/30 rounded"></div>
                 <span className="text-muted-foreground">Com eventos</span>
               </div>
-              {selectedAgenda === "Todos" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-pink-400 rounded-full"></div>
-                    <span className="text-muted-foreground">Isis</span>
+              {selectedAgenda === "Todos" &&
+                uniqueCorretoresSorted.map((corretor) => (
+                  <div key={corretor} className="flex items-center gap-2 max-w-[200px]">
+                    <div className={`w-2 h-2 shrink-0 rounded-full ${getCorretorDotClass(corretor)}`} />
+                    <span className="text-muted-foreground truncate" title={corretor}>
+                      {corretor}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
-                    <span className="text-muted-foreground">Arthur</span>
-                  </div>
-                </>
-              )}
+                ))}
             </div>
           </div>
         </CardContent>
@@ -837,15 +866,8 @@ export function AppointmentCalendar({
                     
                     {/* Corretor - sempre no canto direito quando "Todos" estiver selecionado */}
                     {selectedAgenda === "Todos" && appointment.corretor && (
-                      <div className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 ${
-                        appointment.corretor === 'Isis' ? 'bg-pink-100 text-pink-700 border border-pink-300 hover:bg-pink-200 dark:bg-pink-500/25 dark:text-pink-200 dark:border-pink-400/50 dark:hover:bg-pink-500/35' :
-                        appointment.corretor === 'Arthur' ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200 dark:bg-indigo-500/25 dark:text-indigo-200 dark:border-indigo-400/50 dark:hover:bg-indigo-500/35' :
-                        'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 dark:bg-gray-500/25 dark:text-gray-200 dark:border-gray-400/50 dark:hover:bg-gray-500/35'
-                      }`}>
-                        <span className="text-lg animate-pulse">
-                          {appointment.corretor === 'Isis' ? '👩‍💼' : 
-                           appointment.corretor === 'Arthur' ? '👨‍💼' : '👤'}
-                        </span>
+                      <div className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 dark:bg-gray-500/25 dark:text-gray-200 dark:border-gray-400/50 dark:hover:bg-gray-500/35">
+                        <span className="text-lg">👤</span>
                         <span className="font-bold tracking-wide">{appointment.corretor}</span>
                       </div>
                     )}
@@ -856,6 +878,20 @@ export function AppointmentCalendar({
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4 text-emerald-400" />
                       <span className="text-foreground font-medium text-lg">{appointment.client}</span>
+                      {/* Badge do canal de origem */}
+                      {(appointment as any).channel && (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          (appointment as any).channel.toLowerCase() === 'whatsapp' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                          (appointment as any).channel.toLowerCase() === 'instagram' ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30' :
+                          (appointment as any).channel.toLowerCase() === 'facebook' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                          'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                        }`}>
+                          {(appointment as any).channel.toLowerCase() === 'whatsapp' ? '📱 WhatsApp' :
+                           (appointment as any).channel.toLowerCase() === 'instagram' ? '📸 Instagram' :
+                           (appointment as any).channel.toLowerCase() === 'facebook' ? '👍 Facebook' :
+                           (appointment as any).channel}
+                        </span>
+                      )}
                     </div>
                   </div>
                    

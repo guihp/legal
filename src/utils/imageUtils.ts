@@ -1,6 +1,46 @@
 /**
+ * Sugere uma legenda curta a partir do nome do arquivo de imagem.
+ *
+ * Heurística:
+ *  - Remove extensão
+ *  - Substitui `_` `-` `.` por espaço
+ *  - Colapsa whitespace
+ *  - Trunca em `maxLen` chars
+ *  - Retorna string vazia se o nome parece um padrão de câmera
+ *    (IMG_..., DSC_..., DCIM, WhatsApp Image, ou só números)
+ *    — nesse caso melhor deixar vazio do que sugerir lixo.
+ *
+ * Exemplos:
+ *   "piscina.jpg"                       -> "piscina"
+ *   "Sala-de-estar-01.png"              -> "Sala de estar 01"
+ *   "IMG_20240315_142133.jpg"           -> ""           (padrão câmera)
+ *   "DSC_0042.JPG"                      -> ""
+ *   "WhatsApp Image 2024-08-12.jpeg"    -> ""
+ *   "20240315142133.jpg"                -> ""           (só números)
+ *
+ * @param filename - File.name original
+ * @param maxLen - Tamanho máximo (default 50, alinhado com IMAGE_CAPTION_MAX no app)
+ */
+export const captionFromFilename = (filename: string, maxLen = 50): string => {
+  if (!filename) return '';
+  // Remove extensão
+  const noExt = filename.replace(/\.[^./\\]+$/, '');
+  // Skip padrões de câmera comuns
+  if (/^(IMG|DSC|DSCN|DCIM|PXL|MVIMG|PHOTO|FOTO|Screenshot|Captura)[_\-\s]/i.test(noExt)) return '';
+  if (/^WhatsApp\s+Image/i.test(noExt)) return '';
+  // Skip se for só dígitos (após remover separadores)
+  if (/^\d+$/.test(noExt.replace(/[_\-\s.]/g, ''))) return '';
+  // Limpa
+  return noExt
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+};
+
+/**
  * Converte uma imagem para formato JPEG com tamanho adequado para WhatsApp
- * 
+ *
  * @param file - Arquivo de imagem original
  * @param targetMinSize - Tamanho mínimo em bytes (padrão 1MB = 1024*1024)
  * @param targetMaxSize - Tamanho máximo em bytes (padrão 5MB = 5*1024*1024)

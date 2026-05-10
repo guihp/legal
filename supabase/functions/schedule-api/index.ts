@@ -379,14 +379,14 @@ serve(async (req) => {
       // Calculate slot
       const slotStart = toISO(dt), slotEnd = toISO(addMins(dt, SLOT_MIN));
 
-      // Quick availability check
-      let anyFree = false;
+      // Quick availability check — save which broker is free
+      let freeBroker: any = null;
       for (const b of available) {
         if (!b.calendar_id) continue;
         const busy = await checkBusy(gFetch, b.calendar_id, slotStart, slotEnd);
-        if (busy.length === 0) { anyFree = true; break; }
+        if (busy.length === 0) { freeBroker = b; break; }
       }
-      if (!anyFree) return ok({ success: false, response: "Eita acabaram de agendar pra esse horário, teria alguma outra opção?" });
+      if (!freeBroker) return ok({ success: false, response: "Eita acabaram de agendar pra esse horário, teria alguma outra opção?" });
 
       // Get property data
       let propertyData: any = {};
@@ -396,15 +396,18 @@ serve(async (req) => {
         if (props?.length) propertyData = props[0];
       }
 
-      // Call google-calendar-api to create event
+      // Call google-calendar-api to create event — pass the specific free broker directly
       const calApiUrl = `${env("SUPABASE_URL")}/functions/v1/google-calendar-api`;
       const srkKey = env("SUPABASE_SERVICE_ROLE_KEY");
       const createBody: any = {
         action: "create_event_from_n8n",
         company_id: companyId,
         lead_id: sessionId,
-        use_broker_queue: true,
-        auto_reassign_on_conflict: true,
+        calendar_id: freeBroker.calendar_id,
+        broker_id: freeBroker.assigned_user_id || "",
+        use_broker_queue: false,
+        auto_reassign_on_conflict: false,
+        nome_cliente: nomeCliente,
         start: slotStart,
         end: slotEnd,
         summary: `Visita Imóvel ${idImovel}`,

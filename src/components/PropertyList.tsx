@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,6 @@ import {
   Clock,
   AlertCircle,
   XCircle,
-  Upload,
   ImagePlus,
   X,
   Link,
@@ -42,6 +42,7 @@ import {
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useTheme } from "@/contexts/ThemeContext";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 
 // Lazy loaded components
@@ -52,7 +53,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId } from "@/utils/imageUtils";
+import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId, captionFromFilename } from "@/utils/imageUtils";
 import { FEATURE_OPTIONS } from "@/constants/imovelFeatures";
 import { toast as sonnerToast } from "sonner";
 import { Progress } from "@/components/ui/progress";
@@ -282,6 +283,8 @@ interface PropertyListProps {
 
 export function PropertyList({ properties, loading, onAddNew, refetch }: PropertyListProps) {
   const { profile } = useUserProfile();
+  const { theme } = useTheme();
+  const isDarkGallery = theme === 'dark';
   const isCorretor = profile?.role === 'corretor';
   const {
     imoveis,
@@ -384,10 +387,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     };
   }, []);
 
-  // Estado do modal de upload VivaReal
-  const [isVivaRealModalOpen, setIsVivaRealModalOpen] = useState(false);
-  const [jsonData, setJsonData] = useState<string>('');
-  const [isImportingJson, setIsImportingJson] = useState(false);
   // Edição VivaReal
   const [isVivaRealEditOpen, setIsVivaRealEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -398,7 +397,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editDescricao, setEditDescricao] = useState<string>("");
   const [editImages, setEditImages] = useState<File[]>([]);
   const [editPreviews, setEditPreviews] = useState<string[]>([]);
+  // CLAUDE AQUI ESTÁ A PARTE DE ADICIONAR A DESCRIÇÃO DA IMAGEM (legendas por foto + lightbox)
+  const [editNewCaptions, setEditNewCaptions] = useState<string[]>([]);
   const [editExistingImages, setEditExistingImages] = useState<string[]>([]);
+  const [editExistingCaptions, setEditExistingCaptions] = useState<string[]>([]);
+  const [editImageLightboxIndex, setEditImageLightboxIndex] = useState<number | null>(null);
+  const lightboxTouchStartX = useRef<number | null>(null);
   const [editGoogleDriveLink, setEditGoogleDriveLink] = useState('');
   const [isEditDownloadingFromDrive, setIsEditDownloadingFromDrive] = useState(false);
   // Features (amenidades) selecionadas no modal de edição.
@@ -410,105 +414,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     );
   };
   const MAX_IMAGES = 50; // Limite máximo de imagens por imóvel
-
-  // Função para mapear JSON do VivaReal para schema do banco
-  const mapVivaRealJsonToDatabase = (jsonData: any) => {
-    const location = jsonData.location || {};
-    
-    // Converter modalidade
-    let modalidade = 'For Sale';
-    if (jsonData.modality === 'Venda') {
-      modalidade = 'For Sale';
-    } else if (jsonData.modality === 'Aluguel') {
-      modalidade = 'Rent';
-    }
-    
-    return {
-      listing_id: jsonData.vivareal_code || jsonData.advertiser_code || null,
-      imagens: jsonData.images || [],
-      tipo_categoria: jsonData.category || null,
-      tipo_imovel: jsonData.property_type || null,
-      descricao: jsonData.description || null,
-      preco: jsonData.price ? parseFloat(jsonData.price.toString()) : null,
-      tamanho_m2: jsonData.size_m2 ? parseFloat(jsonData.size_m2.toString()) : null,
-      quartos: jsonData.bedrooms || null,
-      banheiros: jsonData.bathrooms || null,
-      suite: jsonData.suites || null,
-      garagem: jsonData.garage || null,
-      cidade: location.city || null,
-      bairro: location.neighborhood || null,
-      endereco: location.street || null,
-      numero: location.number || null,
-      complemento: location.complement || null,
-      cep: location.zipcode || null,
-      modalidade: modalidade,
-      disponibilidade: 'disponivel',
-      user_id: profile?.id || null,
-      company_id: profile?.company_id || null,
-    };
-  };
-
-  // Importação de JSON do VivaReal
-  const handleUploadVivaReal = async () => {
-    if (!jsonData.trim()) {
-      toast({ title: "JSON vazio", description: "Cole o JSON do imóvel do VivaReal", variant: "destructive" });
-      return;
-    }
-
-    setIsImportingJson(true);
-    
-    try {
-      // Parse do JSON
-      let propertyData;
-      try {
-        propertyData = JSON.parse(jsonData);
-      } catch (parseError) {
-        throw new Error('JSON inválido. Verifique o formato do JSON.');
-      }
-
-      // Validar campos obrigatórios
-      if (!propertyData.property_type || !propertyData.price) {
-        throw new Error('JSON incompleto. Campos obrigatórios: property_type, price');
-      }
-
-      // Mapear para o schema do banco
-      const dbData = mapVivaRealJsonToDatabase(propertyData);
-
-      // Inserir no banco usando cliente Supabase
-      const { data, error } = await supabase
-        .from('imoveisvivareal')
-        .insert([dbData])
-        .select()
-        .single();
-
-      if (error) {
-        throw new Error(`Erro ao salvar no banco: ${error.message}`);
-      }
-
-      toast({ 
-        title: "✅ Imóvel importado com sucesso!", 
-        description: "O imóvel foi salvo no banco de dados." 
-      });
-      
-      setIsVivaRealModalOpen(false);
-      setJsonData('');
-      
-      // Atualizar lista
-      if (refetch) refetch();
-      refetchImoveisList();
-      
-    } catch (err: any) {
-      console.error('❌ Erro ao importar JSON:', err);
-      toast({ 
-        title: "Erro ao importar JSON", 
-        description: err.message || "Verifique o formato do JSON e tente novamente.", 
-        variant: "destructive" 
-      });
-    } finally {
-      setIsImportingJson(false);
-    }
-  };
-
+  const IMAGE_CAPTION_MAX = 50;
+  const clampCaption = useCallback((s: string) => s.slice(0, IMAGE_CAPTION_MAX), [IMAGE_CAPTION_MAX]);
+  const totalEditImageCount = editExistingImages.length + editImages.length;
 
   // Gerar partículas
   useEffect(() => {
@@ -559,7 +467,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       created_at: i.created_at || null,
       updated_at: i.updated_at || null,
       // Manter URLs originais - conversão acontece na renderização para otimizar tamanho
-      property_images: (i.imagens || []).map((url: string) => ({ image_url: url })) as any,
+      property_images: (i.imagens || []).map((url: string, idx: number) => ({
+        image_url: url,
+        legenda: Array.isArray(i.imagens_legendas) ? (i.imagens_legendas[idx] ?? '') : '',
+      })) as any,
       // Campos extras (fora do tipo PropertyWithImages) para integração de disponibilidade
       ...(i.disponibilidade ? { disponibilidade: i.disponibilidade } : {}),
       ...(i.disponibilidade_observacao ? { disponibilidade_observacao: i.disponibilidade_observacao } : {}),
@@ -569,6 +480,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       ...(i.tipo_categoria ? { tipo_categoria: i.tipo_categoria } : {}),
       // Propaga features do banco para o modal de edição (text[] → string[]).
       ...(Array.isArray(i.features) ? { features: i.features } : {}),
+      ...(Array.isArray(i.imagens_legendas) ? { imagens_legendas: i.imagens_legendas } : {}),
     } as unknown as PropertyWithImages;
   });
 
@@ -636,11 +548,25 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     
     console.log(`📸 Carregando ${existingUrls.length} imagem(ns) existente(s) para edição`);
     setEditExistingImages(existingUrls);
-    
+    const rowLegends = Array.isArray(vivaRealProperty.imagens_legendas)
+      ? (vivaRealProperty.imagens_legendas as string[])
+      : null;
+    setEditExistingCaptions(
+      existingUrls.map((_, idx) => {
+        if (rowLegends != null && idx < rowLegends.length) {
+          return String(rowLegends[idx] ?? '').slice(0, IMAGE_CAPTION_MAX);
+        }
+        const fromImg = (property.property_images as any)?.[idx]?.legenda;
+        return String(fromImg ?? '').slice(0, IMAGE_CAPTION_MAX);
+      })
+    );
+
     // Limpar novas imagens e campos auxiliares
     setEditImages([]);
     setEditPreviews([]);
+    setEditNewCaptions([]);
     setEditGoogleDriveLink('');
+    setEditImageLightboxIndex(null);
 
     // Features atuais do imóvel (vêm propagadas pelo adapter `propertiesFromImoveis`).
     const currentFeatures = (property as any).features;
@@ -674,6 +600,13 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       setEditImages(prev => [...prev, ...converted]);
       const newPreviews = converted.map(f => URL.createObjectURL(f));
       setEditPreviews(prev => [...prev, ...newPreviews]);
+      // Pré-preenche legenda a partir do nome do arquivo (heurística limpa nomes
+      // como "piscina.jpg" → "piscina"; ignora padrões câmera tipo IMG_xxx).
+      // Usuário pode editar/limpar antes de salvar.
+      setEditNewCaptions((prev) => [
+        ...prev,
+        ...converted.map((f) => captionFromFilename(f.name, IMAGE_CAPTION_MAX)),
+      ]);
       console.log(`✅ ${converted.length} imagem(ns) processadas com sucesso.`);
       sonnerToast.success(`${converted.length} imagem(ns) processadas com sucesso!`);
     } catch (e) {
@@ -711,6 +644,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       
       setEditImages(prev => [...prev, file]);
       setEditPreviews(prev => [...prev, URL.createObjectURL(file)]);
+      setEditNewCaptions((prev) => [...prev, '']);
       setEditGoogleDriveLink(''); // Limpar o campo
       
       console.log(`✅ Imagem baixada e processada: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
@@ -725,6 +659,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const removeEditImage = (index: number) => {
     setEditImages(prev => prev.filter((_, i) => i !== index));
+    setEditNewCaptions((prev) => prev.filter((_, i) => i !== index));
     setEditPreviews(prev => {
       const newPreviews = [...prev];
       URL.revokeObjectURL(newPreviews[index]);
@@ -734,63 +669,66 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const removeExistingImage = (index: number) => {
     setEditExistingImages(prev => prev.filter((_, i) => i !== index));
+    setEditExistingCaptions((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const uploadEditImages = async (imovelId: number): Promise<string[]> => {
+  const uploadEditImagesAndLegendas = async (
+    imovelId: number
+  ): Promise<{ urls: string[]; captions: string[] }> => {
     const BUCKET = 'property-images';
-    const newUploadedUrls: string[] = [];
-    
-    // Se não há novas imagens para fazer upload, retornar apenas as existentes
+    const capExisting = editExistingCaptions.map((c) => clampCaption(c ?? ''));
+
     if (editImages.length === 0) {
       console.log(`📸 Sem novas imagens. Mantendo ${editExistingImages.length} imagens existentes.`);
-      return editExistingImages;
+      return { urls: [...editExistingImages], captions: capExisting };
     }
-    
-    // Upload em paralelo das novas imagens
+
     const baseTimestamp = Date.now();
     const uploadPromises = editImages.map(async (file, i) => {
       const timestamp = baseTimestamp + i;
       const path = `imoveisvivareal/${imovelId}/${timestamp}_${i}.jpg`;
-      
+
       try {
         console.log(`📤 Fazendo upload da imagem ${i + 1}/${editImages.length}: ${path} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        
-        const { error } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { 
-            contentType: 'image/jpeg', 
-            upsert: false 
-          });
-        
+
+        const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
         if (error) {
           console.error(`❌ Erro ao fazer upload da imagem ${i + 1}:`, error);
-          return { success: false, index: i, error };
+          return { success: false as const, index: i, error };
         }
-        
+
         const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
         console.log(`✅ Imagem ${i + 1} enviada com sucesso:`, pub.publicUrl);
-        return { success: true, index: i, url: pub.publicUrl };
+        return { success: true as const, index: i, url: pub.publicUrl };
       } catch (err: any) {
         console.error(`❌ Falha no upload da imagem ${i + 1}:`, err);
-        return { success: false, index: i, error: err };
+        return { success: false as const, index: i, error: err };
       }
     });
-    
+
     const results = await Promise.allSettled(uploadPromises);
-    
-    results.forEach((result) => {
-      if (result.status === 'fulfilled') {
-        const data = result.value;
-        if (data.success && data.url) {
-          newUploadedUrls.push(data.url);
-        }
+    const newPairs: { url: string; caption: string }[] = [];
+    results.forEach((result, i) => {
+      if (result.status !== 'fulfilled') return;
+      const data = result.value;
+      if (data.success && 'url' in data && data.url) {
+        newPairs.push({
+          url: data.url,
+          caption: clampCaption(editNewCaptions[i] ?? ''),
+        });
       }
     });
-    
-    // Combinar imagens existentes (que não foram removidas) com novas
-    const finalUrls = [...editExistingImages, ...newUploadedUrls];
-    console.log(`📸 Total de imagens: ${finalUrls.length} (${editExistingImages.length} existentes + ${newUploadedUrls.length} novas)`);
-    return finalUrls;
+
+    const finalUrls = [...editExistingImages, ...newPairs.map((p) => p.url)];
+    const finalCaptions = [...capExisting, ...newPairs.map((p) => p.caption)];
+    console.log(
+      `📸 Total de imagens: ${finalUrls.length} (${editExistingImages.length} existentes + ${newPairs.length} novas)`
+    );
+    return { urls: finalUrls, captions: finalCaptions };
   };
 
 
@@ -800,27 +738,30 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       if (!editId) return;
       const idNum = Number(editId);
       
-      // Processar imagens: upload das novas + manter as existentes
       let imageUrls: string[] = [];
+      let imageCaptions: string[] = [];
       try {
-        // Se há novas imagens OU imagens existentes, processar
         if (editImages.length > 0) {
-          imageUrls = await uploadEditImages(idNum);
+          const both = await uploadEditImagesAndLegendas(idNum);
+          imageUrls = both.urls;
+          imageCaptions = both.captions;
           if (imageUrls.length === 0 && editImages.length > 0) {
             sonnerToast.warning('Imóvel atualizado, mas nenhuma imagem nova foi salva.');
           } else if (imageUrls.length < editImages.length + editExistingImages.length) {
             sonnerToast.warning(`Imóvel atualizado! ${imageUrls.length} de ${editImages.length + editExistingImages.length} imagens foram salvas.`);
           }
         } else {
-          // Sem novas imagens - apenas manter as existentes (ou vazio se todas foram removidas)
           imageUrls = editExistingImages;
+          imageCaptions = editExistingCaptions.map((c) => clampCaption(c ?? ''));
         }
       } catch (imgErr: any) {
         console.error('Erro ao processar imagens:', imgErr);
         sonnerToast.warning('Imóvel atualizado, mas houve erro ao salvar algumas imagens.');
-        // Manter as imagens existentes em caso de erro
         imageUrls = editExistingImages;
+        imageCaptions = editExistingCaptions.map((c) => clampCaption(c ?? ''));
       }
+
+      imageCaptions = imageUrls.map((_, i) => clampCaption(imageCaptions[i] ?? ''));
       
       const updates: any = {
         preco: editPreco === "" ? null : Number(editPreco),
@@ -828,8 +769,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         quartos: editQuartos === "" ? null : Number(editQuartos),
         banheiros: editBanheiros === "" ? null : Number(editBanheiros),
         descricao: editDescricao,
-        // SEMPRE atualizar imagens (pode ser array vazio se todas foram removidas)
         imagens: imageUrls,
+        imagens_legendas: imageUrls.length > 0 ? imageCaptions : [],
         // Features (amenidades) — null quando vazio para não inflar o registro com [].
         features: editFeatures.length > 0 ? editFeatures : null,
       };
@@ -848,9 +789,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       setEditId(null);
       setEditImages([]);
       setEditPreviews([]);
+      setEditNewCaptions([]);
       setEditExistingImages([]);
+      setEditExistingCaptions([]);
       setEditGoogleDriveLink('');
       setEditFeatures([]);
+      setEditImageLightboxIndex(null);
       refetchImoveisList();
     } catch (err) {
       toast({ title: 'Erro ao atualizar', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
@@ -867,6 +811,40 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       toast({ title: 'Erro ao excluir', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
     }
   };
+
+  useEffect(() => {
+    if (!isVivaRealEditOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isVivaRealEditOpen]);
+
+  useEffect(() => {
+    if (editImageLightboxIndex === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setEditImageLightboxIndex(null);
+        return;
+      }
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (totalEditImageCount <= 0) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setEditImageLightboxIndex((i) =>
+          i === null ? i : (i - 1 + totalEditImageCount) % totalEditImageCount
+        );
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setEditImageLightboxIndex((i) => (i === null ? i : (i + 1) % totalEditImageCount));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editImageLightboxIndex, totalEditImageCount]);
 
   // Log de filtro apenas quando quantidade muda (evita spam)
   const prevFilteredCount = useRef(filteredProperties.length);
@@ -1526,15 +1504,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               </Button>
             )}
             </motion.div>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button
-                onClick={() => setIsVivaRealModalOpen(true)}
-                className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg whitespace-normal h-auto min-h-10 px-4 py-2 leading-snug"
-              >
-                <Upload className="h-4 w-4 mr-2 shrink-0" />
-                <span className="text-center sm:text-left">Adicionar Imóveis VivaReal</span>
-              </Button>
-            </motion.div>
             </div>
 
             {/* Results Count */}
@@ -2176,68 +2145,49 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         initialImageIndex={galleryInitialIndex}
       />
 
-      {/* Modal de Upload VivaReal */}
-      <Dialog open={isVivaRealModalOpen} onOpenChange={setIsVivaRealModalOpen}>
-        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl">Importar Imóvel do VivaReal</DialogTitle>
-            <DialogDescription className="text-gray-300">
-              <div className="space-y-2">
-                <p>Cole o JSON do imóvel do VivaReal no formato abaixo:</p>
-                <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-md p-3 text-sm text-emerald-200 mt-2">
-                  <strong>📋 Formato esperado:</strong> JSON com os dados do imóvel incluindo localização, preço, características e imagens.
-                </div>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm text-gray-300 font-medium">JSON do Imóvel</label>
-              <Textarea
-                value={jsonData}
-                onChange={(e) => setJsonData(e.target.value)}
-                placeholder='{"url": "https://...", "property_type": "Apartamento", "price": 950000, ...}'
-                className="w-full min-h-[300px] px-4 py-3 bg-gray-800 border border-gray-700 rounded-md text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
-                disabled={isImportingJson}
-              />
-              <p className="text-xs text-gray-400">
-                Cole o JSON completo do imóvel do VivaReal. O sistema validará e salvará automaticamente.
-              </p>
-            </div>
-
-            <div className="flex gap-3 justify-end pt-2">
-              <Button
-                variant="outline"
-                className="border-gray-600 text-gray-300 hover:bg-gray-800"
-                onClick={() => {
-                  setIsVivaRealModalOpen(false);
-                  setJsonData('');
-                }}
-                disabled={isImportingJson}
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleUploadVivaReal();
-                }}
-                disabled={!jsonData.trim() || isImportingJson}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {isImportingJson ? 'Importando...' : 'Importar Imóvel'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-
-      {/* Modal de Edição VivaReal (campos básicos) */}
-      <Dialog open={isVivaRealEditOpen} onOpenChange={setIsVivaRealEditOpen}>
-        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Modal de Edição VivaReal — modal={false}: com modal=true o Radix bloqueia pointer-events fora do
+          Content (RemoveScroll + DismissableLayer), e o lightbox no body não recebia clique nas setas/X/campo. */}
+      <Dialog
+        modal={false}
+        open={isVivaRealEditOpen}
+        onOpenChange={(open) => {
+          setIsVivaRealEditOpen(open);
+          if (!open) setEditImageLightboxIndex(null);
+        }}
+      >
+        {isVivaRealEditOpen &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[40] bg-black/80"
+              aria-hidden
+              onPointerDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (editImageLightboxIndex !== null) setEditImageLightboxIndex(null);
+                else setIsVivaRealEditOpen(false);
+              }}
+            />,
+            document.body
+          )}
+        <DialogContent
+          className="bg-gray-900 border border-gray-700 text-white sm:max-w-2xl max-h-[min(90dvh,880px)] w-[min(92vw,42rem)] overflow-y-auto overflow-x-hidden"
+          /* Lightbox está fora deste nó (portal). Sem preventDefault, o DismissableLayer trata clique/foco na galeria como “fora” e fecha o modal. Não use position:relative aqui — sobrescreve o fixed do dialog.tsx e desloca o popup no fluxo da página. */
+          onPointerDownOutside={(e) => {
+            if (editImageLightboxIndex !== null) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (editImageLightboxIndex !== null) e.preventDefault();
+          }}
+          onFocusOutside={(e) => {
+            if (editImageLightboxIndex !== null) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (editImageLightboxIndex !== null) {
+              e.preventDefault();
+              setEditImageLightboxIndex(null);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="text-xl">Editar Imóvel (VivaReal)</DialogTitle>
             <DialogDescription className="text-gray-300">
@@ -2302,66 +2252,187 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               </p>
             </div>
 
+            {/*
+             * =====================================================================================
+             * CLAUDE AQUI ESTÁ A PARTE DE ADICIONAR A DESCRIÇÃO DA IMAGEM
+             * (texto idêntico pedido pelo time: busque no repo por essa frase inteira)
+             *
+             * Miniaturas + lightbox + editExistingCaptions / editNewCaptions + persistência
+             * imagens_legendas em imoveisvivareal — migration
+             * 20260509120000_imoveisvivareal_imagens_legendas.sql
+             * =====================================================================================
+             */}
             {/* Seção de Imagens */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-gray-300 font-medium">Imagens (até {MAX_IMAGES})</label>
-                <small className="text-gray-400">{(editExistingImages.length + editImages.length)}/{MAX_IMAGES}</small>
+            <div
+              className={
+                'space-y-4 rounded-xl border p-3 sm:p-4 ' +
+                (isDarkGallery
+                  ? 'border-zinc-700/60 bg-zinc-900/40'
+                  : 'border-zinc-500/50 bg-white/[0.07] ring-1 ring-white/10')
+              }
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <label
+                    className={
+                      'text-sm font-medium ' + (isDarkGallery ? 'text-zinc-100' : 'text-white')
+                    }
+                  >
+                    Imagens (até {MAX_IMAGES})
+                  </label>
+                  <p
+                    className={
+                      'mt-1 max-w-xl text-xs leading-relaxed ' +
+                      (isDarkGallery ? 'text-zinc-400' : 'text-zinc-200/90')
+                    }
+                  >
+                    Toque ou clique na foto para ampliar. Use as setas ou deslize no celular. Abaixo da imagem você
+                    pode escrever uma descrição curta (opcional, até {IMAGE_CAPTION_MAX} caracteres).
+                  </p>
+                </div>
+                <span
+                  className={
+                    'shrink-0 self-start rounded-full border px-3 py-1 text-xs font-medium tabular-nums ' +
+                    (isDarkGallery
+                      ? 'border-zinc-600 bg-zinc-800/80 text-zinc-200'
+                      : 'border-zinc-400/70 bg-zinc-800/60 text-zinc-50')
+                  }
+                >
+                  {editExistingImages.length + editImages.length}/{MAX_IMAGES}
+                </span>
               </div>
-              
+
               {/* Imagens existentes */}
               {editExistingImages.length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-500 mb-2">Imagens existentes ({editExistingImages.length})</p>
-                  <div className="grid grid-cols-4 gap-2 mb-2">
+                <div className="space-y-2">
+                  <p
+                    className={
+                      'text-xs font-medium uppercase tracking-wide ' +
+                      (isDarkGallery ? 'text-zinc-500' : 'text-zinc-300')
+                    }
+                  >
+                    Já no imóvel
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
                     {editExistingImages.map((url, idx) => (
-                      <div key={`existing-${idx}`} className="relative group">
-                        <img 
-                          src={convertGoogleDriveUrl(url, 'thumbnail')} 
-                          alt={`Imagem ${idx + 1}`}
-                          className="w-full h-24 object-cover rounded-md border border-gray-700"
-                          onError={(e) => {
-                            handleImageErrorWithFallback(e, url, '/placeholder-property.jpg');
-                          }}
-                        />
+                      <div
+                        key={`existing-${idx}`}
+                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-zinc-600/80 bg-zinc-950/60 shadow-md ring-0 transition-all duration-200 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setEditImageLightboxIndex(idx)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setEditImageLightboxIndex(idx);
+                          }
+                        }}
+                      >
+                        <div className="relative aspect-[4/3] w-full">
+                          <img
+                            src={convertGoogleDriveUrl(url, 'thumbnail')}
+                            alt={`Imagem ${idx + 1}`}
+                            className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+                            onError={(e) => {
+                              handleImageErrorWithFallback(e, url, '/placeholder-property.jpg');
+                            }}
+                          />
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20 opacity-90 transition-opacity group-hover:opacity-100" />
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                              Ver
+                            </span>
+                          </div>
+                          <span className="pointer-events-none absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-black/55 px-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+                            {idx + 1}
+                          </span>
+                        </div>
+                        <div className="border-t border-zinc-700/50 bg-zinc-900/80 px-2 py-1.5">
+                          {(editExistingCaptions[idx] || '').length > 0 ? (
+                            <p className="line-clamp-2 text-[11px] leading-snug text-zinc-400">{editExistingCaptions[idx]}</p>
+                          ) : (
+                            <p className="text-[11px] text-zinc-600">Sem descrição</p>
+                          )}
+                        </div>
                         <button
                           type="button"
-                          onClick={() => removeExistingImage(idx)}
-                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeExistingImage(idx);
+                          }}
+                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label="Remover imagem"
                         >
-                          <X className="w-3 h-3 text-white" />
+                          <X className="h-4 w-4" />
                         </button>
-                        <span className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1 rounded">
-                          {idx + 1}
-                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              
+
               {/* Novas imagens */}
               {editPreviews.length > 0 && (
-                <div>
-                  <p className="text-xs text-green-400 mb-2">Novas imagens ({editPreviews.length})</p>
-                  <div className="grid grid-cols-4 gap-2 mb-2">
+                <div className="space-y-2">
+                  <p
+                    className={
+                      'text-xs font-medium uppercase tracking-wide ' +
+                      (isDarkGallery ? 'text-emerald-500/90' : 'text-emerald-300')
+                    }
+                  >
+                    Novas (ainda não salvas)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
                     {editPreviews.map((preview, idx) => (
-                      <div key={`new-${idx}`} className="relative group">
-                        <img 
-                          src={preview} 
-                          alt={`Nova imagem ${idx + 1}`}
-                          className="w-full h-24 object-cover rounded-md border border-green-600"
-                        />
+                      <div
+                        key={`new-${idx}`}
+                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-emerald-600/50 bg-emerald-950/20 shadow-md ring-0 transition-all duration-200 hover:border-emerald-400/60 hover:shadow-lg hover:shadow-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setEditImageLightboxIndex(editExistingImages.length + idx)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setEditImageLightboxIndex(editExistingImages.length + idx);
+                          }
+                        }}
+                      >
+                        <div className="relative aspect-[4/3] w-full">
+                          <img
+                            src={preview}
+                            alt={`Nova imagem ${idx + 1}`}
+                            className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+                          />
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-emerald-950/80 via-transparent to-black/15 opacity-90" />
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            <span className="flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                              Ver
+                            </span>
+                          </div>
+                          <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow">
+                            Novo
+                          </span>
+                        </div>
+                        <div className="border-t border-emerald-800/40 bg-emerald-950/30 px-2 py-1.5">
+                          {(editNewCaptions[idx] || '').length > 0 ? (
+                            <p className="line-clamp-2 text-[11px] leading-snug text-emerald-100/90">{editNewCaptions[idx]}</p>
+                          ) : (
+                            <p className="text-[11px] text-emerald-700/90">Sem descrição</p>
+                          )}
+                        </div>
                         <button
                           type="button"
-                          onClick={() => removeEditImage(idx)}
-                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeEditImage(idx);
+                          }}
+                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label="Remover imagem"
                         >
-                          <X className="w-3 h-3 text-white" />
+                          <X className="h-4 w-4" />
                         </button>
-                        <span className="absolute bottom-1 left-1 bg-green-600/90 text-white text-xs px-1 rounded">
-                          Novo
-                        </span>
                       </div>
                     ))}
                   </div>
@@ -2369,8 +2440,18 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               )}
               
               {/* Botão para adicionar imagens do computador */}
-              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 cursor-pointer w-fit">
-                <ImagePlus className="w-4 h-4" />
+              <label
+                className={
+                  'inline-flex h-11 w-fit cursor-pointer items-center gap-2 rounded-lg border px-4 text-sm font-semibold shadow-sm transition ' +
+                  (isDarkGallery
+                    ? 'border-zinc-500 bg-zinc-950/70 text-zinc-100 hover:border-emerald-500/50 hover:bg-zinc-800/90'
+                    : 'border-emerald-400/70 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300 hover:bg-emerald-500/25')
+                }
+              >
+                <ImagePlus
+                  className={'h-4 w-4 shrink-0 ' + (isDarkGallery ? 'text-emerald-400' : 'text-emerald-300')}
+                  aria-hidden
+                />
                 <span>Do computador</span>
                 <input 
                   type="file" 
@@ -2382,14 +2463,24 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               </label>
 
               {/* Upload via Google Drive Link */}
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                <div className="relative min-w-0 flex-1">
+                  <Link
+                    className={
+                      'absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 ' +
+                      (isDarkGallery ? 'text-zinc-500' : 'text-zinc-400')
+                    }
+                  />
                   <Input
                     placeholder="Cole o link do Google Drive aqui..."
                     value={editGoogleDriveLink}
                     onChange={(e) => setEditGoogleDriveLink(e.target.value)}
-                    className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                    className={
+                      'h-11 pl-10 ' +
+                      (isDarkGallery
+                        ? 'bg-zinc-950/60 border-zinc-600 text-white placeholder:text-zinc-500'
+                        : 'border-zinc-500 bg-white/10 text-white placeholder:text-zinc-300')
+                    }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -2402,7 +2493,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                   type="button"
                   onClick={onAddEditGoogleDriveImage}
                   disabled={isEditDownloadingFromDrive || !editGoogleDriveLink.trim()}
-                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                  className="h-11 shrink-0 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 sm:w-auto sm:min-w-[7.5rem]"
                 >
                   {isEditDownloadingFromDrive ? (
                     <>
@@ -2424,13 +2515,306 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 setIsVivaRealEditOpen(false);
                 setEditImages([]);
                 setEditPreviews([]);
+                setEditNewCaptions([]);
                 setEditGoogleDriveLink('');
+                setEditImageLightboxIndex(null);
               }}>Cancelar</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={submitVivaRealEdit}>Salvar</Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {editImageLightboxIndex !== null &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className={
+              'pointer-events-auto fixed inset-0 z-[100] flex max-h-[100dvh] flex-col backdrop-blur-xl supports-[height:100dvh]:min-h-[100dvh] ' +
+              (isDarkGallery
+                ? 'bg-zinc-950/95 text-white'
+                : 'bg-white/[0.97] text-zinc-900 shadow-2xl ring-1 ring-black/10')
+            }
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Visualização da imagem"
+          >
+            <header
+              className={
+                'flex shrink-0 items-center justify-between gap-3 border-b px-3 py-3 sm:px-5 sm:py-4 ' +
+                (isDarkGallery
+                  ? 'border-white/10 bg-gradient-to-b from-zinc-900/95 to-zinc-950/80'
+                  : 'border-zinc-200 bg-gradient-to-b from-white to-zinc-50')
+              }
+            >
+              <div className="min-w-0 flex-1">
+                <p
+                  className={
+                    'text-[10px] font-semibold uppercase tracking-[0.2em] sm:text-xs ' +
+                    (isDarkGallery ? 'text-emerald-400/90' : 'text-emerald-600')
+                  }
+                >
+                  Galeria
+                </p>
+                <p
+                  className={
+                    'truncate text-sm font-medium sm:text-base ' +
+                    (isDarkGallery ? 'text-zinc-100' : 'text-zinc-900')
+                  }
+                >
+                  Foto {(editImageLightboxIndex ?? 0) + 1} de {Math.max(totalEditImageCount, 1)}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar galeria"
+                onClick={() => setEditImageLightboxIndex(null)}
+                className={
+                  'inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ' +
+                  (isDarkGallery
+                    ? 'border-white/25 bg-zinc-900/90 text-zinc-100 hover:bg-red-600 hover:border-red-500 hover:text-white focus-visible:ring-red-400/60 focus-visible:ring-offset-zinc-950'
+                    : 'border-zinc-500 bg-zinc-200 text-zinc-900 hover:bg-red-600 hover:border-red-600 hover:text-white focus-visible:ring-red-500/50 focus-visible:ring-offset-white')
+                }
+              >
+                <X className="h-9 w-9" strokeWidth={2.75} aria-hidden />
+              </button>
+            </header>
+
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div
+                className="relative flex min-h-0 flex-1 items-center justify-center px-2 py-2 sm:px-12 sm:py-6"
+                onTouchStart={(e) => {
+                  lightboxTouchStartX.current = e.changedTouches[0]?.clientX ?? null;
+                }}
+                onTouchEnd={(e) => {
+                  const start = lightboxTouchStartX.current;
+                  lightboxTouchStartX.current = null;
+                  const end = e.changedTouches[0]?.clientX;
+                  if (start == null || end == null || totalEditImageCount <= 1) return;
+                  const dx = end - start;
+                  if (dx > 50) {
+                    setEditImageLightboxIndex((i) =>
+                      i === null ? i : (i - 1 + totalEditImageCount) % totalEditImageCount
+                    );
+                  } else if (dx < -50) {
+                    setEditImageLightboxIndex((i) => (i === null ? i : (i + 1) % totalEditImageCount));
+                  }
+                }}
+              >
+                {totalEditImageCount > 0 && editImageLightboxIndex !== null && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Imagem anterior"
+                      disabled={totalEditImageCount <= 1}
+                      onClick={() =>
+                        setEditImageLightboxIndex((i) =>
+                          i === null || totalEditImageCount <= 1
+                            ? i
+                            : (i - 1 + totalEditImageCount) % totalEditImageCount
+                        )
+                      }
+                      className={
+                        'pointer-events-auto absolute left-1 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border-2 shadow-xl backdrop-blur-sm transition sm:flex disabled:pointer-events-none disabled:opacity-25 ' +
+                        (isDarkGallery
+                          ? 'border-white/15 bg-zinc-900/95 text-white hover:bg-emerald-600/90 hover:border-emerald-400/40'
+                          : 'border-zinc-500 bg-zinc-100 text-zinc-900 shadow-lg hover:bg-emerald-600 hover:border-emerald-600 hover:text-white')
+                      }
+                    >
+                      <ChevronLeft className="h-7 w-7 shrink-0" strokeWidth={2.75} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Próxima imagem"
+                      disabled={totalEditImageCount <= 1}
+                      onClick={() =>
+                        setEditImageLightboxIndex((i) =>
+                          i === null || totalEditImageCount <= 1 ? i : (i + 1) % totalEditImageCount
+                        )
+                      }
+                      className={
+                        'pointer-events-auto absolute right-1 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border-2 shadow-xl backdrop-blur-sm transition sm:flex disabled:pointer-events-none disabled:opacity-25 ' +
+                        (isDarkGallery
+                          ? 'border-white/15 bg-zinc-900/95 text-white hover:bg-emerald-600/90 hover:border-emerald-400/40'
+                          : 'border-zinc-500 bg-zinc-100 text-zinc-900 shadow-lg hover:bg-emerald-600 hover:border-emerald-600 hover:text-white')
+                      }
+                    >
+                      <ChevronRight className="h-7 w-7 shrink-0" strokeWidth={2.75} />
+                    </button>
+                    <div
+                      className={
+                        'mx-auto max-h-full max-w-[min(100vw-1rem,1200px)] overflow-hidden rounded-lg shadow-2xl sm:rounded-2xl ' +
+                        (isDarkGallery ? 'ring-1 ring-white/10' : 'ring-1 ring-zinc-300 shadow-xl')
+                      }
+                    >
+                      <img
+                        src={
+                          editImageLightboxIndex < editExistingImages.length
+                            ? convertGoogleDriveUrl(editExistingImages[editImageLightboxIndex], 'full')
+                            : editPreviews[editImageLightboxIndex - editExistingImages.length] ?? ''
+                        }
+                        alt=""
+                        className="max-h-[min(52dvh,520px)] w-auto max-w-[100vw] object-contain sm:max-h-[min(72dvh,880px)]"
+                        onError={(e) => {
+                          if (editImageLightboxIndex < editExistingImages.length) {
+                            handleImageErrorWithFallback(
+                              e,
+                              editExistingImages[editImageLightboxIndex],
+                              '/placeholder-property.jpg'
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {totalEditImageCount > 1 && (
+                <div className="flex shrink-0 justify-center gap-1.5 overflow-x-auto px-3 pb-2 sm:hidden">
+                  {Array.from({ length: totalEditImageCount }).map((_, dotIdx) => (
+                    <button
+                      key={dotIdx}
+                      type="button"
+                      aria-label={`Ir para foto ${dotIdx + 1}`}
+                      onClick={() => setEditImageLightboxIndex(dotIdx)}
+                      className={
+                        'h-2 w-2 shrink-0 rounded-full transition-all ' +
+                        (editImageLightboxIndex === dotIdx
+                          ? isDarkGallery
+                            ? 'w-6 bg-emerald-400'
+                            : 'w-6 bg-emerald-600'
+                          : isDarkGallery
+                            ? 'bg-zinc-600 hover:bg-zinc-500'
+                            : 'bg-zinc-300 hover:bg-zinc-400')
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div
+                className={
+                  'flex shrink-0 items-center justify-center gap-4 border-t py-3 sm:hidden ' +
+                  (isDarkGallery ? 'border-white/10 bg-zinc-900/80' : 'border-zinc-200 bg-zinc-100/90')
+                }
+              >
+                <button
+                  type="button"
+                  aria-label="Imagem anterior"
+                  disabled={totalEditImageCount <= 1}
+                  onClick={() =>
+                    setEditImageLightboxIndex((i) =>
+                      i === null || totalEditImageCount <= 1
+                        ? i
+                        : (i - 1 + totalEditImageCount) % totalEditImageCount
+                    )
+                  }
+                  className={
+                    'flex h-12 w-12 items-center justify-center rounded-full border-2 shadow-lg active:scale-95 disabled:opacity-30 ' +
+                    (isDarkGallery
+                      ? 'border-white/15 bg-zinc-800 text-white'
+                      : 'border-zinc-500 bg-zinc-100 text-zinc-900 hover:bg-emerald-600 hover:text-white hover:border-emerald-600')
+                  }
+                >
+                  <ChevronLeft className="h-7 w-7 shrink-0" strokeWidth={2.75} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Próxima imagem"
+                  disabled={totalEditImageCount <= 1}
+                  onClick={() =>
+                    setEditImageLightboxIndex((i) =>
+                      i === null || totalEditImageCount <= 1 ? i : (i + 1) % totalEditImageCount
+                    )
+                  }
+                  className={
+                    'flex h-12 w-12 items-center justify-center rounded-full border-2 shadow-lg active:scale-95 disabled:opacity-30 ' +
+                    (isDarkGallery
+                      ? 'border-white/15 bg-zinc-800 text-white'
+                      : 'border-zinc-500 bg-zinc-100 text-zinc-900 hover:bg-emerald-600 hover:text-white hover:border-emerald-600')
+                  }
+                >
+                  <ChevronRight className="h-7 w-7 shrink-0" strokeWidth={2.75} />
+                </button>
+              </div>
+            </div>
+
+            <footer
+              className={
+                'shrink-0 space-y-3 rounded-t-2xl border border-b-0 px-3 py-4 sm:px-6 sm:py-5 ' +
+                (isDarkGallery
+                  ? 'border-white/10 bg-gradient-to-b from-zinc-900/98 to-zinc-950 shadow-[0_-12px_40px_rgba(0,0,0,0.45)]'
+                  : 'border-zinc-200 bg-gradient-to-b from-white to-zinc-50 shadow-[0_-12px_32px_rgba(0,0,0,0.1)]')
+              }
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <div className="flex items-end justify-between gap-2">
+                <label
+                  htmlFor="edit-image-caption"
+                  className={'text-sm font-medium ' + (isDarkGallery ? 'text-zinc-200' : 'text-zinc-800')}
+                >
+                  Descrição desta foto
+                </label>
+                <span className={'tabular-nums text-xs ' + (isDarkGallery ? 'text-zinc-500' : 'text-zinc-500')}>
+                  {editImageLightboxIndex === null
+                    ? 0
+                    : editImageLightboxIndex < editExistingImages.length
+                      ? (editExistingCaptions[editImageLightboxIndex] ?? '').length
+                      : (editNewCaptions[editImageLightboxIndex - editExistingImages.length] ?? '').length}
+                  /{IMAGE_CAPTION_MAX}
+                </span>
+              </div>
+              <Input
+                id="edit-image-caption"
+                maxLength={IMAGE_CAPTION_MAX}
+                value={
+                  editImageLightboxIndex === null
+                    ? ''
+                    : editImageLightboxIndex < editExistingImages.length
+                      ? editExistingCaptions[editImageLightboxIndex] ?? ''
+                      : editNewCaptions[editImageLightboxIndex - editExistingImages.length] ?? ''
+                }
+                onChange={(e) => {
+                  const lb = editImageLightboxIndex;
+                  const v = clampCaption(e.target.value);
+                  if (lb === null) return;
+                  if (lb < editExistingImages.length) {
+                    setEditExistingCaptions((prev) => {
+                      const n = [...prev];
+                      n[lb] = v;
+                      return n;
+                    });
+                  } else {
+                    const ni = lb - editExistingImages.length;
+                    setEditNewCaptions((prev) => {
+                      const n = [...prev];
+                      n[ni] = v;
+                      return n;
+                    });
+                  }
+                }}
+                placeholder="Opcional — ex.: Sala com varanda"
+                className={
+                  'h-11 text-[15px] focus-visible:ring-2 ' +
+                  (isDarkGallery
+                    ? 'border-zinc-600 bg-zinc-950/80 text-white placeholder:text-zinc-500 focus-visible:ring-emerald-500/40'
+                    : 'border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-emerald-600/35')
+                }
+              />
+              <p
+                className={
+                  'text-center text-[11px] leading-relaxed sm:text-left ' +
+                  (isDarkGallery ? 'text-zinc-500' : 'text-zinc-500')
+                }
+              >
+                Fica salva com o imóvel ao clicar em &quot;Salvar&quot; no formulário.
+              </p>
+            </footer>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

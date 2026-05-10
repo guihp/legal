@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useImoveisVivaReal, ImovelVivaReal } from '@/hooks/useImoveisVivaReal';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { convertMultipleToJPEG, downloadGoogleDriveImage, extractGoogleDriveFileId } from '@/utils/imageUtils';
+import { convertMultipleToJPEG, downloadGoogleDriveImage, extractGoogleDriveFileId, captionFromFilename } from '@/utils/imageUtils';
 import { X, ImagePlus, Link, Loader2 } from 'lucide-react';
 import { FEATURE_OPTIONS } from '@/constants/imovelFeatures';
 
@@ -83,6 +83,12 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
   const [categorias, setCategorias] = useState<Option[]>([]);
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  // Legendas opcionais por imagem (max 50 chars) — mesmo índice de `images`/`previews`.
+  // Salvas em imoveisvivareal.imagens_legendas (text[]) no insert.
+  // Usadas pela IA do n8n via property-images-api pra escolher quais fotos enviar.
+  const [imageCaptions, setImageCaptions] = useState<string[]>([]);
+  const IMAGE_CAPTION_MAX = 50;
+  const clampCaption = (s: string) => s.slice(0, IMAGE_CAPTION_MAX);
   const [googleDriveLink, setGoogleDriveLink] = useState('');
   const [isDownloadingFromDrive, setIsDownloadingFromDrive] = useState(false);
   // Features = amenidades selecionadas (gravadas em INGLÊS para casar com a tool
@@ -173,6 +179,10 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
       setImages(prev => [...prev, ...converted]);
       const newPreviews = converted.map(f => URL.createObjectURL(f));
       setPreviews(prev => [...prev, ...newPreviews]);
+      // Pré-preenche legenda a partir do nome do arquivo (heurística: nome limpo
+      // se não parecer padrão de câmera). Usuário pode editar/limpar antes de salvar.
+      const suggestedCaptions = converted.map(f => captionFromFilename(f.name, IMAGE_CAPTION_MAX));
+      setImageCaptions(prev => [...prev, ...suggestedCaptions]);
       console.log(`✅ ${converted.length} imagem(ns) processadas com sucesso. Total: ${currentCount + converted.length}/${MAX_IMAGES}`);
       toast.success(`${converted.length} imagem(ns) processadas com sucesso!`);
     } catch (e) {
@@ -210,6 +220,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
       
       setImages(prev => [...prev, file]);
       setPreviews(prev => [...prev, URL.createObjectURL(file)]);
+      setImageCaptions(prev => [...prev, '']);
       setGoogleDriveLink(''); // Limpar o campo
       
       console.log(`✅ Imagem baixada e processada: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
@@ -229,9 +240,21 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
       URL.revokeObjectURL(newPreviews[index]);
       return newPreviews.filter((_, i) => i !== index);
     });
+    // Mantém legendas sincronizadas com images/previews por índice.
+    setImageCaptions(prev => prev.filter((_, i) => i !== index));
   };
 
-  const uploadImagesAndCollectUrls = async (imovelId: number): Promise<string[]> => {
+  const updateImageCaption = (index: number, value: string) => {
+    const trimmed = clampCaption(value);
+    setImageCaptions(prev => {
+      const next = [...prev];
+      while (next.length <= index) next.push('');
+      next[index] = trimmed;
+      return next;
+    });
+  };
+
+  const uploadImagesAndCollectUrls = async (imovelId: number): Promise<{ urls: string[]; captions: string[] }> => {
     // Usar bucket existente do projeto para imagens (mesmo do Properties)
     const BUCKET = 'property-images';
     
@@ -338,22 +361,27 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
     
     // Aguardar todos os uploads (mesmo os que falharam)
     const results = await Promise.allSettled(uploadPromises);
-    
-    // Processar resultados
-    const urls: string[] = [];
+
+    // Processar resultados — mantém pares (url, legenda) por sourceIdx pra
+    // legendas casarem certinho mesmo se promises completarem fora de ordem
+    // ou se alguma imagem do meio falhar.
+    const pairs: Array<{ url: string; caption: string; sourceIdx: number }> = [];
     const errors: string[] = [];
     let bucketNotFound = false;
-    
+
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         const data = result.value;
         if (data.success && data.url) {
-          urls.push(data.url);
+          pairs.push({
+            url: data.url,
+            caption: clampCaption(imageCaptions[data.index] || ''),
+            sourceIdx: data.index,
+          });
         } else {
           const errorMsg = data.error?.userMessage || data.error?.message || 'Erro desconhecido';
           errors.push(`Imagem ${index + 1}: ${errorMsg}`);
-          
-          // Verificar se é erro de bucket não encontrado
+
           if (errorMsg.includes('Bucket not found') || errorMsg.includes('bucket')) {
             bucketNotFound = true;
           }
@@ -362,22 +390,27 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
         errors.push(`Imagem ${index + 1}: ${result.reason?.message || 'Erro desconhecido'}`);
       }
     });
-    
-    // Mostrar avisos sobre imagens que falharam
+
+    // Ordena por sourceIdx para garantir que ordem das URLs reflete ordem
+    // que o usuário viu nos previews (e não ordem de conclusão dos uploads).
+    pairs.sort((a, b) => a.sourceIdx - b.sourceIdx);
+
     if (errors.length > 0) {
       console.warn('⚠️ Algumas imagens falharam no upload:', errors);
-      
-      if (bucketNotFound && urls.length === 0) {
-        // Se todas falharam por causa do bucket, mostrar mensagem específica
+
+      if (bucketNotFound && pairs.length === 0) {
         toast.error('Bucket property-images não encontrado. O bucket precisa ser criado no Supabase Storage. Entre em contato com o administrador.');
-      } else if (urls.length > 0) {
-        toast.warning(`${errors.length} imagem(ns) falharam no upload. ${urls.length} imagem(ns) foram enviadas com sucesso.`);
+      } else if (pairs.length > 0) {
+        toast.warning(`${errors.length} imagem(ns) falharam no upload. ${pairs.length} imagem(ns) foram enviadas com sucesso.`);
       } else {
         toast.error(`Todas as ${errors.length} imagem(ns) falharam no upload. Verifique se o bucket property-images existe no Supabase Storage.`);
       }
     }
-    
-    return urls;
+
+    return {
+      urls: pairs.map(p => p.url),
+      captions: pairs.map(p => p.caption),
+    };
   };
 
   const handleSave = async () => {
@@ -414,11 +447,15 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
 
       if (images.length > 0) {
         try {
-          const urls = await uploadImagesAndCollectUrls(created.id as number);
-          
+          const { urls, captions } = await uploadImagesAndCollectUrls(created.id as number);
+
           if (urls.length > 0) {
-            await supabase.from('imoveisvivareal').update({ imagens: urls }).eq('id', created.id);
-            
+            // Persist imagens E imagens_legendas (mesmo índice).
+            await supabase
+              .from('imoveisvivareal')
+              .update({ imagens: urls, imagens_legendas: captions })
+              .eq('id', created.id);
+
             if (urls.length < images.length) {
               toast.warning(`Imóvel criado! ${urls.length} de ${images.length} imagens foram salvas com sucesso.`);
             } else {
@@ -439,7 +476,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
         toast.success('Imóvel criado com sucesso');
       }
       onClose();
-      setImages([]); setPreviews([]); setSelectedFeatures([]);
+      setImages([]); setPreviews([]); setImageCaptions([]); setSelectedFeatures([]);
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao criar imóvel');
     } finally {
@@ -764,29 +801,51 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
                       Suporta links do formato: https://drive.google.com/file/d/ID/view
                     </p>
 
-                    {/* Preview das imagens */}
+                    {/* Preview das imagens com legenda opcional por foto */}
                     {previews.length > 0 && (
-                      <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                        {previews.map((src, idx) => (
-                          <div key={idx} className="relative group">
-                            <img 
-                              src={src} 
-                              className="w-full h-24 object-cover rounded-md border border-gray-700" 
-                              alt={`Preview ${idx + 1}`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeImage(idx)}
-                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                            <span className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1 rounded">
-                              {idx + 1}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                      <>
+                        <p className="text-xs text-gray-400">
+                          Adicione uma descrição curta (opcional, max {IMAGE_CAPTION_MAX} chars) para cada foto.
+                          A IA do WhatsApp usa pra escolher quais fotos enviar quando o cliente pedir algo
+                          específico (ex.: "fotos da piscina").
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {previews.map((src, idx) => {
+                            const cap = imageCaptions[idx] || '';
+                            return (
+                              <div key={idx} className="flex flex-col gap-1">
+                                <div className="relative group">
+                                  <img
+                                    src={src}
+                                    className="w-full h-24 object-cover rounded-md border border-gray-700"
+                                    alt={`Preview ${idx + 1}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeImage(idx)}
+                                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                  <span className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1 rounded">
+                                    {idx + 1}
+                                  </span>
+                                </div>
+                                <Input
+                                  value={cap}
+                                  maxLength={IMAGE_CAPTION_MAX}
+                                  placeholder="Descrição (opcional)"
+                                  onChange={(e) => updateImageCaption(idx, e.target.value)}
+                                  className="bg-gray-800 border-gray-700 text-white text-xs h-7 placeholder:text-gray-500"
+                                />
+                                <span className="text-[10px] text-gray-500 text-right">
+                                  {cap.length}/{IMAGE_CAPTION_MAX}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

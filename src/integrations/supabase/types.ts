@@ -1028,6 +1028,7 @@ export type Database = {
           garagem: number | null
           id: number
           imagens: string[] | null
+          imagens_legendas: string[] | null
           listing_id: string | null
           modalidade: string | null
           numero: string | null
@@ -1061,6 +1062,7 @@ export type Database = {
           garagem?: number | null
           id?: number
           imagens?: string[] | null
+          imagens_legendas?: string[] | null
           listing_id?: string | null
           modalidade?: string | null
           numero?: string | null
@@ -1094,6 +1096,7 @@ export type Database = {
           garagem?: number | null
           id?: number
           imagens?: string[] | null
+          imagens_legendas?: string[] | null
           listing_id?: string | null
           modalidade?: string | null
           numero?: string | null

@@ -7,6 +7,8 @@ export interface ImovelVivaReal {
   id: number;
   listing_id: string | null;
   imagens: string[] | null;
+  /** Legenda por imagem; índice alinha com `imagens` (máx. 50 caracteres no app). */
+  imagens_legendas?: string[] | null;
   tipo_categoria: string | null;
   tipo_imovel: string | null;
   descricao: string | null;
