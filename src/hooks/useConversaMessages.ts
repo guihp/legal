@@ -59,6 +59,33 @@ export function extractMessageContent(content: unknown): string {
 }
 
 /**
+ * Integrações (n8n / envio em lote) às vezes gravam várias URLs em um único campo,
+ * separadas por vírgula: "https://.../a.jpg,https://.../b.jpg".
+ * Sem isso, o chat vira um único <img src="...inválido"> e nada renderiza.
+ */
+function expandCommaSeparatedStorageUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of urls) {
+    let s = String(raw || '').trim();
+    if (!s) continue;
+    s = s.replace(/\\+/g, '').replace(/^["']|["']$/g, '').trim();
+    const chunks =
+      s.includes(',') && /https?:\/\//i.test(s)
+        ? s.split(/,(?=https?:\/\/)/i).map((x) => x.trim()).filter(Boolean)
+        : [s];
+    for (const c of chunks) {
+      const u = c.trim();
+      if (!u || !/^https?:\/\//i.test(u)) continue;
+      if (seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+  }
+  return out;
+}
+
+/**
  * Extrai URLs de imagens do campo media.
  * O campo media pode conter um JSON com várias imagens no formato:
  * "{"json":{"imagem":"https://..."},"pairedItem":{"item":0}}"
@@ -130,8 +157,8 @@ export function extractMediaImages(media: string | null | undefined): string[] {
   } catch (error) {
     console.warn('Erro ao extrair imagens do media:', error);
   }
-  
-  return images;
+
+  return expandCommaSeparatedStorageUrls(images);
 }
 
 export interface ConversaMessage {
