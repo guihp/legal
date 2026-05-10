@@ -5,6 +5,7 @@ import { PropertyWithImages } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { subscribeImoveisChanges } from "@/lib/realtime/imoveisRealtimeBus";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
 import { LayoutPreview } from "@/components/LayoutPreview";
 import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
@@ -190,14 +191,22 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     fetchTypeDistribution();
     fetchKpis();
     fetchLeadStages();
-    // Realtime
+    // Realtime — imoveisvivareal vem do bus compartilhado (1 channel pra app inteira).
+    // leads + contracts continuam em channel próprio (poucos consumers).
+    const unsubscribeImoveis = subscribeImoveisChanges(() => {
+      fetchImoveis();
+      fetchKpis();
+      fetchTypeDistribution();
+    });
     const channel = supabase
       .channel(`dashboard_kpis_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, () => { fetchImoveis(); fetchKpis(); fetchTypeDistribution(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); fetchLeadStages(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => { fetchKpis(); })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      unsubscribeImoveis();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   if (loadingImoveis || loadingKpis) {

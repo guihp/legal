@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
+import { subscribeImoveisChanges } from '@/lib/realtime/imoveisRealtimeBus';
 
 export interface ImovelVivaReal {
   id: number;
@@ -73,8 +74,8 @@ export function useImoveisVivaReal(initial?: {
   const [orderBy, setOrderBy] = useState<ImoveisOrderBy>(initial?.orderBy ?? { column: 'created_at', ascending: false });
   const [filters, setFilters] = useState<ImoveisFilters>(initial?.filters ?? {});
   const [total, setTotal] = useState<number>(0);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const subscribedRef = useRef(false);
+  // (channelRef/subscribedRef removidos — realtime agora vem do bus compartilhado
+  //  em src/lib/realtime/imoveisRealtimeBus.ts)
 
   const from = useMemo(() => (page - 1) * pageSize, [page, pageSize]);
   const to = useMemo(() => from + pageSize - 1, [from, pageSize]);
@@ -299,31 +300,13 @@ export function useImoveisVivaReal(initial?: {
   }, [page, pageSize, orderBy.column, orderBy.ascending, JSON.stringify(filters)]);
 
   useEffect(() => {
-    if (subscribedRef.current) return;
-
-    const channel = supabase
-      .channel(`imoveisvivareal-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'imoveisvivareal' },
-        () => refetch()
-      );
-
-    channel.subscribe((status: string) => {
-      if (status === 'SUBSCRIBED') {
-        subscribedRef.current = true;
-      }
+    // Subscreve no bus compartilhado em vez de abrir channel próprio.
+    // Múltiplos consumidores (PropertyList, DashboardContent, este hook)
+    // dividem 1 channel — antes eram 3 channels paralelos pra mesma tabela.
+    const unsubscribe = subscribeImoveisChanges(() => {
+      refetch();
     });
-
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-        subscribedRef.current = false;
-      }
-    };
+    return unsubscribe;
   }, []);
 
   return {

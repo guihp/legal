@@ -6,9 +6,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Instagram, FileText, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import JSZip from 'jszip';
+// html2canvas (~150KB), jsPDF (~250KB) e JSZip (~100KB) são usados APENAS nas
+// ações de exportar PDF/zip dos templates de marketing. Lazy-import nas funções
+// que disparam esses fluxos pra não inflar o bundle inicial.
+const loadHtml2Canvas = () => import('html2canvas').then(m => m.default);
+const loadJsPDF = () => import('jspdf').then(m => m.jsPDF);
+const loadJSZip = () => import('jszip').then(m => m.default);
 import { convertGoogleDriveUrl } from '@/utils/imageUtils';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
@@ -528,6 +531,7 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
     await waitImageReady(bgUrl);
     await new Promise((r) => requestAnimationFrame(() => r(null)));
 
+    const html2canvas = await loadHtml2Canvas();
     const canvas = await html2canvas(containerRef.current, {
       useCORS: true,
       allowTaint: true,
@@ -565,6 +569,7 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
       }
 
       toast.info(`Gerando ${images.length} slides do carrossel...`);
+      const JSZip = await loadJSZip();
       const zip = new JSZip();
       for (let i = 0; i < images.length; i++) {
         setIgProgress({ current: i + 1, total: images.length });
@@ -604,6 +609,7 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
       setGeneratingPDF(true);
       toast.info('Gerando Ficha Técnica (PDF)...');
 
+      const html2canvas = await loadHtml2Canvas();
       const canvas = await html2canvas(pdfRef.current, {
         useCORS: true,
         allowTaint: true,
@@ -613,6 +619,7 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
         height: pdfRef.current.scrollHeight,
       });
 
+      const jsPDF = await loadJsPDF();
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();

@@ -7,7 +7,10 @@
  * significa que houve um novo deploy e o app precisa ser recarregado.
  */
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
+// 30min — antes era 5min. visibilitychange listener (linha ~79) já dispara
+// check imediato quando aba volta a foco, então polling agressivo é desnecessário.
+// Reduz fetch /build-meta.json em 6×.
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
 const BUILD_META_PATH = '/build-meta.json';
 
 let currentBuildHash: string | null = null;

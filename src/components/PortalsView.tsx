@@ -6,8 +6,8 @@ import { Globe, Link2, Settings, CheckCircle, FileText, Download } from "lucide-
 import { useProperties } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useToast } from "@/hooks/use-toast";
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+// jsPDF + jspdf-autotable carregados sob demanda dentro de generatePortalsReport
+// (evita ~400KB no bundle inicial — fluxo raramente acionado).
 
 export function PortalsView() {
   const { properties, loading: propertiesLoading } = useProperties();
@@ -61,8 +61,10 @@ export function PortalsView() {
     );
   };
 
-  const generatePortalsReport = () => {
+  const generatePortalsReport = async () => {
     try {
+      const { default: jsPDF } = await import('jspdf');
+      await import('jspdf-autotable'); // side-effect: registra plugin
       const doc = new jsPDF();
       const today = new Date().toLocaleDateString('pt-BR');
       

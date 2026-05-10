@@ -38,8 +38,85 @@ export const captionFromFilename = (filename: string, maxLen = 50): string => {
     .slice(0, maxLen);
 };
 
+// ─── Web Worker singleton para conversão de imagens (fora do main thread) ──────
+// Lazy-init: só cria worker no 1º uso. Reusa entre uploads pra evitar overhead
+// de spawn. Se OffscreenCanvas/createImageBitmap indisponíveis (browsers
+// antigos), worker falha e caímos no fallback main-thread.
+let _imgWorker: Worker | null = null;
+let _imgWorkerSupported: boolean | null = null;
+let _imgRequestId = 0;
+const _imgPending = new Map<
+  number,
+  { resolve: (b: Blob) => void; reject: (e: Error) => void }
+>();
+
+function isWorkerSupported(): boolean {
+  if (_imgWorkerSupported !== null) return _imgWorkerSupported;
+  try {
+    _imgWorkerSupported =
+      typeof Worker !== 'undefined' &&
+      typeof OffscreenCanvas !== 'undefined' &&
+      typeof createImageBitmap !== 'undefined';
+  } catch {
+    _imgWorkerSupported = false;
+  }
+  return _imgWorkerSupported;
+}
+
+function ensureImgWorker(): Worker | null {
+  if (!isWorkerSupported()) return null;
+  if (_imgWorker) return _imgWorker;
+  try {
+    _imgWorker = new Worker(
+      new URL('../workers/imageConverter.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    _imgWorker.onmessage = (e: MessageEvent) => {
+      const { id, ok, blob, error } = e.data || {};
+      const pending = _imgPending.get(id);
+      if (!pending) return;
+      _imgPending.delete(id);
+      if (ok) pending.resolve(blob);
+      else pending.reject(new Error(error || 'worker error'));
+    };
+    _imgWorker.onerror = (e) => {
+      console.warn('[imageWorker] erro fatal, desabilitando worker:', e.message);
+      _imgWorkerSupported = false;
+      _imgPending.forEach((p) => p.reject(new Error(e.message || 'worker error')));
+      _imgPending.clear();
+      try {
+        _imgWorker?.terminate();
+      } catch {
+        /* ignore */
+      }
+      _imgWorker = null;
+    };
+    return _imgWorker;
+  } catch (err) {
+    console.warn('[imageWorker] falha ao criar worker, fallback main thread:', err);
+    _imgWorkerSupported = false;
+    return null;
+  }
+}
+
+function convertViaWorker(
+  file: Blob,
+  params: { targetMinSize: number; targetMaxSize: number; maxWidth: number; maxHeight: number },
+): Promise<Blob> {
+  const worker = ensureImgWorker();
+  if (!worker) return Promise.reject(new Error('worker indisponível'));
+  return new Promise((resolve, reject) => {
+    const id = ++_imgRequestId;
+    _imgPending.set(id, { resolve, reject });
+    worker.postMessage({ id, file, params });
+  });
+}
+
 /**
- * Converte uma imagem para formato JPEG com tamanho adequado para WhatsApp
+ * Converte uma imagem para formato JPEG com tamanho adequado para WhatsApp.
+ *
+ * Tenta rodar em Web Worker (não bloqueia UI). Se worker falhar/indisponível,
+ * cai no fallback main-thread (código original).
  *
  * @param file - Arquivo de imagem original
  * @param targetMinSize - Tamanho mínimo em bytes (padrão 1MB = 1024*1024)
@@ -48,7 +125,38 @@ export const captionFromFilename = (filename: string, maxLen = 50): string => {
  * @param maxHeight - Altura máxima (padrão 1440px)
  * @returns Promise<File> - Arquivo convertido para JPEG
  */
-export const convertToJPEG = (
+export const convertToJPEG = async (
+  file: File,
+  targetMinSize = 1024 * 1024,
+  targetMaxSize = 5 * 1024 * 1024,
+  maxWidth = 1920,
+  maxHeight = 1440,
+): Promise<File> => {
+  // 1. Tenta Web Worker primeiro (não-bloqueante)
+  if (isWorkerSupported()) {
+    try {
+      const blob = await convertViaWorker(file, {
+        targetMinSize,
+        targetMaxSize,
+        maxWidth,
+        maxHeight,
+      });
+      const originalName = file.name.replace(/\.[^/.]+$/, '');
+      return new File([blob], `${originalName}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+    } catch (err) {
+      console.warn('[convertToJPEG] worker falhou, fallback main-thread:', err);
+      // segue pro fallback abaixo
+    }
+  }
+
+  // 2. Fallback main-thread (browsers antigos ou worker quebrou)
+  return _convertToJPEGMainThread(file, targetMinSize, targetMaxSize, maxWidth, maxHeight);
+};
+
+const _convertToJPEGMainThread = (
   file: File,
   targetMinSize = 1024 * 1024, // 1MB
   targetMaxSize = 5 * 1024 * 1024, // 5MB

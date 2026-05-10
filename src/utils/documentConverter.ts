@@ -1,5 +1,17 @@
-import mammoth from 'mammoth';
-import html2pdf from 'html2pdf.js';
+// Lazy: mammoth (~619KB) e html2pdf.js (~250KB) carregados sob demanda.
+// Code-splitting do Vite gera chunks separados que só baixam ao usar contratos.
+type MammothModule = typeof import('mammoth');
+type Html2PdfModule = typeof import('html2pdf.js');
+let _mammothPromise: Promise<MammothModule> | null = null;
+let _html2pdfPromise: Promise<Html2PdfModule> | null = null;
+const loadMammoth = (): Promise<MammothModule> => {
+  if (!_mammothPromise) _mammothPromise = import('mammoth');
+  return _mammothPromise;
+};
+const loadHtml2Pdf = (): Promise<Html2PdfModule> => {
+  if (!_html2pdfPromise) _html2pdfPromise = import('html2pdf.js');
+  return _html2pdfPromise;
+};
 
 export interface ConversionResult {
   success: boolean;
@@ -22,9 +34,10 @@ export const convertWordToPDF = async (fileUrl: string, fileName: string): Promi
     const arrayBuffer = await response.arrayBuffer();
     console.log('✅ Arquivo baixado, tamanho:', arrayBuffer.byteLength, 'bytes');
 
-    // 2. Converter Word para HTML usando mammoth (SEM modificações)
+    // 2. Converter Word para HTML usando mammoth (lazy load)
     console.log('🔄 Convertendo Word para HTML...');
-    const result = await mammoth.convertToHtml({ 
+    const mammothMod = (await loadMammoth()).default;
+    const result = await mammothMod.convertToHtml({
       arrayBuffer: arrayBuffer,
       // Configurações para conversão limpa
       includeDefaultStyleMap: true,
@@ -157,9 +170,10 @@ export const convertWordToPDF = async (fileUrl: string, fileName: string): Promi
       }
     };
 
-    // 6. Converter HTML para PDF
+    // 6. Converter HTML para PDF (html2pdf carregado sob demanda)
     console.log('📄 Gerando PDF...');
-    const pdfBlob = await html2pdf()
+    const html2pdfFn = (await loadHtml2Pdf()).default;
+    const pdfBlob = await html2pdfFn()
       .set(pdfOptions)
       .from(styledHtml)
       .outputPdf('blob');

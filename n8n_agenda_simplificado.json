@@ -1,0 +1,110 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agenda-jastelo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "webhook-agenda",
+      "name": "Webhook2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook2').first().json.body;\nconst funcao = body.funcao || '';\n\nlet action;\nif (['busca', 'buscar', 'agendar'].includes(funcao)) {\n  action = 'check_availability';\n} else if (funcao === 'agendamento') {\n  action = 'book_visit';\n} else if (funcao === 'cancelamento') {\n  action = 'cancel_visit';\n}\n\nreturn [{\n  json: {\n    action,\n    company_id: body.company_id,\n    data_e_hora: body.data_e_hora,\n    id_do_imovel: body.id_do_imovel,\n    session_id: body.sessionId,\n    nome_cliente: body.nome_cliente,\n    email_cliente: body.email_cliente,\n    telefone: body.telefone,\n    instancia: body.instancia\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "id": "code-mapping",
+      "name": "Mapeia Action"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://bfcssdogttmqeujgmxdf.supabase.co/functions/v1/schedule-api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer SUPABASE_ANON_KEY_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 0],
+      "id": "http-schedule-api",
+      "name": "Call Schedule API"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"response\": \"{{ $json.texto_disponibilidade || $json.mensagem || $json.response }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [600, 0],
+      "id": "respond-webhook",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Mapeia Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapeia Action": {
+      "main": [
+        [
+          {
+            "node": "Call Schedule API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Schedule API": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

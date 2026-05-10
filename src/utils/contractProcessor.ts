@@ -1,7 +1,21 @@
 import { supabase } from '@/integrations/supabase/client';
 import { convertWordToPDF } from './documentConverter';
-import mammoth from 'mammoth';
-import html2pdf from 'html2pdf.js';
+// `mammoth` (~619KB) e `html2pdf.js` (~250KB) são usados apenas em fluxos de
+// geração de contrato (raros). Importamos dinamicamente dentro das funções pra
+// não inflar o bundle inicial — o code-splitting do Vite gera chunks separados
+// que carregam só quando o usuário acessa esses fluxos.
+type MammothModule = typeof import('mammoth');
+type Html2PdfModule = typeof import('html2pdf.js');
+let _mammothPromise: Promise<MammothModule> | null = null;
+let _html2pdfPromise: Promise<Html2PdfModule> | null = null;
+const loadMammoth = (): Promise<MammothModule> => {
+  if (!_mammothPromise) _mammothPromise = import('mammoth');
+  return _mammothPromise;
+};
+const loadHtml2Pdf = (): Promise<Html2PdfModule> => {
+  if (!_html2pdfPromise) _html2pdfPromise = import('html2pdf.js');
+  return _html2pdfPromise;
+};
 
 // Tipos para os dados do contrato
 interface ClientData {
@@ -212,12 +226,13 @@ const processWordDocument = async (
   try {
     console.log('📄 Processando documento Word...');
     
-    // Converter Word para HTML
+    // Converter Word para HTML (mammoth carregado sob demanda)
+    const mammothMod = (await loadMammoth()).default;
     const arrayBuffer = await fileBlob.arrayBuffer();
-    const result = await mammoth.convertToHtml({ arrayBuffer });
-    
+    const result = await mammothMod.convertToHtml({ arrayBuffer });
+
     let html = result.value;
-    
+
     // Substituir placeholders
     console.log('🔄 Substituindo placeholders...');
     Object.entries(placeholders).forEach(([placeholder, value]) => {
@@ -326,14 +341,15 @@ const processPdfDocument = async (
       }
     };
     
-    const pdfBlob = await html2pdf().set(pdfOptions).from(contractHtml).outputPdf('blob');
-    
+    const html2pdfFn = (await loadHtml2Pdf()).default;
+    const pdfBlob = await html2pdfFn().set(pdfOptions).from(contractHtml).outputPdf('blob');
+
     console.log('✅ Documento PDF processado com sucesso');
     return {
       blob: pdfBlob,
       fileName: `contrato_${Date.now()}.pdf`
     };
-    
+
   } catch (error) {
     console.error('❌ Erro ao processar documento PDF:', error);
     throw error;
@@ -460,8 +476,9 @@ export const processContract = async (contractData: ContractData): Promise<{ blo
         }
       };
       
-      const pdfBlob = await html2pdf().set(pdfOptions).from(html).outputPdf('blob');
-      
+      const html2pdfFn = (await loadHtml2Pdf()).default;
+      const pdfBlob = await html2pdfFn().set(pdfOptions).from(html).outputPdf('blob');
+
       return {
         blob: pdfBlob,
         fileName
@@ -516,9 +533,10 @@ export const detectPlaceholders = async (templateBlob: Blob, fileName: string): 
                           fileName.toLowerCase().endsWith('.docx');
     
     if (isWordDocument) {
-      // Extrair texto do Word
+      // Extrair texto do Word (mammoth carregado sob demanda)
+      const mammothMod = (await loadMammoth()).default;
       const arrayBuffer = await templateBlob.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
+      const result = await mammothMod.extractRawText({ arrayBuffer });
       content = result.value;
     } else {
       // Para PDF, vamos assumir que não conseguimos extrair texto facilmente

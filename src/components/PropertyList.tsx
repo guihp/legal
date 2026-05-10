@@ -54,9 +54,20 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId, captionFromFilename } from "@/utils/imageUtils";
+import { subscribeImoveisChanges } from "@/lib/realtime/imoveisRealtimeBus";
 import { FEATURE_OPTIONS } from "@/constants/imovelFeatures";
 import { toast as sonnerToast } from "sonner";
 import { Progress } from "@/components/ui/progress";
+
+// Kill-switch para os efeitos decorativos do header (partículas, luzes, vidros,
+// ícones, grid arquitetônico). Componentes movidos para arquivo separado
+// (PropertyListDecorations.tsx) carregado via React.lazy — quando false, esse
+// chunk nem entra no bundle inicial.
+// MUDE PARA `true` SE QUISER REATIVAR O VISUAL ORIGINAL.
+const ENABLE_DECORATIVE_FX = false;
+
+// Lazy chunk dos efeitos decorativos. Só baixa se ENABLE_DECORATIVE_FX=true.
+const PropertyListDecorations = lazy(() => import('./PropertyListDecorations'));
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -368,23 +379,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     fetchImoveisStats();
   }, [profile?.company_id]);
 
-  // Real-time: atualiza métricas quando houver qualquer mudança em public.imoveisvivareal
+  // Real-time via bus compartilhado (1 channel pra toda a app — antes eram 3).
   useEffect(() => {
-    const channel = supabase
-      .channel(`imoveis-stats-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'imoveisvivareal' },
-        () => fetchImoveisStats()
-      );
-
-    channel.subscribe();
-
-    return () => {
-      try { supabase.removeChannel(channel); } catch (e) {
-        // noop
-      }
-    };
+    return subscribeImoveisChanges(() => fetchImoveisStats());
   }, []);
 
   // Edição VivaReal
@@ -1118,28 +1115,16 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   return (
     <div className="min-h-0 relative overflow-hidden bg-background text-foreground">
-      {/* Background Effects */}
-      <ArchitecturalGrid />
-      <PulsingLights />
-      <GlassShards />
-      
-      {/* Floating Particles */}
-      {particles.map((particle, index) => (
-        <FloatingParticle 
-          key={particle}
-          delay={index * 0.5}
-          duration={15 + Math.random() * 10}
-          type={particleTypes[index % particleTypes.length]}
-        />
-      ))}
-
-      {/* Floating Icons */}
-      <FloatingIcon Icon={Building2} delay={0} x={10} y={20} color="blue" />
-      <FloatingIcon Icon={Home} delay={2} x={85} y={15} color="emerald" />
-      <FloatingIcon Icon={Key} delay={4} x={15} y={70} color="purple" />
-      <FloatingIcon Icon={Shield} delay={6} x={80} y={75} color="yellow" />
-      <FloatingIcon Icon={Star} delay={8} x={50} y={85} color="pink" />
-      <FloatingIcon Icon={Sparkles} delay={10} x={75} y={40} color="blue" />
+      {/* Background Effects — gated via ENABLE_DECORATIVE_FX (top do arquivo).
+          Lazy chunk PropertyListDecorations só baixa se ativado. */}
+      {ENABLE_DECORATIVE_FX && (
+        <Suspense fallback={null}>
+          <PropertyListDecorations
+            particles={particles}
+            particleTypes={particleTypes as Array<'default' | 'star' | 'spark' | 'glow'>}
+          />
+        </Suspense>
+      )}
 
       {/* Main Content */}
       <div className="relative z-10 p-8">
@@ -1602,9 +1587,11 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                   initial={{ opacity: 0, y: 50, scale: 0.9 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -50, scale: 0.9 }}
-                  transition={{ 
-                    delay: index * 0.1, 
-                    duration: 0.6,
+                  transition={{
+                    // Cap em 10 cards no cascade: antes index*0.1 fazia o 30º card
+                    // esperar 3s. Agora máximo 500ms pro último card visível.
+                    delay: Math.min(index, 10) * 0.05,
+                    duration: 0.4,
                     type: "spring",
                     stiffness: 100
                   }}

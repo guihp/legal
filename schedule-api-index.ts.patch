@@ -1,0 +1,87 @@
+--- schedule-api-index.ts
++++ schedule-api-index.ts
+@@ -14,6 +14,14 @@
+ function ok(data: any, status = 200) {
+   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+ }
+ 
++// NEW DATE UTILS - NO SHIFTING UTC TIMESTAMP
++function getSPParts(d: any) {
++  const dt = new Date(d);
++  const parts = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(dt);
++  const p: any = {}; for (const x of parts) p[x.type] = x.value;
++  return p; // {year, month, day, hour, minute, second}
++}
++
+ function toSPDate(d: any) { return new Date(new Date(d).toLocaleString("en-US", { timeZone: TZ })); }
+ function parseDT(s: any): Date | null {
+@@ -25,12 +33,14 @@
+ }
+ function toISO(d: any) {
+-  const x = toSPDate(d), p = (n: number) => String(n).padStart(2, "0");
+-  return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}:${p(x.getSeconds())}-03:00`;
++  const p = getSPParts(d);
++  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}-03:00`;
+ }
+ function fmtBR(d: any) {
+-  const x = toSPDate(d), p = (n: number) => String(n).padStart(2, "0");
+-  return `${p(x.getDate())}/${p(x.getMonth()+1)}/${x.getFullYear()}`;
++  const p = getSPParts(d);
++  return `${p.day}/${p.month}/${p.year}`;
+ }
+-function fmtHM(d: any) { return String(toSPDate(d).getHours()).padStart(2, "0"); }
++function fmtHM(d: any) { return getSPParts(d).hour; }
+ function wkey(day: number) { return ["sun","mon","tue","wed","thu","fri","sat"][day]; }
+ function wnamePt(day: number) { return ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"][day]; }
+@@ -41,19 +51,19 @@
+   return Number(m[1]) * 60 + Number(m[2] || 0);
+ }
+-function minsOfDay(d: any) { const x = toSPDate(d); return x.getHours() * 60 + x.getMinutes(); }
+-function addDays(d: any, n: number) { const x = toSPDate(d); x.setDate(x.getDate() + n); return x; }
++function minsOfDay(d: any) { const p = getSPParts(d); return Number(p.hour) * 60 + Number(p.minute); }
++function addDays(d: any, n: number) { return new Date(new Date(d).getTime() + n * 86400000); }
+ function addMins(d: Date, m: number) { return new Date(d.getTime() + m * 60000); }
+ function sameDay(a: any, b: any) {
+-  const da = toSPDate(a), db = toSPDate(b);
+-  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
++  const pa = getSPParts(a), pb = getSPParts(b);
++  return pa.year === pb.year && pa.month === pb.month && pa.day === pb.day;
+ }
+ function isBizDay(d: number) { return d >= 1 && d <= 5; }
+ function isWknd(d: number) { return d === 0 || d === 6; }
+ function dateKeyISO(d: any) {
+-  const x = toSPDate(d), p = (n: number) => String(n).padStart(2, "0");
+-  return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}`;
++  const p = getSPParts(d);
++  return `${p.year}-${p.month}-${p.day}`;
+ }
+ function nextBizDays(base: Date, count: number): Date[] {
+@@ -62,20 +72,30 @@
+     d = addDays(d, 1); const dow = toSPDate(d).getDay(); const dk = dateKeyISO(d);
+-    if (!isWknd(dow) && !FERIADOS.includes(dk)) days.push(toSPDate(d));
++    if (!isWknd(dow) && !FERIADOS.includes(dk)) days.push(d);
+     guard++;
+   }
+   return days;
+ }
+ function combineDT(dateObj: Date, timeStr: string): Date | null {
+   if (!timeStr) return null;
+   const [H, Mi = "00", S = "00"] = String(timeStr).split(":");
+-  const d = toSPDate(dateObj), p = (n: number) => String(n).padStart(2, "0");
+-  return new Date(`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(+H)}:${p(+Mi)}:${p(+S)}-03:00`);
++  const p = getSPParts(dateObj), pn = (n: number) => String(n).padStart(2, "0");
++  return new Date(`${p.year}-${p.month}-${p.day}T${pn(+H)}:${pn(+Mi)}:${pn(+S)}-03:00`);
+ }
+-function ceilSlot(d: Date, slot: number) { const x = toSPDate(d); x.setSeconds(0,0); const r = x.getMinutes() % slot; if (r) x.setMinutes(x.getMinutes() + (slot - r)); return x; }
+-function floorSlot(d: Date, slot: number) { const x = toSPDate(d); x.setSeconds(0,0); const r = x.getMinutes() % slot; if (r) x.setMinutes(x.getMinutes() - r); return x; }
++function ceilSlot(d: Date, slot: number) { 
++  const m = d.getTime();
++  const r = m % (slot * 60000);
++  if (r === 0) return d;
++  return new Date(m + (slot * 60000) - r);
++}
++function floorSlot(d: Date, slot: number) { 
++  const m = d.getTime();
++  const r = m % (slot * 60000);
++  return new Date(m - r);
++}
