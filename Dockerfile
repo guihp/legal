@@ -9,12 +9,9 @@ WORKDIR /app
 # Copiar arquivos de dependências
 COPY package*.json pnpm-lock.yaml* ./
 
-# Instalar pnpm se disponível, caso contrário usar npm
-RUN npm install -g pnpm || true
-
 # Instalar dependências
-# Usa --no-frozen-lockfile se o lockfile estiver desatualizado (comum em builds CI/CD)
-RUN if [ -f pnpm-lock.yaml ]; then pnpm install --no-frozen-lockfile || pnpm install; else npm ci || npm install; fi
+# Preferir package-lock quando disponível para evitar instalar pnpm em todo build.
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; else npm install --no-audit --no-fund; fi
 
 # Copiar código fonte
 COPY . .
@@ -40,7 +37,7 @@ ENV VITE_PUBLIC_APP_URL=$VITE_PUBLIC_APP_URL
 ENV VITE_PUBLIC_SITE_DOMAIN=$VITE_PUBLIC_SITE_DOMAIN
 
 # Build para produção
-RUN if [ -f pnpm-lock.yaml ]; then pnpm build; else npm run build; fi
+RUN npm run build
 
 # Stage 2: Production - Serve com Nginx
 FROM nginx:alpine

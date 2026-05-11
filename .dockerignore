@@ -18,6 +18,7 @@ out
 # IDE e editores
 .vscode
 .idea
+.claude
 *.swp
 *.swo
 *~
