@@ -110,6 +110,186 @@
   background-blend-mode: normal !important;
 }
 
+.dashboard-chart-toggle {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+
+.clients-crm-tab-trigger {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+}
+
+.clients-crm-tab-trigger:hover {
+  background-color: rgba(226, 232, 240, 0.7) !important;
+  color: #0f172a !important;
+}
+
+.clients-crm-tab-trigger[data-state="active"] {
+  color: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12) !important;
+}
+
+.clients-crm-tab-blue[data-state="active"] {
+  background-color: #2563eb !important;
+}
+
+.clients-crm-tab-green[data-state="active"],
+.clients-crm-tab-emerald[data-state="active"] {
+  background-color: #16a34a !important;
+}
+
+.clients-crm-tab-amber[data-state="active"] {
+  background-color: #d97706 !important;
+}
+
+.clients-crm-tab-purple[data-state="active"] {
+  background-color: #9333ea !important;
+}
+
+.clients-crm-tab-red[data-state="active"] {
+  background-color: #dc2626 !important;
+}
+
+:root:not([data-theme="light"]) .clients-crm-tab-trigger,
+[data-theme="dark"] .clients-crm-tab-trigger,
+.dark .clients-crm-tab-trigger {
+  color: #e2e8f0 !important;
+}
+
+:root:not([data-theme="light"]) .clients-crm-tab-trigger:hover,
+[data-theme="dark"] .clients-crm-tab-trigger:hover,
+.dark .clients-crm-tab-trigger:hover {
+  background-color: rgba(51, 65, 85, 0.6) !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="light"]) .clients-crm-tab-trigger[data-state="active"],
+[data-theme="dark"] .clients-crm-tab-trigger[data-state="active"],
+.dark .clients-crm-tab-trigger[data-state="active"] {
+  color: #ffffff !important;
+}
+
+.dashboard-charts {
+  --dashboard-chart-grid: rgba(37, 99, 235, 0.14);
+  --dashboard-chart-axis: rgba(100, 116, 139, 0.35);
+  --dashboard-chart-axis-text: #334155;
+  --dashboard-chart-surface: #ffffff;
+}
+
+.dashboard-vgv-chart {
+  --dashboard-chart-surface: #ffffff;
+}
+
+.dashboard-charts .MuiChartsSurface-root {
+  color: var(--dashboard-chart-axis-text) !important;
+}
+
+.dashboard-charts .MuiChartsAxis-line,
+.dashboard-charts .MuiChartsAxis-tick,
+.dashboard-vgv-chart .MuiChartsAxis-line,
+.dashboard-vgv-chart .MuiChartsAxis-tick {
+  stroke: var(--dashboard-chart-axis) !important;
+}
+
+.dashboard-charts .MuiChartsAxis-tickLabel,
+.dashboard-charts .MuiChartsAxis-label,
+.dashboard-charts .MuiChartsLegend-root text,
+.dashboard-charts .MuiChartsLegend-label,
+.dashboard-charts .MuiPieArcLabel-root,
+.dashboard-vgv-chart .MuiChartsAxis-tickLabel,
+.dashboard-vgv-chart .MuiChartsLegend-root text {
+  fill: var(--dashboard-chart-axis-text) !important;
+  color: var(--dashboard-chart-axis-text) !important;
+  font-weight: 600 !important;
+}
+
+.dashboard-charts .MuiChartsGrid-line,
+.dashboard-vgv-chart .MuiChartsGrid-line {
+  stroke: var(--dashboard-chart-grid) !important;
+  stroke-dasharray: 4 6;
+}
+
+.dashboard-charts .MuiChartsAxisHighlight-root {
+  stroke: rgba(37, 99, 235, 0.35) !important;
+}
+
+.dashboard-chart-toggle > span {
+  color: inherit !important;
+}
+
+.dashboard-chart-toggle:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.dashboard-chart-toggle[data-state="on"] {
+  color: #ffffff !important;
+}
+
+.dashboard-chart-toggle-period[data-state="on"] {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+}
+
+.dashboard-chart-toggle-type[data-state="on"] {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+}
+
+:root:not([data-theme="light"]) .dashboard-chart-toggle,
+[data-theme="dark"] .dashboard-chart-toggle,
+.dark .dashboard-chart-toggle {
+  background-color: rgba(55, 65, 81, 0.5) !important;
+  border-color: transparent !important;
+  color: #e5e7eb !important;
+}
+
+:root:not([data-theme="light"]) .dashboard-vgv-chart,
+[data-theme="dark"] .dashboard-vgv-chart,
+.dark .dashboard-vgv-chart {
+  --dashboard-chart-surface: #111827;
+}
+
+:root:not([data-theme="light"]) .dashboard-charts,
+[data-theme="dark"] .dashboard-charts,
+.dark .dashboard-charts {
+  --dashboard-chart-grid: rgba(148, 163, 184, 0.16);
+  --dashboard-chart-axis: rgba(226, 232, 240, 0.22);
+  --dashboard-chart-axis-text: #cbd5e1;
+  --dashboard-chart-surface: #111827;
+}
+
+:root:not([data-theme="light"]) .dashboard-charts .MuiChartsAxisHighlight-root,
+[data-theme="dark"] .dashboard-charts .MuiChartsAxisHighlight-root,
+.dark .dashboard-charts .MuiChartsAxisHighlight-root {
+  stroke: rgba(203, 213, 225, 0.35) !important;
+}
+
+:root:not([data-theme="light"]) .dashboard-chart-toggle:hover,
+[data-theme="dark"] .dashboard-chart-toggle:hover,
+.dark .dashboard-chart-toggle:hover {
+  background-color: rgba(75, 85, 99, 0.6) !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="light"]) .dashboard-chart-toggle-period[data-state="on"],
+[data-theme="dark"] .dashboard-chart-toggle-period[data-state="on"],
+.dark .dashboard-chart-toggle-period[data-state="on"] {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="light"]) .dashboard-chart-toggle-type[data-state="on"],
+[data-theme="dark"] .dashboard-chart-toggle-type[data-state="on"],
+.dark .dashboard-chart-toggle-type[data-state="on"] {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+
 /* Classes utilitárias para o sistema de temas */
 .bg-theme-primary { background-color: var(--bg-primary); }
 .bg-theme-secondary { background-color: var(--bg-secondary); }

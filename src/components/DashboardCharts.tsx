@@ -402,6 +402,8 @@ export const DashboardCharts: React.FC = () => {
 		}
 	}, [vgv, vgvChartType]);
 
+	const vgvChartHeight = typeof window !== 'undefined' && window.innerWidth < 640 ? 260 : 320;
+
 	// Helper para renderizar gráfico com estados de loading/error/empty
 	const renderChartWithStates = (
 		chartKey: string,
@@ -439,7 +441,18 @@ export const DashboardCharts: React.FC = () => {
 		return renderChart();
 	};
 
-	const xAxisMonths = React.useMemo(() => [{ scaleType: 'band' as const, data: months, position: 'bottom' as const, valueFormatter: (v: string) => v }], [months]);
+	const xAxisMonths = React.useMemo(() => [{ 
+		scaleType: 'band' as const, 
+		data: months, 
+		position: 'bottom' as const, 
+		valueFormatter: (v: string) => v,
+		tickLabelStyle: {
+			fill: 'var(--dashboard-chart-axis-text)',
+			fontSize: 11,
+			fontWeight: 600,
+			fontFamily: 'Inter, system-ui, sans-serif'
+		}
+	}], [months]);
 	const yAxisCurrency = React.useMemo(() => [{ 
 		scaleType: 'linear' as const, 
 		position: 'left' as const, 
@@ -457,9 +470,9 @@ export const DashboardCharts: React.FC = () => {
 			return value === 0 ? '0' : `${value.toFixed(0)}`;
 		},
 		tickLabelStyle: { 
-			fill: chartPalette.textSecondary, 
-			fontSize: 10, // Reduzido para 10px
-			fontWeight: 500, // Reduzido para 500
+			fill: 'var(--dashboard-chart-axis-text)', 
+			fontSize: 11,
+			fontWeight: 600,
 			fontFamily: 'Inter, system-ui, sans-serif'
 		},
 		tickNumber: 5,
@@ -483,19 +496,19 @@ export const DashboardCharts: React.FC = () => {
 	}, [heat]);
 
 	return (
-		<div className="grid grid-cols-1 xl:grid-cols-12 gap-6 p-6">  {/* Adicionar padding consistente */}
-			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
+		<div className="dashboard-charts grid grid-cols-1 xl:grid-cols-12 gap-6 p-6">  {/* Adicionar padding consistente */}
+			<Card className="bg-white border-slate-200 shadow-sm dark:bg-gray-800/50 dark:border-gray-700/50 xl:col-span-8">
 				<CardHeader>
-					<div className="flex items-center justify-between">
+					<div className="flex items-center justify-between gap-3 flex-wrap">
 						<div className="flex items-center gap-3">
-							<CardTitle className="text-white text-lg font-semibold">VGV e Imóveis</CardTitle>
+							<CardTitle className="text-slate-900 dark:text-white text-lg font-semibold">VGV e Imóveis</CardTitle>
 							{/* Indicador de status realtime */}
 							<div className="flex items-center gap-2">
 								<div 
 									className={`w-2 h-2 rounded-full ${isRealtimeConnected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`}
 									title={isRealtimeConnected ? 'Conectado - atualizações em tempo real' : 'Desconectado'}
 								/>
-								<span className="text-xs text-gray-400">
+								<span className="text-xs text-slate-600 dark:text-gray-400">
 									{isRealtimeConnected ? 'Tempo real' : 'Offline'}
 								</span>
 								{updateCount > 0 && (
@@ -505,7 +518,7 @@ export const DashboardCharts: React.FC = () => {
 								)}
 							</div>
 						</div>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-center gap-2">
 							{/* Filtro de período */}
 							<ToggleGroup 
 								type="single" 
@@ -513,10 +526,10 @@ export const DashboardCharts: React.FC = () => {
 								onValueChange={(value) => value && setVgvPeriod(value as VgvPeriod)}
 								className="h-8"
 							>
-								<ToggleGroupItem value="anual" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Anual</ToggleGroupItem>
-								<ToggleGroupItem value="mensal" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Mensal</ToggleGroupItem>
-								<ToggleGroupItem value="semanal" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Semanal</ToggleGroupItem>
-								<ToggleGroupItem value="diario" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Diário</ToggleGroupItem>
+								<ToggleGroupItem value="anual" className="dashboard-chart-toggle dashboard-chart-toggle-period h-8 text-xs px-2 border font-medium"><span>Anual</span></ToggleGroupItem>
+								<ToggleGroupItem value="mensal" className="dashboard-chart-toggle dashboard-chart-toggle-period h-8 text-xs px-2 border font-medium"><span>Mensal</span></ToggleGroupItem>
+								<ToggleGroupItem value="semanal" className="dashboard-chart-toggle dashboard-chart-toggle-period h-8 text-xs px-2 border font-medium"><span>Semanal</span></ToggleGroupItem>
+								<ToggleGroupItem value="diario" className="dashboard-chart-toggle dashboard-chart-toggle-period h-8 text-xs px-2 border font-medium"><span>Diário</span></ToggleGroupItem>
 							</ToggleGroup>
 							
 							{/* Tipo de gráfico */}
@@ -526,16 +539,16 @@ export const DashboardCharts: React.FC = () => {
 								onValueChange={(value) => value && setVgvChartType(value as any)}
 								className="h-8"
 							>
-								<ToggleGroupItem value="combined" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Combo</ToggleGroupItem>
-								<ToggleGroupItem value="area" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Área</ToggleGroupItem>
-								<ToggleGroupItem value="line" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Linha</ToggleGroupItem>
-								<ToggleGroupItem value="bar" className="h-8 text-xs px-2 bg-gray-700/50 text-gray-200 font-medium hover:bg-gray-600/60 hover:text-white data-[state=on]:bg-emerald-600 data-[state=on]:text-white">Barra</ToggleGroupItem>
+								<ToggleGroupItem value="combined" className="dashboard-chart-toggle dashboard-chart-toggle-type h-8 text-xs px-2 border font-medium"><span>Combo</span></ToggleGroupItem>
+								<ToggleGroupItem value="area" className="dashboard-chart-toggle dashboard-chart-toggle-type h-8 text-xs px-2 border font-medium"><span>Área</span></ToggleGroupItem>
+								<ToggleGroupItem value="line" className="dashboard-chart-toggle dashboard-chart-toggle-type h-8 text-xs px-2 border font-medium"><span>Linha</span></ToggleGroupItem>
+								<ToggleGroupItem value="bar" className="dashboard-chart-toggle dashboard-chart-toggle-type h-8 text-xs px-2 border font-medium"><span>Barra</span></ToggleGroupItem>
 							</ToggleGroup>
 						</div>
 					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="h-80 flex justify-center items-center" style={{ overflow: 'visible' }}>
+					<div className="dashboard-vgv-chart min-h-[18rem] rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-2 shadow-inner dark:border-gray-700/50 dark:from-slate-950/20 dark:to-gray-900/10 sm:min-h-80" style={{ overflow: 'visible' }}>
 						{renderChartWithStates(
 							'vgv',
 							vgv,
@@ -548,29 +561,29 @@ export const DashboardCharts: React.FC = () => {
 							}]}
 							series={[...vgvSeriesConfig.vgvSeries, ...(vgvSeriesConfig.convSeries.length > 0 ? [{ ...vgvSeriesConfig.convSeries[0], axisId: 'y2' as any }] : [])]}
 							width={undefined as any}
-							height={320}
+							height={vgvChartHeight}
 							margin={{ 
-								left: 80,   // Reduzido para centralizar melhor
-								right: 40,  // Aumentado para equilibrar
-								top: 20,    // Reduzido
-								bottom: 50  // Aumentado para rótulos do eixo X
+								left: 72,
+								right: 28,
+								top: 18,
+								bottom: 44
 							}}
 							style={{ width: '100%', maxWidth: '100%' }}
 						>
 							{/* Gradientes SVG */}
 							<defs>
 								<linearGradient id="vgv-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-									<stop offset="0%" stopColor={chartPalette.primaryAlt} stopOpacity={0.8} />
-									<stop offset="50%" stopColor={chartPalette.primaryAlt} stopOpacity={0.4} />
-									<stop offset="100%" stopColor={chartPalette.primaryAlt} stopOpacity={0.1} />
+									<stop offset="0%" stopColor="#2563eb" stopOpacity={0.85} />
+									<stop offset="55%" stopColor="#3b82f6" stopOpacity={0.32} />
+									<stop offset="100%" stopColor="#60a5fa" stopOpacity={0.08} />
 								</linearGradient>
 								<linearGradient id="bar-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-									<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={1} />
-									<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.7} />
+									<stop offset="0%" stopColor="#059669" stopOpacity={1} />
+									<stop offset="100%" stopColor="#34d399" stopOpacity={0.78} />
 								</linearGradient>
 							</defs>
 							
-							<ChartsGrid vertical style={gridStyle} />
+							<ChartsGrid horizontal vertical style={{ stroke: 'var(--dashboard-chart-grid)' }} />
 							{(vgvChartType === 'area' || vgvChartType === 'combined') && <AreaPlot />}
 							{(vgvChartType === 'line' || vgvChartType === 'combined') && <LinePlot />}
 							{(vgvChartType === 'bar' || vgvChartType === 'combined') && <BarPlot />}
@@ -580,8 +593,20 @@ export const DashboardCharts: React.FC = () => {
 							<ChartsTooltip />
 						</ChartContainer>
 							),
-							() => ChartEmptyVariants.vgv(320),
-							320
+							() => (
+								<div className="flex min-h-[16rem] flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white/70 px-6 text-center dark:border-gray-700 dark:bg-gray-900/20 sm:min-h-[19rem]">
+									<div className="mb-3 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+										Sem movimento no período
+									</div>
+									<p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+										Ainda não há VGV ou imóveis para exibir neste filtro.
+									</p>
+									<p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
+										Quando houver valores reais, o gráfico aparece automaticamente com a evolução do período.
+									</p>
+								</div>
+							),
+							vgvChartHeight
 						)}
 					</div>
 				</CardContent>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useUserProfile } from './useUserProfile';
-import { extractMessageContent, extractMediaImages, type ConversaMessage } from './useConversaMessages';
+import { extractLabeledMessageSegments, extractMessageContent, extractMediaImages, type ConversaMessage } from './useConversaMessages';
 import { instagramLegacyMessagesTableName } from '@/lib/companyInstagramTable';
 
 /**
@@ -54,6 +54,7 @@ export function useInstagramMessages(
       }
       const rawContent = parsedMessage?.content || '';
       const cleanContent = extractMessageContent(rawContent);
+      const contentSegments = extractLabeledMessageSegments(rawContent);
       const mediaImages = extractMediaImages(row.media);
 
       return {
@@ -63,6 +64,7 @@ export function useInstagramMessages(
         message: {
           type: parsedMessage?.type || 'human',
           content: cleanContent,
+          contentSegments: contentSegments.length > 1 ? contentSegments : undefined,
           additional_kwargs: parsedMessage?.additional_kwargs,
           response_metadata: parsedMessage?.response_metadata,
           tool_calls: parsedMessage?.tool_calls,

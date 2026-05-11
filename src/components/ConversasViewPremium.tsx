@@ -524,6 +524,9 @@ function MessageBubble({
   const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const isAI = String(m?.type || '').toLowerCase() === 'ai';
   const content = m?.content ?? '';
+  const contentSegments = Array.isArray(m?.contentSegments)
+    ? m.contentSegments.filter((segment: unknown): segment is string => typeof segment === 'string' && segment.trim().length > 0)
+    : [];
   const mediaImages = row?.mediaImages as string[] | undefined;
 
   // 1) PRIORIDADE MÁXIMA: Se há mediaImages (URLs de imagens do Supabase), renderizar imagens + texto
@@ -752,6 +755,28 @@ function MessageBubble({
             <small className="text-xs text-zinc-500">Conteúdo da mensagem não pôde ser carregado</small>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (contentSegments.length > 1) {
+    return (
+      <div className={`flex flex-col gap-1 ${isAI ? 'items-end' : 'items-start'}`}>
+        {contentSegments.map((segment, index) => (
+          <div
+            key={`${row.id ?? 'message'}-${index}`}
+            className={isAI
+              ? 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tr-none bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+              : 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tl-none bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'}
+          >
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+              {processTextWithBold(segment)}
+            </div>
+            <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
+              {row.data ? formatHour(row.data) : ''}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

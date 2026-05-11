@@ -512,22 +512,22 @@ export function ClientsCRMView() {
       >
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
           <TabsList className="grid w-full grid-cols-6 bg-slate-100 border border-slate-200 dark:bg-muted/50 dark:border-border">
-            <TabsTrigger value="todos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-blue-600/25 dark:data-[state=active]:text-blue-300">
+            <TabsTrigger value="todos" className="clients-crm-tab-trigger clients-crm-tab-blue">
               Todos ({stats.total})
             </TabsTrigger>
-            <TabsTrigger value="ativos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-green-600/25 dark:data-[state=active]:text-green-300">
+            <TabsTrigger value="ativos" className="clients-crm-tab-trigger clients-crm-tab-green">
               Ativos ({stats.ativos})
             </TabsTrigger>
-            <TabsTrigger value="prospects" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-yellow-600/25 dark:data-[state=active]:text-yellow-300">
+            <TabsTrigger value="prospects" className="clients-crm-tab-trigger clients-crm-tab-amber">
               Prospects ({stats.prospects})
             </TabsTrigger>
-            <TabsTrigger value="negociacao" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-purple-600/25 dark:data-[state=active]:text-purple-300">
+            <TabsTrigger value="negociacao" className="clients-crm-tab-trigger clients-crm-tab-purple">
               Em Negociação
             </TabsTrigger>
-            <TabsTrigger value="fechados" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-emerald-600/25 dark:data-[state=active]:text-emerald-300">
+            <TabsTrigger value="fechados" className="clients-crm-tab-trigger clients-crm-tab-emerald">
               Fechados ({stats.fechados})
             </TabsTrigger>
-            <TabsTrigger value="perdidos" className="text-slate-700 font-medium hover:text-slate-950 hover:bg-slate-200/70 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm dark:text-slate-200 dark:hover:text-white dark:hover:bg-slate-700/50 dark:data-[state=active]:bg-red-600/25 dark:data-[state=active]:text-red-300">
+            <TabsTrigger value="perdidos" className="clients-crm-tab-trigger clients-crm-tab-red">
               Perdidos
             </TabsTrigger>
           </TabsList>

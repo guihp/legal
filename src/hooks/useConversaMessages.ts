@@ -25,6 +25,23 @@ export function coerceTextContent(v: unknown): string {
   return '';
 }
 
+export function extractLabeledMessageSegments(content: unknown): string[] {
+  const text = coerceTextContent(content);
+  if (!text) return [];
+
+  const labeledMessageMatches = [...text.matchAll(/\[[^\]]+\]:\s*\(/g)];
+  if (labeledMessageMatches.length <= 1) return [];
+
+  return labeledMessageMatches
+    .map((match, index) => {
+      const bodyStart = (match.index ?? 0) + match[0].length;
+      const nextMatch = labeledMessageMatches[index + 1];
+      const bodyEnd = nextMatch?.index ?? text.length;
+      return text.slice(bodyStart, bodyEnd).replace(/\)\s*$/, '').trim();
+    })
+    .filter(Boolean);
+}
+
 /**
  * Extrai o conteúdo limpo da mensagem.
  * Se a mensagem vier no formato "[MENSAGEM DE TEXTO ENVIADA]: (conteúdo)", 
@@ -33,6 +50,9 @@ export function coerceTextContent(v: unknown): string {
 export function extractMessageContent(content: unknown): string {
   const text = coerceTextContent(content);
   if (!text) return '';
+
+  const labeledMessageSegments = extractLabeledMessageSegments(text);
+  if (labeledMessageSegments.length > 1) return labeledMessageSegments.join('\n');
   
   // Padrão: [QUALQUER COISA]: (conteúdo)
   // Exemplos:
@@ -168,6 +188,7 @@ export interface ConversaMessage {
   message: {
     type: 'human' | 'ai';
     content: string;
+    contentSegments?: string[];
     additional_kwargs?: any;
     response_metadata?: any;
     tool_calls?: any[];
@@ -198,6 +219,7 @@ export function mapRowToConversaMessage(row: any): ConversaMessage {
 
   const rawContent = coerceTextContent(parsedMessage?.content);
   const cleanContent = extractMessageContent(rawContent);
+  const contentSegments = extractLabeledMessageSegments(rawContent);
   const mediaImages = extractMediaImages(row?.media);
 
   return {
@@ -207,6 +229,7 @@ export function mapRowToConversaMessage(row: any): ConversaMessage {
     message: {
       type: parsedMessage?.type || 'human',
       content: cleanContent,
+      contentSegments: contentSegments.length > 1 ? contentSegments : undefined,
       additional_kwargs: parsedMessage?.additional_kwargs,
       response_metadata: parsedMessage?.response_metadata,
       tool_calls: parsedMessage?.tool_calls,
