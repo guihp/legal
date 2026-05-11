@@ -68,6 +68,36 @@ const mockEvents: AgendaEvent[] = [
   }
 ];
 
+const UNKNOWN_CLIENT = 'Cliente não informado';
+
+function isUnknownClientName(value: unknown): boolean {
+  const text = String(value || '').trim();
+  return !text || text === UNKNOWN_CLIENT;
+}
+
+function pickLeadDisplayName(lead: any): string {
+  return String(
+    lead?.name ||
+    lead?.nome_instagram_cliente ||
+    lead?.arroba_instagram_cliente ||
+    lead?.email ||
+    lead?.phone ||
+    ''
+  ).trim();
+}
+
+function getEventContactFallback(event: any): string {
+  const privateProps = event?.extendedProperties?.private || {};
+  const handle = String(privateProps.client_handle || '').trim();
+  const email =
+    String(privateProps.client_email || '').trim() ||
+    String(event?.attendees?.find((attendee: any) => attendee?.email)?.email || '').trim() ||
+    String(event?.creator?.email || '').trim() ||
+    String(event?.organizer?.email || '').trim();
+
+  return handle || email || 'Contato do calendário';
+}
+
 export function AgendaView() {
   const [events, setEvents] = useState<AgendaEvent[]>(mockEvents);
   const [loading, setLoading] = useState(false);
@@ -500,7 +530,7 @@ export function AgendaView() {
           const description = event.description || 'Descrição não disponível';
 
           // 3. Extrair cliente da description com múltiplas estratégias
-          let clientName = 'Cliente não informado';
+          let clientName = UNKNOWN_CLIENT;
           let eventChannel = '';
 
           // Estratégia 0 (PRIORIDADE): extendedProperties.private.client_name (fonte canônica da API)
@@ -509,7 +539,7 @@ export function AgendaView() {
           }
           
           // Estratégia 1: Regex melhorado para capturar "com o cliente NOME" ou "com a cliente NOME"
-          if (clientName === 'Cliente não informado') {
+          if (isUnknownClientName(clientName)) {
             const clientMatch1 = description.match(/com (?:o cliente |a cliente )?([^(\n\r]+?)(?:\s*\(|$)/i);
             if (clientMatch1 && clientMatch1[1]) {
               clientName = clientMatch1[1].trim();
@@ -517,15 +547,15 @@ export function AgendaView() {
           }
           
           // Estratégia 2: Buscar padrão "Cliente: NOME" ou "Cliente - NOME"
-          if (clientName === 'Cliente não informado') {
-            const clientMatch2 = description.match(/(?:cliente|client)[:\-]\s*([^\n\r(]+?)(?:\s*\(|$)/i);
+          if (isUnknownClientName(clientName)) {
+            const clientMatch2 = description.match(/(?:cliente|client)[:-]\s*([^\n\r(]+?)(?:\s*\(|$)/i);
             if (clientMatch2 && clientMatch2[1]) {
               clientName = clientMatch2[1].trim();
             }
           }
           
           // Estratégia 3: Buscar no summary se tiver padrão "TÍTULO - NOME DO CLIENTE"
-          if (clientName === 'Cliente não informado' && summary.includes(' - ')) {
+          if (isUnknownClientName(clientName) && summary.includes(' - ')) {
             const parts = summary.split(' - ');
             if (parts.length >= 2) {
               const potentialClient = parts[parts.length - 1].trim();
@@ -536,7 +566,7 @@ export function AgendaView() {
           }
           
           // Estratégia 4: Buscar padrão entre parênteses no summary ou description
-          if (clientName === 'Cliente não informado') {
+          if (isUnknownClientName(clientName)) {
             const parenMatch = (summary + ' ' + description).match(/\(([^)]{3,50})\)/);
             if (parenMatch && parenMatch[1]) {
               const potentialClient = parenMatch[1].trim();
@@ -547,7 +577,7 @@ export function AgendaView() {
           }
           
           // Limpar o nome do cliente (remover espaços extras, caracteres especiais no final)
-          if (clientName !== 'Cliente não informado') {
+          if (!isUnknownClientName(clientName)) {
             clientName = clientName.replace(/\s+/g, ' ').trim();
             clientName = clientName.replace(/[.,;:!?]+$/, '').trim();
           }
@@ -573,7 +603,7 @@ export function AgendaView() {
               if (leadId) {
                 const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email, nome_instagram_cliente, source')
+                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('id', leadId)
                   .eq('company_id', profile.company_id)
                   .maybeSingle();
@@ -583,7 +613,7 @@ export function AgendaView() {
               if (!lead && eventEmail) {
                 const { data: leadByEmail } = await supabase
                   .from('leads')
-                  .select('name, email, nome_instagram_cliente, source')
+                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
@@ -593,12 +623,8 @@ export function AgendaView() {
 
               if (lead) {
                 // Preencher nome se ainda não encontrado
-                if (clientName === 'Cliente não informado') {
-                  if (lead.name) {
-                    clientName = lead.name;
-                  } else if (lead.nome_instagram_cliente) {
-                    clientName = lead.nome_instagram_cliente;
-                  }
+                if (isUnknownClientName(clientName)) {
+                  clientName = pickLeadDisplayName(lead) || UNKNOWN_CLIENT;
                 }
                 // Preencher canal de origem
                 if (lead.source) {
@@ -608,6 +634,10 @@ export function AgendaView() {
             } catch (error) {
               console.debug('Erro ao buscar cliente na tabela leads:', error);
             }
+          }
+
+          if (isUnknownClientName(clientName)) {
+            clientName = getEventContactFallback(event);
           }
 
           // 4. Extrair tipo do evento da description
@@ -726,7 +756,7 @@ export function AgendaView() {
           const eventDate = startDateTime ? new Date(startDateTime) : new Date();
 
           // Extrair cliente: prioridade extendedProperties > leads.name > leads.nome_instagram_cliente
-          let clientName = event.extendedProperties?.private?.client_name || event.creator?.email?.split('@')[0] || 'Cliente não informado';
+          let clientName = event.extendedProperties?.private?.client_name || UNKNOWN_CLIENT;
           let eventChannel = '';
           
           if (profile?.company_id) {
@@ -745,7 +775,7 @@ export function AgendaView() {
               if (leadId) {
                 const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email, nome_instagram_cliente, source')
+                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('id', leadId)
                   .eq('company_id', profile.company_id)
                   .maybeSingle();
@@ -754,7 +784,7 @@ export function AgendaView() {
               if (!lead && eventEmail) {
                 const { data: leadByEmail } = await supabase
                   .from('leads')
-                  .select('name, email, nome_instagram_cliente, source')
+                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
@@ -762,15 +792,18 @@ export function AgendaView() {
                 lead = leadByEmail;
               }
               if (lead) {
-                if (clientName === 'Cliente não informado') {
-                  if (lead.name) clientName = lead.name;
-                  else if (lead.nome_instagram_cliente) clientName = lead.nome_instagram_cliente;
+                if (isUnknownClientName(clientName)) {
+                  clientName = pickLeadDisplayName(lead) || UNKNOWN_CLIENT;
                 }
                 if (lead.source) eventChannel = lead.source;
               }
             } catch (error) {
               console.debug('Erro ao buscar cliente na tabela leads:', error);
             }
+          }
+
+          if (isUnknownClientName(clientName)) {
+            clientName = getEventContactFallback(event);
           }
 
           // Extrair corretor (prioridade para displayName)

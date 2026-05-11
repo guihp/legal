@@ -60,16 +60,64 @@ async function resolveLeadInfo(
   companyId: string,
 ) {
   const empty = { displayName: "", handle: "", phone: "", email: "", raw: null as any };
-  if (!leadId) return empty;
+  const lookup = String(leadId || "").trim();
+  if (!lookup) return empty;
 
-  const { data, error } = await service
-    .from("leads")
-    .select("id, name, phone, email, nome_instagram_cliente, arroba_instagram_cliente, company_id")
-    .eq("id", leadId)
-    .maybeSingle();
+  const columns = "id, name, phone, email, instagram_id_cliente, nome_instagram_cliente, arroba_instagram_cliente, company_id";
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(lookup);
+  const digits = lookup.replace(/\D/g, "");
+
+  let data: any = null;
+  let error: any = null;
+
+  if (isUuid) {
+    const res = await service
+      .from("leads")
+      .select(columns)
+      .eq("id", lookup)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
+
+  if (!data && !error) {
+    const res = await service
+      .from("leads")
+      .select(columns)
+      .eq("company_id", companyId)
+      .eq("instagram_id_cliente", lookup)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
+
+  if (!data && !error && digits) {
+    const res = await service
+      .from("leads")
+      .select(columns)
+      .eq("company_id", companyId)
+      .or(`phone.eq.${digits},phone.eq.+${digits},phone.eq.${lookup}`)
+      .limit(1)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
+
+  if (!data && !error && lookup.includes("@")) {
+    const res = await service
+      .from("leads")
+      .select(columns)
+      .eq("company_id", companyId)
+      .ilike("email", lookup)
+      .limit(1)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
 
   if (error || !data) {
-    console.warn("resolveLeadInfo: lead não encontrado", { leadId, error: error?.message });
+    console.warn("resolveLeadInfo: lead não encontrado", { leadId: lookup, error: error?.message });
     return empty;
   }
 
