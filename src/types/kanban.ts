@@ -1,5 +1,5 @@
 // Tipos para o sistema Kanban de Leads
-import { Tables } from '@/integrations/supabase/types';
+import { toCalendarDateYmdBrazil } from '@/lib/datetime-brazil';
 
 // Função auxiliar para normalizar estágios (hífens -> espaços, trim)
 const normalizeStageForDisplay = (stage: string): string => {
@@ -116,7 +116,7 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     valor: dbLead.estimated_value || 0,
     valorEstimado: dbLead.estimated_value || 0,
     stage: normalizeStageForDisplay(dbLead.stage || 'Novo Lead'), // Normalizar: hífens -> espaços, trim, capitalizar
-    dataContato: dbLead.created_at ? new Date(dbLead.created_at).toISOString().split('T')[0] : '',
+    dataContato: dbLead.created_at ? toCalendarDateYmdBrazil(dbLead.created_at) : '',
     observacoes: dbLead.notes || '',
     property_id: dbLead.property_id || undefined,
     imovel_interesse: dbLead.imovel_interesse || undefined,

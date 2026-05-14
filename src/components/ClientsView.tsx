@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { formatDatePtBrBrazil } from '@/lib/datetime-brazil';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -430,7 +431,7 @@ const LeadCard = ({ lead, isDragging = false, availableBrokers = [] }: LeadCardP
               {lead.dataContato && (
                 <div className="flex items-center gap-2 text-gray-400 text-xs">
                   <Calendar className="h-3 w-3 flex-shrink-0" />
-                  <span>{new Date(lead.dataContato).toLocaleDateString('pt-BR')}</span>
+                  <span>{formatDatePtBrBrazil(lead.dataContato)}</span>
                 </div>
               )}
               <div className="flex items-center gap-2 text-gray-300 text-xs">

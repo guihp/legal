@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useImoveisVivaReal } from '@/hooks/useImoveisVivaReal';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { toCalendarDateYmdBrazil } from '@/lib/datetime-brazil';
 
 const leadStages: LeadStage[] = [
   'Novo Lead',
@@ -229,7 +230,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
         message: formData.message.trim() || '',
         property_id: formData.property_id || '',
         imovel_interesse: listingId || undefined,
-        dataContato: new Date().toISOString().split('T')[0]
+        dataContato: toCalendarDateYmdBrazil(new Date())
       };
 
       if (leadToEdit) {

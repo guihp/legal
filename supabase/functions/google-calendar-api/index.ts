@@ -1284,6 +1284,70 @@ serve(async (req) => {
       });
     }
 
+    // Atualiza data/hora/título/etc. de um evento existente (UI do calendário).
+    if (action === "update_event") {
+      const calendarId = String(body?.calendar_id || "").trim();
+      const eventId = String(body?.evento_id || body?.event_id || "").trim();
+      if (!calendarId || !eventId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "calendar_id e evento_id são obrigatórios",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const rawUpdate = body?.update;
+      if (!rawUpdate || typeof rawUpdate !== "object") {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "update (objeto) é obrigatório",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Google Calendar API ignora campos desconhecidos em PATCH, mas evitamos
+      // enviar metadados internos (tipo_evento, data_evento, hora_evento).
+      const allowed = [
+        "summary",
+        "description",
+        "location",
+        "start",
+        "end",
+        "colorId",
+        "transparency",
+        "extendedProperties",
+      ] as const;
+      const patch: Record<string, unknown> = {};
+      for (const key of allowed) {
+        if (key in rawUpdate && (rawUpdate as Record<string, unknown>)[key] !== undefined) {
+          patch[key] = (rawUpdate as Record<string, unknown>)[key];
+        }
+      }
+
+      if (Object.keys(patch).length === 0) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "update não contém campos válidos para o Google Calendar",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const updated = await gFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      );
+
+      return new Response(JSON.stringify({ success: true, event: updated }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "pick_broker_queue") {
       const queuePick = await pickNextBrokerFromQueue(
         service,

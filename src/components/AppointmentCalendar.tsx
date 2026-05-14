@@ -583,7 +583,14 @@ export function AppointmentCalendar({
       
     } catch (error) {
       console.error('❌ Erro ao editar evento:', error);
-      showAlert('❌ Erro', 'Erro ao editar evento. Tente novamente.', 'error');
+      const detail = error instanceof Error ? error.message : "";
+      showAlert(
+        '❌ Erro',
+        detail
+          ? `${detail}\n\nSe o problema continuar, verifique se a agenda correta está selecionada (não use "Todos" se o evento não tiver calendário vinculado).`
+          : 'Erro ao editar evento. Tente novamente.',
+        'error',
+      );
     }
   };
 

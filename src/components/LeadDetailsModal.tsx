@@ -8,6 +8,7 @@ import {
     Building2, Star, DollarSign, Calendar, MessageSquare, Edit
 } from "lucide-react"; // Icons
 import { supabase } from '@/integrations/supabase/client';
+import { formatDatePtBrBrazil } from '@/lib/datetime-brazil';
 
 interface LeadDetailsModalProps {
     isOpen: boolean;
@@ -165,7 +166,7 @@ export function LeadDetailsModal({ isOpen, onClose, leadId }: LeadDetailsModalPr
                                         <div className="flex items-center gap-3">
                                             <Calendar className="h-4 w-4 text-gray-400" />
                                             <span className="text-gray-300">
-                                                Cadastro: {new Date(lead.created_at || lead.dataContato).toLocaleDateString('pt-BR')}
+                                                Cadastro: {formatDatePtBrBrazil(lead.created_at || lead.dataContato)}
                                             </span>
                                         </div>
                                     </div>

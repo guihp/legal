@@ -43,6 +43,7 @@ import { AddLeadModal } from '@/components/AddLeadModal';
 import { BulkAssignModal } from '@/components/BulkAssignModal';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatDatePtBrBrazil } from '@/lib/datetime-brazil';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { useRef } from 'react';
 import { cn } from '@/lib/utils';
@@ -660,7 +661,7 @@ export function ClientsCRMView() {
                                   <div className="flex items-center gap-2 text-gray-300">
                                     <Calendar className="h-4 w-4 text-purple-400" />
                                     <span className="text-sm">
-                                      {new Date(lead.dataContato).toLocaleDateString('pt-BR')}
+                                      {formatDatePtBrBrazil(lead.dataContato)}
                                     </span>
                                   </div>
                                 </div>
@@ -1009,7 +1010,7 @@ export function ClientsCRMView() {
                       <div className="flex items-center gap-3">
                         <Calendar className="h-4 w-4 text-gray-400" />
                         <span className="text-gray-300">
-                          Cadastro: {new Date(selectedLead.dataContato).toLocaleDateString('pt-BR')}
+                          Cadastro: {formatDatePtBrBrazil(selectedLead.dataContato)}
                         </span>
                       </div>
                     </div>
