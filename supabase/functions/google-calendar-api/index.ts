@@ -164,6 +164,55 @@ function eventEndIso(evt: CalendarEventLite): string {
   return String(evt?.end?.dateTime || evt?.end?.date || "");
 }
 
+const BRAZIL_TZ = "America/Sao_Paulo";
+
+function brazilTodayYmd(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BRAZIL_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+function brazilDayStartIso(ymd: string): string {
+  return `${ymd}T00:00:00-03:00`;
+}
+
+function brazilDayEndIso(ymd: string): string {
+  return `${ymd}T23:59:59-03:00`;
+}
+
+function isEventOnBrazilDay(evt: CalendarEventLite, ymd: string): boolean {
+  const start = eventStartIso(evt);
+  if (!start) return false;
+  if (evt?.start?.date) return start === ymd;
+  const startYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BRAZIL_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(start));
+  return startYmd === ymd;
+}
+
+/** Evento de hoje (Brasília) cujo horário de término já passou. */
+function isEventCompletedToday(evt: CalendarEventLite, now = new Date()): boolean {
+  const todayYmd = brazilTodayYmd(now);
+  if (!isEventOnBrazilDay(evt, todayYmd)) return false;
+
+  const endStr = eventEndIso(evt);
+  if (!endStr) return false;
+
+  if (evt?.end?.date) {
+    const endDay = new Date(`${endStr}T00:00:00-03:00`);
+    return now.getTime() >= endDay.getTime();
+  }
+
+  const endMs = new Date(endStr).getTime();
+  return !Number.isNaN(endMs) && endMs <= now.getTime();
+}
+
 async function listEligibleBrokers(
   service: ReturnType<typeof createClient>,
   companyId: string,
@@ -1344,6 +1393,144 @@ serve(async (req) => {
       );
 
       return new Response(JSON.stringify({ success: true, event: updated }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Exclui um evento (UI do calendário).
+    if (action === "delete_event") {
+      const calendarId = String(body?.calendar_id || "").trim();
+      const eventId = String(body?.evento_id || body?.event_id || "").trim();
+      if (!calendarId || !eventId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "calendar_id e evento_id são obrigatórios",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      await gFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        { method: "DELETE" },
+      );
+
+      try {
+        await service
+          .from("leads")
+          .update({
+            event_id: null,
+            calenda_id: null,
+            stage: "Visita Cancelada",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("company_id", profile.company_id)
+          .eq("event_id", eventId);
+      } catch {
+        // best-effort
+      }
+
+      return new Response(JSON.stringify({ success: true, calendar_id: calendarId, event_id: eventId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Remove agendamentos de hoje (Brasília) que já terminaram. Uso interno (service role).
+    if (action === "delete_completed_events_today") {
+      if (!isServiceRoleRequest && profile.role !== "system") {
+        return new Response(JSON.stringify({ success: false, error: "Sem permissão" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const dryRun = Boolean(body?.dry_run);
+      const todayYmd = brazilTodayYmd();
+      const timeMin = brazilDayStartIso(todayYmd);
+      const timeMax = brazilDayEndIso(todayYmd);
+      const now = new Date();
+
+      const calendarsJson = await gFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList");
+      const allCalendars = Array.isArray(calendarsJson?.items) ? calendarsJson.items : [];
+      const calendarIds: string[] = allCalendars
+        .map((c: any) => String(c?.id || ""))
+        .filter((id: string) => id && id !== "en.brazilian#holiday@group.v.calendar.google.com");
+
+      const toDelete: Array<{ calendar_id: string; event_id: string; summary: string; start: string; end: string }> = [];
+
+      for (const calendarId of calendarIds) {
+        const events = await listEventsInWindow(calendarId, timeMin, timeMax);
+        for (const evt of events) {
+          if (!evt?.id || !isEventCompletedToday(evt, now)) continue;
+          toDelete.push({
+            calendar_id: calendarId,
+            event_id: String(evt.id),
+            summary: String((evt as any)?.summary || ""),
+            start: eventStartIso(evt),
+            end: eventEndIso(evt),
+          });
+        }
+      }
+
+      if (dryRun) {
+        return new Response(JSON.stringify({
+          success: true,
+          dry_run: true,
+          company_id: profile.company_id,
+          today: todayYmd,
+          would_delete_count: toDelete.length,
+          events: toDelete,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const deleted: typeof toDelete = [];
+      const errors: Array<{ event_id: string; error: string }> = [];
+
+      for (const item of toDelete) {
+        try {
+          await gFetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(item.calendar_id)}/events/${encodeURIComponent(item.event_id)}`,
+            { method: "DELETE" },
+          );
+          deleted.push(item);
+        } catch (e: any) {
+          errors.push({ event_id: item.event_id, error: e?.message || "delete failed" });
+        }
+      }
+
+      const deletedIds = deleted.map((d) => d.event_id);
+      let leadsCleared = 0;
+      if (deletedIds.length) {
+        try {
+          const { data: updatedLeads } = await service
+            .from("leads")
+            .update({
+              event_id: null,
+              calenda_id: null,
+              stage: "Visita Cancelada",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("company_id", profile.company_id)
+            .in("event_id", deletedIds)
+            .select("id");
+          leadsCleared = Array.isArray(updatedLeads) ? updatedLeads.length : 0;
+        } catch {
+          leadsCleared = 0;
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        company_id: profile.company_id,
+        today: todayYmd,
+        deleted_count: deleted.length,
+        deleted,
+        errors,
+        leads_cleared: leadsCleared,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

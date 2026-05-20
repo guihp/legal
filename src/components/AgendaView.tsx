@@ -25,49 +25,6 @@ interface AgendaEvent {
   channel?: string; // Canal de origem do agendamento (WhatsApp, Instagram, Facebook, etc)
 }
 
-const mockEvents: AgendaEvent[] = [
-  {
-    id: 1,
-    date: new Date(2025, 5, 20, 10, 0),
-    client: "João Silva",
-    property: "Apartamento Centro",
-    address: "Rua das Flores, 123",
-    type: "Visita",
-    status: "confirmada",
-    corretor: "Isis"
-  },
-  {
-    id: 2,
-    date: new Date(2025, 5, 20, 14, 30),
-    client: "Maria Santos",
-    property: "Casa Jardim América",
-    address: "Av. Principal, 456",
-    type: "Avaliação",
-    status: "agendada",
-    corretor: "Arthur"
-  },
-  {
-    id: 3,
-    date: new Date(2025, 5, 21, 9, 0),
-    client: "Pedro Costa",
-    property: "Sala Comercial",
-    address: "Rua Comercial, 789",
-    type: "Apresentação",
-    status: "confirmada",
-    corretor: "Isis"
-  },
-  {
-    id: 4,
-    date: new Date(2025, 5, 23, 16, 0),
-    client: "Ana Oliveira",
-    property: "Cobertura Vila Nova",
-    address: "Rua das Palmeiras, 321",
-    type: "Visita",
-    status: "agendada",
-    corretor: "Arthur"
-  }
-];
-
 const UNKNOWN_CLIENT = 'Cliente não informado';
 
 function isUnknownClientName(value: unknown): boolean {
@@ -99,7 +56,7 @@ function getEventContactFallback(event: any): string {
 }
 
 export function AgendaView() {
-  const [events, setEvents] = useState<AgendaEvent[]>(mockEvents);
+  const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -114,6 +71,7 @@ export function AgendaView() {
   const [corretores, setCorretores] = useState<{ id: string; full_name: string; accessRole?: string; canWrite?: boolean }[]>([]);
   const [loadingCorretores, setLoadingCorretores] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchInFlightRef = useRef(false);
 
   // Buscar propriedades e clientes existentes
   const { properties } = useProperties();
@@ -182,7 +140,7 @@ export function AgendaView() {
   };
 
   // Função para carregar calendários (mesma fonte do Plantão > Calendários)
-  const loadCorretores = async () => {
+  const loadCorretores = async (): Promise<{ id: string; full_name: string; accessRole?: string; canWrite?: boolean }[]> => {
     try {
       setLoadingCorretores(true);
       console.log('🔍 Carregando calendários da Agenda (Plantão > Calendários)...');
@@ -258,9 +216,11 @@ export function AgendaView() {
 
 
       setCorretores(finalAndRel);
+      return finalAndRel;
     } catch (error) {
       console.error('❌ Erro ao carregar calendários:', error);
       setCorretores([]);
+      return [];
     } finally {
       setLoadingCorretores(false);
     }
@@ -443,8 +403,16 @@ export function AgendaView() {
 
   // REMOVIDO: leitura de eventos a partir de notas locais para simplificação
 
-  const fetchAgendaEvents = async (date: Date, isAutoUpdate = false) => {
+  const fetchAgendaEvents = async (
+    date: Date,
+    isAutoUpdate = false,
+    calendarIdsOverride?: string[],
+  ) => {
+    if (fetchInFlightRef.current && isAutoUpdate) return;
+
     try {
+      fetchInFlightRef.current = true;
+
       if (!isAutoUpdate) {
         console.log('🔄 Carregando eventos para:', date.toLocaleDateString('pt-BR'));
         setLoading(true);
@@ -468,9 +436,16 @@ export function AgendaView() {
 
       // Montar body conforme regra: tipo_busca e agenda_ids
       const isTodos = selectedAgenda === 'Todos';
-      const agendaIds = isTodos
-        ? corretores.map(c => c.id)
-        : [selectedAgenda];
+      const agendaIds =
+        calendarIdsOverride ??
+        (isTodos ? corretores.map((c) => c.id).filter(Boolean) : [selectedAgenda]);
+
+      if (isTodos && agendaIds.length === 0) {
+        if (loadingCorretores) return;
+        setEvents([]);
+        setLastUpdate(new Date());
+        return;
+      }
 
       if (!isAutoUpdate) {
         console.log("📤 Buscando eventos via google-calendar-api");
@@ -888,10 +863,10 @@ export function AgendaView() {
       if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso (google-calendar-api)');
 
     } catch (error) {
-      console.log('⚠️ Webhook indisponível, mantendo dados de exemplo:', error);
+      console.log('⚠️ Falha ao carregar eventos da agenda:', error);
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      // Manter os dados mock que já estão carregados
     } finally {
+      fetchInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -902,20 +877,15 @@ export function AgendaView() {
   }, []);
 
   useEffect(() => {
-    console.log('🚀 Carregando corretores na inicialização...');
     loadCorretores();
-  }, []); // Executa apenas uma vez na montagem
+  }, []);
 
-  // UseEffect para carregamento inicial da agenda
+  // Busca eventos após calendários carregarem (evita calendar_ids vazio em "Todos")
   useEffect(() => {
-    console.log('🚀 USE_EFFECT EXECUTADO! Carregando eventos do mês');
-    console.log('📅 Mês/Ano:', `${currentMonth.getMonth() + 1}/${currentMonth.getFullYear()}`);
-    console.log('👤 Agenda selecionada:', selectedAgenda);
-    console.log('🕐 Timestamp:', new Date().toISOString());
+    if (selectedAgenda === 'Todos' && loadingCorretores) return;
 
     (async () => {
       try {
-        // Para corretor: se ainda estiver em "Todos", detectar agenda vinculada e NÃO buscar ainda
         if (profile?.role === 'corretor' && selectedAgenda === 'Todos') {
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.id) {
@@ -926,39 +896,49 @@ export function AgendaView() {
             if (schedules && schedules.length > 0 && schedules[0]?.calendar_id) {
               setSelectedAgenda(schedules[0].calendar_id);
               setSelectedAgendaName(schedules[0].calendar_name || 'Minha agenda');
-              return; // aguardar re-execução com selectedAgenda definido
-            } else {
-              console.warn('⚠️ Corretor sem agenda vinculada. Não exibindo eventos.');
-              setEvents([]);
-              setIsConnected(true);
-              setLastUpdate(new Date());
               return;
             }
+            console.warn('⚠️ Corretor sem agenda vinculada. Não exibindo eventos.');
+            setEvents([]);
+            setIsConnected(true);
+            setLastUpdate(new Date());
+            return;
           }
         }
-        // Para gestor/admin ou corretor já com agenda definida: buscar eventos normalmente
-        await fetchAgendaEvents(currentMonth);
+
+        const calendarIds =
+          selectedAgenda === 'Todos'
+            ? corretores.map((c) => c.id).filter(Boolean)
+            : [selectedAgenda];
+
+        await fetchAgendaEvents(currentMonth, false, calendarIds);
       } catch (e) {
         console.warn('⚠️ Falha ao processar carregamento da agenda:', e);
       }
     })();
-  }, [currentMonth, selectedAgenda, profile?.role]);
+  }, [currentMonth, selectedAgenda, profile?.role, corretores, loadingCorretores]);
 
-  // Atualização automática a cada 3 segundos enquanto a Agenda estiver aberta
+  // Atualização automática a cada 30s (somente após calendários carregados)
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
+
+    const canPoll =
+      selectedAgenda !== 'Todos' || (!loadingCorretores && corretores.length > 0);
+    if (!canPoll) return;
+
     intervalRef.current = setInterval(() => {
       fetchAgendaEvents(currentMonth, true);
-    }, 3000);
+    }, 30000);
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
-  }, [currentMonth, selectedAgenda]);
+  }, [currentMonth, selectedAgenda, corretores, loadingCorretores]);
 
   const handleDateChange = (date: Date) => {
     console.log('📅 Data selecionada no calendário:', date.toLocaleDateString('pt-BR'));
@@ -984,9 +964,27 @@ export function AgendaView() {
     // Isto irá disparar o useEffect para buscar eventos do novo mês
   };
 
+  const handleRefreshAgenda = async () => {
+    try {
+      const loadedCorretores = await loadCorretores();
+      const calendarIds =
+        selectedAgenda === 'Todos'
+          ? loadedCorretores.map((c) => c.id).filter(Boolean)
+          : [selectedAgenda];
+      await fetchAgendaEvents(currentMonth, false, calendarIds);
+    } catch (e) {
+      console.warn('⚠️ Falha ao atualizar agenda:', e);
+      toast.error('Não foi possível atualizar a agenda');
+    }
+  };
+
   // Atualização manual solicitada por filhos (ex.: após editar/deletar/criar)
   const refreshEvents = () => {
-    fetchAgendaEvents(currentMonth, true);
+    const calendarIds =
+      selectedAgenda === 'Todos'
+        ? corretores.map((c) => c.id).filter(Boolean)
+        : [selectedAgenda];
+    fetchAgendaEvents(currentMonth, true, calendarIds);
   };
 
   const handleAddEvent = async (eventData: {
@@ -1492,7 +1490,8 @@ export function AgendaView() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => fetchAgendaEvents(currentMonth)}
+            onClick={() => void handleRefreshAgenda()}
+            disabled={loading || loadingCorretores}
             className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
           >
             🔄 Atualizar

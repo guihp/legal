@@ -931,7 +931,7 @@ export function AppointmentCalendar({
                           e.stopPropagation();
                           handleChangeStatus(appointment);
                         }}
-                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-green-600 hover:text-white hover:border-green-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-green-600 dark:hover:text-white dark:hover:border-green-500 transition-all duration-200 flex items-center gap-2"
+                        className="border-border bg-card text-foreground shadow-sm hover:bg-green-600 hover:text-white hover:border-green-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-green-600 dark:hover:text-white dark:hover:border-green-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <CheckCircle className="h-3 w-3" />
                         Status
@@ -946,7 +946,7 @@ export function AppointmentCalendar({
                           setSelectedAppointmentToEdit(appointment);
                           setShowEditModal(true);
                         }}
-                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-orange-600 hover:text-white hover:border-orange-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-orange-600 dark:hover:text-white dark:hover:border-orange-500 transition-all duration-200 flex items-center gap-2"
+                        className="border-border bg-card text-foreground shadow-sm hover:bg-orange-600 hover:text-white hover:border-orange-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-orange-600 dark:hover:text-white dark:hover:border-orange-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <Edit className="h-3 w-3" />
                         Editar
@@ -960,7 +960,7 @@ export function AppointmentCalendar({
                           e.stopPropagation();
                           handleDeleteEvent(appointment);
                         }}
-                        className="bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-red-600 dark:hover:text-white dark:hover:border-red-500 transition-all duration-200 flex items-center gap-2"
+                        className="border-border bg-card text-foreground shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-red-600 dark:hover:text-white dark:hover:border-red-500 transition-all duration-200 flex items-center gap-2"
                       >
                         <Trash2 className="h-3 w-3" />
                         Deletar

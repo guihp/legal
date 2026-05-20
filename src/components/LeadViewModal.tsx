@@ -222,8 +222,8 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl bg-background border-border text-foreground">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[min(90vh,100dvh)] flex flex-col gap-0 overflow-hidden p-0 bg-background border-border text-foreground">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center justify-between text-white">
             <span className="flex items-center gap-2">
               <User className="h-4 w-4 text-blue-300" />
@@ -235,7 +235,8 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="bg-gray-800/70 border-gray-700">
             <CardContent className="p-4 space-y-2 text-sm text-gray-200">
               <div className="flex items-center gap-2"><Mail className="h-4 w-4" /><span>{lead?.email || '-'}</span></div>
@@ -256,13 +257,18 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
                 </div>
               )}
               {lead?.interest && (
-                <div className="flex items-start gap-2"><FileText className="h-4 w-4 mt-0.5" /><span className="text-gray-300">{lead.interest}</span></div>
+                <div className="flex items-start gap-2 min-w-0">
+                  <FileText className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span className="text-gray-300 text-xs max-h-32 overflow-y-auto overscroll-contain break-words [scrollbar-gutter:stable]">
+                    {lead.interest}
+                  </span>
+                </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="mt-4">
+        <div>
           <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2"><Clock className="h-4 w-4" /> Últimas atividades</h3>
           <div className="space-y-2 max-h-56 overflow-auto pr-1">
             {logs.length === 0 && (
@@ -284,7 +290,9 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
+        </div>
+
+        <div className="shrink-0 flex justify-end gap-2 px-6 py-4 border-t border-border/60 bg-background">
           <Button variant="outline" onClick={onClose} className="border-gray-600 text-red-500">Fechar</Button>
           {lead && (
             <Button

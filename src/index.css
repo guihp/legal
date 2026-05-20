@@ -537,10 +537,14 @@
 [data-theme="light"] .bg-indigo-700 .text-white,
 /* Só bg-gradient-to-r “real” (token exato), não dark:bg-gradient-to-r nos títulos */
 [data-theme="light"] [class~="bg-gradient-to-r"] .text-white,
-[data-theme="light"] button[class*="bg-blue-600"],
-[data-theme="light"] button[class*="bg-green-600"],
-[data-theme="light"] button[class*="bg-emerald-600"],
-[data-theme="light"] button[class*="bg-red-600"],
+/* class~ evita casar hover:bg-green-600 etc. em botões outline no modo claro */
+[data-theme="light"] button[class~="bg-blue-600"],
+[data-theme="light"] button[class~="bg-green-600"],
+[data-theme="light"] button[class~="bg-emerald-600"],
+[data-theme="light"] button[class~="bg-red-600"],
+[data-theme="light"] button.hover\:bg-green-600:hover,
+[data-theme="light"] button.hover\:bg-orange-600:hover,
+[data-theme="light"] button.hover\:bg-red-600:hover,
 [data-theme="light"] [class~="bg-gradient-to-r"][class*="from-blue"],
 [data-theme="light"] [class~="bg-gradient-to-r"][class*="from-green"],
 [data-theme="light"] [class~="bg-gradient-to-r"][class*="from-emerald"] {

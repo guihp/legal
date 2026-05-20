@@ -4,6 +4,7 @@ import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 import { mediaPreviewPrefix } from '@/lib/conversaMedia';
 import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
+import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
 
 /** Rótulo quando não há nome (evita texto genérico longo; RPC já envia nome para corretor quando permitido). */
 function conversaFallbackLabel(sessionId: string): string {
@@ -158,16 +159,18 @@ export function useConversasList(selectedInstance?: string | null) {
         };
       });
 
-      // 4) Complementar com leads visíveis ao usuário (RLS); RPC já preenche lead_display_name para corretor
+      // 4) Complementar com leads visíveis ao usuário (RLS); RPC filtra corretor por id_corretor_responsavel
+      let leadRows: Array<{ id: string; name?: string | null; phone?: string | null; stage?: string | null }> = [];
       if (list.length > 0) {
         const sids = list.map(l => l.sessionId);
-        const { data: leadRows } = await supabase
+        const { data: fetchedLeads } = await supabase
           .from('leads')
           .select('id, name, phone, stage')
           .in('id', sids as any);
+        leadRows = (fetchedLeads || []) as typeof leadRows;
         const leadMap = new Map<string, string>();
         const crmStageById = new Map<string, string | null>();
-        (leadRows || []).forEach((lr: any) => {
+        leadRows.forEach((lr: any) => {
           if (!lr?.id) return;
           const id = String(lr.id);
           crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
@@ -188,15 +191,17 @@ export function useConversasList(selectedInstance?: string | null) {
         });
       }
 
+      const scopedList = filterConversasByLeadAssignment(list, profile?.role, leadRows);
+
       // 5) Ordenação por última mensagem desc
-      if (list.length > 0 && profile?.company_id) {
+      if (scopedList.length > 0 && profile?.company_id) {
         try {
           const { data: labels } = await supabase
             .from('conversation_contact_labels')
             .select('session_id, status')
             .eq('company_id', profile.company_id)
             .eq('channel', 'whatsapp')
-            .in('session_id', list.map((l) => l.sessionId) as any);
+            .in('session_id', scopedList.map((l) => l.sessionId) as any);
 
           const statusBySession = new Map<string, string>();
           (labels || []).forEach((row: any) => {
@@ -204,20 +209,20 @@ export function useConversasList(selectedInstance?: string | null) {
             statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
           });
 
-          list.forEach((item) => {
+          scopedList.forEach((item) => {
             const st = statusBySession.get(item.sessionId) || 'ai_ativa';
             item.leadStage = conversationLabelStatusToDisplay(st);
           });
         } catch {
-          list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+          scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
         }
       } else {
-        list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
       }
 
-      list.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
+      scopedList.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
 
-      setConversas(list);
+      setConversas(scopedList);
     } catch (err) {
       console.error('Erro ao buscar conversas:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');

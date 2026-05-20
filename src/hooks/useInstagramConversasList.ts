@@ -4,6 +4,7 @@ import { useUserProfile } from './useUserProfile';
 import { extractMessageContent } from './useConversaMessages';
 import { mediaPreviewPrefix } from '@/lib/conversaMedia';
 import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
+import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
 
 function instagramListaFallbackLabel(sessionId: string): string {
   const id = String(sessionId || '').trim();
@@ -123,16 +124,17 @@ export function useInstagramConversasList(
         };
       });
 
-      // Complementar com leads visíveis ao usuário (RLS); RPC já traz nome/foto para corretor quando permitido
+      let leadRows: Array<{ id: string }> = [];
       if (list.length > 0) {
         const sids = list.map(l => l.sessionId);
         try {
-          const { data: leadRows } = await supabase
+          const { data: fetchedLeads } = await supabase
             .from('leads')
             .select(
               'id, name, stage, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
             )
             .in('id', sids as any);
+          leadRows = (fetchedLeads || []) as typeof leadRows;
 
           const displayNameById = new Map<string, string>();
           const arrobaById = new Map<string, string>();
@@ -140,7 +142,7 @@ export function useInstagramConversasList(
           const syncById = new Map<string, string>();
           const igIdById = new Map<string, string>();
           const crmStageById = new Map<string, string | null>();
-          (leadRows || []).forEach((lr: any) => {
+          leadRows.forEach((lr: any) => {
             if (!lr?.id) return;
             const id = String(lr.id);
             crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
@@ -189,14 +191,16 @@ export function useInstagramConversasList(
         }
       }
 
-      if (list.length > 0 && profile?.company_id) {
+      const scopedList = filterConversasByLeadAssignment(list, profile?.role, leadRows);
+
+      if (scopedList.length > 0 && profile?.company_id) {
         try {
           const { data: labels } = await supabase
             .from('conversation_contact_labels')
             .select('session_id, status')
             .eq('company_id', profile.company_id)
             .eq('channel', 'instagram')
-            .in('session_id', list.map((l) => l.sessionId) as any);
+            .in('session_id', scopedList.map((l) => l.sessionId) as any);
 
           const statusBySession = new Map<string, string>();
           (labels || []).forEach((row: any) => {
@@ -204,19 +208,19 @@ export function useInstagramConversasList(
             statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
           });
 
-          list.forEach((item) => {
+          scopedList.forEach((item) => {
             const st = statusBySession.get(item.sessionId) || 'ai_ativa';
             item.leadStage = conversationLabelStatusToDisplay(st);
           });
         } catch {
-          list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+          scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
         }
       } else {
-        list.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
       }
 
-      list.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
-      setConversas(list);
+      scopedList.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
+      setConversas(scopedList);
     } catch (err) {
       console.error('Erro ao buscar conversas de Instagram:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
