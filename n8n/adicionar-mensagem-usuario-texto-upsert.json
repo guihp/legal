@@ -1,0 +1,43 @@
+{
+  "name": "IAFE — Adicionar mensagem texto (upsert)",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://bfcssdogttmqeujgmxdf.supabase.co/functions/v1/mensagem-ingest",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "=<cole aqui a service_role (Settings → API no Supabase)>"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer <mesma service_role>"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"company_id\": {{ JSON.stringify($('When Executed by Another Workflow').first().json.company_ID || $('When Executed by Another Workflow').first().json.company_id) }},\n  \"phone\": {{ JSON.stringify($('When Executed by Another Workflow').first().json.remoteJid) }},\n  \"mensagem_id\": {{ JSON.stringify($('When Executed by Another Workflow').first().json.messageId) }},\n  \"mensage_type\": {{ JSON.stringify($('When Executed by Another Workflow').first().json.messageType) }},\n  \"text\": {{ JSON.stringify($('When Executed by Another Workflow').first().json.conversation) }},\n  \"type\": \"lead\",\n  \"plataforma\": \"WhatsApp\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-944, 560],
+      "id": "664b3832-487e-44e4-9e2e-a52a73da6441",
+      "name": "Adicionar mensagem usuario texto",
+      "notes": "Substitui o nó Supabase Create em mensagens. Idempotente por (company_id, mensagem_id) via RPC upsert_mensagem."
+    }
+  ],
+  "connections": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

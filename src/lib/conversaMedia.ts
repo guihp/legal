@@ -64,23 +64,66 @@ export function inferMediaKind(raw: unknown): MediaKind {
   return 'unknown';
 }
 
+export type ConversationPreviewKind = 'image' | 'audio' | 'video' | 'document';
+
+function labelForPreviewKind(kind: ConversationPreviewKind): string {
+  switch (kind) {
+    case 'image': return 'Foto';
+    case 'audio': return 'Áudio';
+    case 'video': return 'Vídeo';
+    case 'document': return 'Documento';
+  }
+}
+
+function kindFromMensageType(mensageType: string): ConversationPreviewKind | null {
+  const t = mensageType.toLowerCase().trim();
+  if (['audio', 'voice', 'ptt', 'voz'].includes(t)) return 'audio';
+  if (['image', 'sticker', 'imagem'].includes(t)) return 'image';
+  if (t === 'video') return 'video';
+  if (['document', 'file', 'pdf', 'arquivo'].includes(t)) return 'document';
+  return null;
+}
+
 /**
- * Rótulo amigável (texto puro, sem emoji) para o preview da lista de
- * conversas — substitui o uso dos emojis 🖼️ / 🎧 / 📎 antigos.
- *
- * Quando há texto além da mídia (ex.: caption), o caller deve concatenar:
- *   `${mediaPreviewLabel(media)} ${cleanContent}`
- *
- * Usa colchetes pra ficar visualmente óbvio que é um marker, e mantém o
- * mesmo padrão que o WhatsApp mostra ("[imagem]").
+ * Preview da última mensagem na lista (estilo WhatsApp).
+ * Com legenda: mostra só o texto. Sem legenda: "Áudio", "Foto", etc.
  */
+export function resolveConversationListPreview(params: {
+  text?: string | null;
+  media?: unknown;
+  mensageType?: string | null;
+}): { kind: ConversationPreviewKind | null; text: string } {
+  const txt = String(params.text ?? '').trim();
+  let kind = kindFromMensageType(String(params.mensageType ?? ''));
+  if (!kind && params.media != null) {
+    const s = String(params.media).trim();
+    if (s && s.toLowerCase() !== 'null') {
+      const lower = s.toLowerCase();
+      if (/\/chat-media\/[^/]+\/audio\//i.test(lower)) kind = 'audio';
+      else if (/\/chat-media\/[^/]+\/image\//i.test(lower)) kind = 'image';
+      else if (/\/chat-media\/[^/]+\/video\//i.test(lower)) kind = 'video';
+      else {
+        const inferred = inferMediaKind(params.media);
+        if (inferred === 'image' || inferred === 'audio' || inferred === 'video') {
+          kind = inferred;
+        } else if (inferred === 'unknown' && /chat-media\/[^/]+\/outros/i.test(lower)) {
+          kind = 'document';
+        }
+      }
+    }
+  }
+  if (kind) return { kind, text: txt || labelForPreviewKind(kind) };
+  return { kind: null, text: txt };
+}
+
+/** Rótulo curto (sem colchetes) para fallbacks legados. */
 export function mediaPreviewLabel(raw: unknown): string {
   const kind = inferMediaKind(raw);
   switch (kind) {
-    case 'image': return '[Imagem]';
-    case 'audio': return '[Áudio]';
-    case 'video': return '[Vídeo]';
-    default:      return '[Mídia]';
+    case 'image': return 'Foto';
+    case 'audio': return 'Áudio';
+    case 'video': return 'Vídeo';
+    default: return 'Mídia';
   }
 }
 

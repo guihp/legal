@@ -1,210 +1,131 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
-import { extractMessageContent } from './useConversaMessages';
-import { mediaPreviewPrefix } from '@/lib/conversaMedia';
+import { resolveConversationListPreview } from '@/lib/conversaMedia';
+import type { ConversationPreviewKind } from '@/lib/conversaMedia';
 import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
 import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
+import { mensagemWhatsappPreviewType } from '@/lib/mensagensWhatsapp';
+import { normalizePhoneDigits } from '@/lib/normalizePhone';
 
-/** Rótulo quando não há nome (evita texto genérico longo; RPC já envia nome para corretor quando permitido). */
-function conversaFallbackLabel(sessionId: string): string {
-  const id = String(sessionId || '').trim();
-  if (id.length >= 8) return `Cliente · ${id.slice(0, 8)}…`;
+function conversaFallbackLabel(phoneNorm: string): string {
+  const id = String(phoneNorm || '').trim();
+  if (id.length >= 8) return `Cliente · ${id.slice(-8)}`;
+  if (id.length >= 4) return `Cliente · ${id}`;
   return 'Cliente';
 }
 
 export interface Conversa {
+  /** Telefone normalizado (chave da conversa em Mensagens_Whatsapp). */
   sessionId: string;
   instancia: string;
-  displayName: string; // lead.name ou fallback
-  leadPhone?: string | null; // reservado
-  /** Etiqueta operacional (Humano | Humano solicitado | AI ATIVA) em `conversation_contact_labels`. */
+  displayName: string;
+  leadPhone?: string | null;
+  leadId?: string | null;
   leadStage?: string | null;
-  /** Estágio do funil em `leads.stage` quando `session_id` = id do lead. */
   crmStage?: string | null;
-  /** Há registro de lead com esse id (permite mudar estágio pelo menu). */
   hasCrmLead?: boolean;
   lastMessageDate: string;
   messageCount: number;
   lastMessageContent: string;
+  /** Tipo da última mídia (ícone na lista). */
+  lastMessagePreviewKind?: ConversationPreviewKind | null;
   lastMessageType: 'human' | 'ai';
 }
+
+const PLATAFORMA_WHATSAPP = 'WhatsApp';
 
 export function useConversasList(selectedInstance?: string | null) {
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { profile, isManager } = useUserProfile();
-  const [companyPhone, setCompanyPhone] = useState<string | null>(null);
 
   const scopedInstance = useMemo(() => {
     if (!selectedInstance) return null;
     return String(selectedInstance).trim().toLowerCase();
   }, [selectedInstance]);
 
-  // Buscar phone da empresa para tabela dinâmica
-  useEffect(() => {
-    const fetchCompanyPhone = async () => {
-      if (!profile?.company_id) {
-        setCompanyPhone(null);
-        return;
-      }
-
-      try {
-        // IMPORTANTE: usar `whatsapp_ai_phone` (e não `phone`) — esse é o número
-        // que nomeia a tabela dinâmica `crm_whatsapp_messages_{phone}` onde o
-        // n8n grava as mensagens. `companies.phone` é apenas o telefone comercial
-        // (endereço/contato) e NÃO tem relação com as tabelas de mensagens.
-        // Se trocar, a RPC `list_conversations_by_phone` não acha a tabela e
-        // a lista aparece vazia pra todos os perfis.
-        const { data, error: fetchError } = await supabase
-          .from('companies')
-          .select('whatsapp_ai_phone')
-          .eq('id', profile.company_id)
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        const raw = (data as any)?.whatsapp_ai_phone;
-        if (raw) {
-          // Remover tudo que não for número
-          const cleanPhone = String(raw).replace(/\D/g, '');
-          setCompanyPhone(cleanPhone || null);
-        } else {
-          setCompanyPhone(null);
-        }
-      } catch (err) {
-        console.error('Erro ao buscar whatsapp_ai_phone da empresa:', err);
-        setCompanyPhone(null);
-      }
-    };
-
-    fetchCompanyPhone();
-  }, [profile?.company_id]);
-
-  useEffect(() => {
-    fetchConversas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedInstance, isManager, (profile as any)?.chat_instance, companyPhone]);
-
-  const fetchConversas = async () => {
+  const fetchConversas = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // 0) Verificar se temos o telefone da empresa
-      if (!companyPhone) {
+      if (!profile?.company_id) {
         setConversas([]);
-        setLoading(false);
         return;
       }
 
-      // 1) Escopo: se corretor, forçar instância do perfil
       let effectiveInstance = scopedInstance;
       if (!isManager) {
-        const inst = (profile as any)?.chat_instance;
+        const inst = (profile as { chat_instance?: string })?.chat_instance;
         effectiveInstance = inst ? String(inst).trim().toLowerCase() : null;
       }
 
-      // Se temos companyPhone (tabela dinâmica), permitimos effectiveInstance ser null (busca tudo)
-      // Se NÃO temos companyPhone (legacy), precisamos de instância
-      if (!companyPhone && !effectiveInstance) {
-        setConversas([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2) Buscar mensagens da tabela dinâmica usando função RPC
-      const { data: rows, error: fetchError } = await (supabase.rpc as any)('list_conversations_by_phone', {
-        p_phone: companyPhone,
-        p_instancia: effectiveInstance || null, // Passar null explicitamente se não tiver instância selecionada
-      });
+      const { data: rows, error: fetchError } = await (supabase.rpc as any)(
+        'list_mensagens_whatsapp_conversations',
+        {
+        p_company_id: profile.company_id,
+        p_plataforma: PLATAFORMA_WHATSAPP,
+          p_instancia: effectiveInstance || null,
+        },
+      );
 
       if (fetchError) throw fetchError;
 
-      // 3) Processar resultados (já vem agrupado pela função RPC - última mensagem por session_id)
-      const list: Conversa[] = ((rows as any[]) || []).map((r: any) => {
-        const sid = String(r.session_id);
-
-        // preview/mídia
-        let parsedMessage: any = r.message;
-        if (typeof parsedMessage === 'string') {
-          try { parsedMessage = JSON.parse(parsedMessage); } catch { parsedMessage = { content: parsedMessage, type: 'human' }; }
-        }
-        // Extrair conteúdo limpo (remove prefixos como "[MENSAGEM DE TEXTO ENVIADA]: ()")
-        const rawContent = String(parsedMessage?.content || '');
-        const cleanContent = extractMessageContent(rawContent);
-        // Texto curto antes do conteúdo quando houver mídia. Sem emoji — usa
-        // detector que cobre URL, JSON stringificado e base64 (ver
-        // src/lib/conversaMedia.ts). Antes mostrava "🎧" pra qualquer mídia
-        // que não fosse base64 puro de JPEG/PNG, daí o bug visual reportado.
-        const mediaPrefix = mediaPreviewPrefix(r.media);
-        const lastContent = `${mediaPrefix}${cleanContent}`.trim();
-        const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
-
-        const fromRpc = String((r as any).lead_display_name ?? '').trim();
+      const list: Conversa[] = ((rows as Record<string, unknown>[]) || []).map((r) => {
+        const phoneNorm =
+          normalizePhoneDigits(String(r.phone_norm ?? r.phone ?? '')) ||
+          String(r.phone ?? '').trim();
+        const lastText = String(r.last_text ?? '').trim();
+        const preview = resolveConversationListPreview({
+          text: lastText,
+          media: r.last_media,
+          mensageType: r.last_mensage_type,
+        });
+        const lastContent = preview.text;
+        const leadName = String(r.lead_name ?? '').trim();
+        const leadPhone = r.lead_phone != null ? String(r.lead_phone).trim() : phoneNorm;
+        const leadId = r.lead_id != null ? String(r.lead_id) : null;
+        const crmStage =
+          r.lead_stage != null && String(r.lead_stage).trim() !== ''
+            ? String(r.lead_stage).trim()
+            : null;
 
         return {
-          sessionId: sid,
-          instancia: String(r.instancia || effectiveInstance),
-          displayName: fromRpc,
-          leadPhone: null,
+          sessionId: phoneNorm,
+          instancia: String(r.instancia ?? effectiveInstance ?? ''),
+          displayName: leadName || conversaFallbackLabel(phoneNorm),
+          leadPhone,
+          leadId,
           leadStage: null,
-          crmStage: null,
-          hasCrmLead: false,
-          lastMessageDate: String(r.data),
-          messageCount: 1, // A função RPC retorna apenas a última mensagem, então count = 1
-          lastMessageContent: lastContent,
-          lastMessageType: lastType,
+          crmStage,
+          hasCrmLead: Boolean(leadId),
+          lastMessageDate: String(r.last_message_at ?? new Date().toISOString()),
+          messageCount: 1,
+          lastMessageContent: lastContent || '…',
+          lastMessagePreviewKind: preview.kind,
+          lastMessageType: mensagemWhatsappPreviewType(r.last_sender_type),
         };
       });
 
-      // 4) Complementar com leads visíveis ao usuário (RLS); RPC filtra corretor por id_corretor_responsavel
-      let leadRows: Array<{ id: string; name?: string | null; phone?: string | null; stage?: string | null }> = [];
-      if (list.length > 0) {
-        const sids = list.map(l => l.sessionId);
-        const { data: fetchedLeads } = await supabase
-          .from('leads')
-          .select('id, name, phone, stage')
-          .in('id', sids as any);
-        leadRows = (fetchedLeads || []) as typeof leadRows;
-        const leadMap = new Map<string, string>();
-        const crmStageById = new Map<string, string | null>();
-        leadRows.forEach((lr: any) => {
-          if (!lr?.id) return;
-          const id = String(lr.id);
-          crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
-          const nm = lr.name != null ? String(lr.name).trim() : '';
-          const ph = lr.phone != null ? String(lr.phone).trim() : '';
-          const label = nm || ph;
-          if (label) leadMap.set(id, label);
-        });
-
-        list.forEach(item => {
-          const nm = leadMap.get(item.sessionId);
-          if (nm) item.displayName = nm;
-          else if (!item.displayName) item.displayName = conversaFallbackLabel(item.sessionId);
-          if (crmStageById.has(item.sessionId)) {
-            item.hasCrmLead = true;
-            item.crmStage = crmStageById.get(item.sessionId) ?? null;
-          }
-        });
-      }
+      const leadRows = list
+        .filter((c) => c.leadId)
+        .map((c) => ({ id: c.leadId as string }));
 
       const scopedList = filterConversasByLeadAssignment(list, profile?.role, leadRows);
 
-      // 5) Ordenação por última mensagem desc
-      if (scopedList.length > 0 && profile?.company_id) {
+      if (scopedList.length > 0 && profile.company_id) {
         try {
           const { data: labels } = await supabase
             .from('conversation_contact_labels')
             .select('session_id, status')
             .eq('company_id', profile.company_id)
             .eq('channel', 'whatsapp')
-            .in('session_id', scopedList.map((l) => l.sessionId) as any);
+            .in('session_id', scopedList.map((l) => l.sessionId) as string[]);
 
           const statusBySession = new Map<string, string>();
-          (labels || []).forEach((row: any) => {
+          (labels || []).forEach((row: { session_id?: string; status?: string }) => {
             if (!row?.session_id) return;
             statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
           });
@@ -214,13 +135,19 @@ export function useConversasList(selectedInstance?: string | null) {
             item.leadStage = conversationLabelStatusToDisplay(st);
           });
         } catch {
-          scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+          scopedList.forEach((item) => {
+            item.leadStage = 'AI ATIVA';
+          });
         }
       } else {
-        scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        scopedList.forEach((item) => {
+          item.leadStage = 'AI ATIVA';
+        });
       }
 
-      scopedList.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
+      scopedList.sort(
+        (a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime(),
+      );
 
       setConversas(scopedList);
     } catch (err) {
@@ -229,57 +156,50 @@ export function useConversasList(selectedInstance?: string | null) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile?.company_id, profile?.role, scopedInstance, isManager, profile]);
+
+  useEffect(() => {
+    void fetchConversas();
+  }, [fetchConversas]);
 
   const updateConversation = (sessionId: string) => {
-    // Mover conversa para o topo e atualizar dados
-    setConversas(prev => {
+    setConversas((prev) => {
       const updated = [...prev];
-      const index = updated.findIndex(c => c.sessionId === sessionId);
-
+      const index = updated.findIndex((c) => c.sessionId === sessionId);
       if (index > 0) {
-        // Mover para o topo
         const conversation = updated.splice(index, 1)[0];
         updated.unshift(conversation);
       }
-
       return updated;
     });
-
-    // Refetch para obter dados atualizados
-    fetchConversas();
+    void fetchConversas();
   };
 
-  // Polling a cada 2 segundos para atualização automática da lista
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
+
   useEffect(() => {
-    // Limpar polling anterior
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    
-    // Iniciar polling se tiver telefone da empresa configurado
-    if (companyPhone) {
+    if (profile?.company_id) {
       pollingRef.current = setInterval(() => {
-        fetchConversas();
-      }, 2000); // 2 segundos
+        void fetchConversas();
+      }, 3000);
     }
-    
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [companyPhone]); // Re-executar quando o telefone mudar
+  }, [profile?.company_id, fetchConversas]);
 
   return {
     conversas,
     loading,
     error,
     refetch: fetchConversas,
-    updateConversation
+    updateConversation,
   };
 }

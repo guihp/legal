@@ -21,3 +21,10 @@ entrypoint = "./functions/capture-public-lead/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/company-leads-api/index.ts"
+
+# n8n envia multipart + service_role; gateway valida JWT, função aceita role service_role.
+[functions.mensagem-media-ingest]
+verify_jwt = true
+
+[functions.mensagem-ingest]
+verify_jwt = false

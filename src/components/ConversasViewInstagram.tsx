@@ -4,6 +4,7 @@ import {
   MessageCircle, MessageSquare, Search, Send, Paperclip, ArrowLeft,
   MoreVertical, Mic, Plus, AlertCircle, Instagram, Image as ImageIcon, ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -22,13 +23,28 @@ import { useInstagramInstances } from '@/hooks/useInstagramInstances';
 import { useInstagramConversasList } from '@/hooks/useInstagramConversasList';
 import { useInstagramMessages } from '@/hooks/useInstagramMessages';
 import { useInstagramSendMessage } from '@/hooks/useInstagramSendMessage';
+import { useConversasUnread } from '@/hooks/useConversasUnread';
+import { useMensagensNotifications } from '@/hooks/useMensagensNotifications';
+import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  playInstagramChatNotificationSound,
+  unlockChatNotificationSound,
+} from '@/lib/chatNotificationSound';
+import { shouldTrackUnreadForInstagramRow } from '@/lib/conversaUnread';
+import { normInstagramSessionId } from '@/lib/mensagensRow';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
 import { ConversationActionsMenu } from '@/components/ConversationActionsMenu';
 import { SummaryModalAnimated } from '@/components/SummaryModalAnimated';
-import { CRM_KANBAN_STAGE_TITLES, crmStageBadgeClasses } from '@/lib/crmKanbanStages';
-import { conversationLabelListBadgeClasses } from '@/lib/conversationContactLabels';
+import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
+import { ChatImageGrid } from '@/components/ChatImageGrid';
+import { ChatAudioPlayer } from '@/components/ChatAudioPlayer';
+import { ConversationListItem } from '@/components/chat/ConversationListItem';
+import { extractMediaAudio } from '@/lib/conversaMedia';
+import { processTextWithBold } from '@/lib/formatChatMessageText';
+import { groupChatMessagesForDisplay } from '@/lib/groupChatImageMessages';
+import type { ConversaMessage } from '@/hooks/useConversaMessages';
 
 /* ---------- utils ---------- */
 
@@ -150,21 +166,19 @@ function InstagramMessageBubble({
   highlightQuery,
   onOpenMedia,
 }: {
-  row: any;
+  row: ConversaMessage;
   highlightQuery?: string;
   onOpenMedia?: (images: string[], startIndex: number) => void;
 }) {
   const msgType = row.message?.type;
   const isAI = String(msgType || '').toLowerCase() === 'ai';
-  const content = row.message?.content ?? '';
-  const mediaImages: string[] = row?.mediaImages || [];
+  const content = String(row.message?.content ?? '');
+  const mediaImages = row.mediaImages ?? [];
   const hq = highlightQuery?.trim();
-  const hasImages = mediaImages.length > 0;
-  const hasText = Boolean(content);
 
   const textBody =
     content && hq ? (
-      <div className="whitespace-pre-wrap text-sm break-words">
+      <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
         {content.split(new RegExp(`(${escapeRegExp(hq)})`, 'gi')).map((part, i) =>
           part.toLowerCase() === hq.toLowerCase() ? (
             <mark key={i} className="rounded bg-yellow-400/35 px-0.5">
@@ -172,57 +186,77 @@ function InstagramMessageBubble({
             </mark>
           ) : (
             <span key={i}>{part}</span>
-          )
+          ),
         )}
       </div>
     ) : content ? (
-      <div className="whitespace-pre-wrap text-sm break-words">{content}</div>
+      <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+        {processTextWithBold(content)}
+      </div>
     ) : null;
+
+  if (mediaImages.length > 0) {
+    const hasCaption = Boolean(content.trim());
+    return (
+      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
+        <div
+          className={
+            isAI
+              ? `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tr-sm overflow-hidden bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
+              : `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tl-sm overflow-hidden bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
+          }
+        >
+          <ChatImageGrid
+            images={mediaImages}
+            onImageClick={(idx) => onOpenMedia?.(mediaImages, idx)}
+          />
+          {hasCaption ? <div className="px-1.5 pt-1.5 pb-0.5">{textBody}</div> : null}
+          <div
+            className={`text-[10px] text-right px-2 pb-1 pt-0.5 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
+          >
+            {formatHour(row.data)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const audioUrl = extractMediaAudio(row.media);
+  if (audioUrl) {
+    return (
+      <div className={isAI ? 'self-end' : 'self-start'}>
+        <div
+          className={
+            isAI
+              ? 'max-w-[min(100%,330px)] rounded-2xl rounded-tr-sm bg-[var(--cv-bubble-out)] px-3 py-2.5 text-[var(--cv-bubble-out-text)] shadow-sm'
+              : 'max-w-[min(100%,330px)] rounded-2xl rounded-tl-sm bg-[var(--cv-bubble-in)] px-3 py-2.5 text-[var(--cv-bubble-in-text)] shadow-sm'
+          }
+        >
+          <ChatAudioPlayer src={audioUrl} variant={isAI ? 'outgoing' : 'incoming'} />
+          {content ? <div className="mt-2 pt-2 border-t border-white/10">{textBody}</div> : null}
+          <div
+            className={`text-[10px] text-right mt-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
+          >
+            {formatHour(row.data)}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={isAI ? 'self-end' : 'self-start'}>
       <div
         className={
           isAI
-            ? `w-fit max-w-[min(82vw,34rem)] rounded-2xl shadow-sm rounded-tr-sm bg-gradient-to-br from-[#d62976]/20 to-[#962fbf]/20 text-[var(--cv-text)] border border-[#d62976]/20 ${
-                hasImages ? 'p-1.5' : 'px-3 py-2'
-              }`
-            : `w-fit max-w-[min(82vw,34rem)] rounded-2xl shadow-sm rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${
-                hasImages ? 'p-1.5' : 'px-3 py-2'
-              }`
+            ? 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tr-none bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+            : 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tl-none bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'
         }
       >
-        {hasImages && (
-          <div
-            className={`grid gap-1 overflow-hidden rounded-xl ${!hasText ? '' : 'mb-2'} ${
-              mediaImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-            }`}
-          >
-            {mediaImages.slice(0, 4).map((url, i) => (
-              <div
-                key={i}
-                className={`relative bg-black/10 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity ${
-                  mediaImages.length === 3 && i === 0 ? 'col-span-2' : ''
-                } ${mediaImages.length === 1 ? 'max-h-[420px]' : 'aspect-square'}`}
-                onClick={() => onOpenMedia?.(mediaImages, i)}
-              >
-                <img
-                  src={url}
-                  alt="Mídia IG"
-                  loading="lazy"
-                  className={`w-full h-full ${mediaImages.length === 1 ? 'object-contain' : 'object-cover'}`}
-                />
-                {mediaImages.length > 4 && i === 3 && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                    <span className="text-white text-lg font-semibold">+{mediaImages.length - 4}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
         {textBody}
-        <div className={`text-[10px] opacity-60 text-right ${hasText ? 'mt-1' : 'mt-1 pr-1 pb-0.5'}`}>
+        <div
+          className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
+        >
           {formatHour(row.data)}
         </div>
       </div>
@@ -281,15 +315,85 @@ export function ConversasViewInstagram() {
     companyInstagramId,
     hasLegacyInstagramMessaging,
   } = useInstagramInstances();
-  const { conversas, loading: loadingConversas, refetch: refetchConversas } = useInstagramConversasList(
-    selectedInstance || scopedInstance,
-    companyInstagramId
-  );
+  const {
+    conversas,
+    loading: loadingConversas,
+    error: conversasError,
+    refetch: refetchConversas,
+    updateConversation,
+  } = useInstagramConversasList(selectedInstance || scopedInstance, companyInstagramId);
   const { messages, loading: loadingMessages, refetch: refetchMessages } = useInstagramMessages(
     companyInstagramId,
     selectedConversation
   );
   const { sendPayload, sending } = useInstagramSendMessage();
+
+  const conversasRef = useRef(conversas);
+  conversasRef.current = conversas;
+
+  const { getUnreadCount, handleRealtimeMessage, markOpened } = useConversasUnread(
+    selectedConversation,
+    (sessionId) =>
+      conversasRef.current.find((c) => c.sessionId === normInstagramSessionId(sessionId))?.leadStage,
+    conversas,
+    {
+      normSessionId: normInstagramSessionId,
+      playNotificationSound: playInstagramChatNotificationSound,
+      shouldTrackUnreadForRow: shouldTrackUnreadForInstagramRow,
+    },
+  );
+
+  useEffect(() => {
+    const unlock = () => unlockChatNotificationSound();
+    const opts = { capture: true } as const;
+    document.addEventListener('pointerdown', unlock, opts);
+    document.addEventListener('keydown', unlock, opts);
+    return () => {
+      document.removeEventListener('pointerdown', unlock, opts);
+      document.removeEventListener('keydown', unlock, opts);
+    };
+  }, []);
+
+  const isActiveSession = useCallback(
+    (sessionId: string) =>
+      normInstagramSessionId(sessionId) === normInstagramSessionId(selectedConversation),
+    [selectedConversation],
+  );
+
+  useMensagensNotifications(
+    profile?.company_id,
+    {
+      onIncoming: (sessionId, message) => {
+        handleRealtimeMessage(sessionId, message);
+        updateConversation(sessionId);
+        if (isActiveSession(sessionId)) {
+          void refetchMessages();
+        }
+      },
+      onOutgoing: (sessionId, message) => {
+        handleRealtimeMessage(sessionId, message);
+        updateConversation(sessionId);
+        if (isActiveSession(sessionId)) {
+          void refetchMessages();
+        }
+      },
+    },
+    { platform: 'instagram' },
+  );
+
+  useConversasRealtime({
+    onInstanceUpdate: refreshInstances,
+    onConversationUpdate: (sessionId) => {
+      updateConversation(sessionId);
+    },
+    onMessageDelete: (sessionId) => {
+      if (isActiveSession(sessionId)) {
+        void refetchMessages();
+      }
+      refetchConversas();
+      refreshInstances();
+    },
+  });
 
   useEffect(() => {
     if (!profile?.company_id) {
@@ -350,6 +454,11 @@ export function ConversasViewInstagram() {
     });
   }, [conversas, searchQuery]);
 
+  const displayChatItems = useMemo(
+    () => groupChatMessagesForDisplay(messages),
+    [messages],
+  );
+
   const setConversationLabel = useCallback(async (sessionId: string, status: 'ai_ativa' | 'humano' | 'humano_solicitado') => {
     if (!profile?.company_id) return;
     const { error } = await supabase
@@ -368,8 +477,10 @@ export function ConversasViewInstagram() {
     refetchConversas();
   }, [profile?.company_id, profile?.id, refetchConversas]);
 
-  const setConversationCrmStage = useCallback(async (sessionId: string, stage: LeadStage) => {
-    const { error } = await supabase.from('leads').update({ stage }).eq('id', sessionId);
+  const setConversationCrmStage = useCallback(async (leadId: string | null | undefined, stage: LeadStage) => {
+    const id = leadId?.trim();
+    if (!id) throw new Error('Lead não vinculado ao CRM para esta conversa');
+    const { error } = await supabase.from('leads').update({ stage }).eq('id', id);
     if (error) throw error;
     refetchConversas();
   }, [refetchConversas]);
@@ -839,7 +950,9 @@ export function ConversasViewInstagram() {
   return (
     <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR */}
-      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] z-20`}>
+      <div
+        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0`}
+      >
         {/* HEADER */}
         <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -922,6 +1035,11 @@ export function ConversasViewInstagram() {
                 <div key={i} className="h-16 rounded-2xl bg-[var(--cv-panel-muted)]/60 animate-pulse" />
               ))}
             </div>
+          ) : conversasError ? (
+            <div className="p-4 text-center text-sm text-destructive">
+              <AlertCircle className="w-5 h-5 mx-auto mb-2" />
+              Erro ao carregar conversas. Recarregue a página.
+            </div>
           ) : filteredConversas.length === 0 ? (
             <div className="p-4 text-center text-[var(--cv-text-muted)] text-sm">
               Nenhuma conversa encontrada.
@@ -930,57 +1048,41 @@ export function ConversasViewInstagram() {
             filteredConversas.map(conv => (
               <ContextMenu key={conv.sessionId}>
                 <ContextMenuTrigger asChild>
-                  <div
+                  <ConversationListItem
+                    variant="instagram"
+                    selected={selectedConversation === conv.sessionId}
                     onClick={() => {
                       setSelectedConversation(conv.sessionId);
+                      markOpened(conv.sessionId, conv.leadStage);
                     }}
-                    className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--cv-hover)] transition-colors border-b border-[var(--cv-border)] ${
-                      selectedConversation === conv.sessionId ? 'bg-[var(--cv-panel-muted)]' : ''
-                    }`}
-                  >
-                <div
-                  className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden p-[2px]"
-                  style={{ background: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)' }}
-                >
-                  <LeadInstagramAvatar
-                    className="h-full w-full bg-white"
-                    leadId={conv.sessionId}
+                    unreadCount={getUnreadCount(conv.sessionId)}
                     displayName={conv.displayName}
-                    profilePicUrlInstagram={conv.profilePicUrlInstagram}
-                    lastProfileSyncInstagram={conv.lastProfileSyncInstagram}
-                    instagramIdCliente={conv.instagramIdCliente}
-                    companyTokenInstagram={companyTokenInstagram}
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0 max-w-[78%] flex-wrap">
-                      <h3 className="text-[var(--cv-text)] font-normal truncate text-base max-w-full">
-                        {conv.displayName}
-                      </h3>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${conversationLabelListBadgeClasses(conv.leadStage)}`}
+                    leadStage={conv.leadStage}
+                    crmStage={conv.crmStage}
+                    hasCrmLead={conv.hasCrmLead}
+                    timeLabel={conv.lastMessageDate ? formatHour(conv.lastMessageDate) : undefined}
+                    previewKind={conv.lastMessagePreviewKind}
+                    previewText={conv.lastMessageContent}
+                    avatar={
+                      <div
+                        className="h-full w-full p-[2px] rounded-full"
+                        style={{
+                          background:
+                            'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)',
+                        }}
                       >
-                        {conv.leadStage || 'AI ATIVA'}
-                      </span>
-                      {conv.hasCrmLead ? (
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${crmStageBadgeClasses(conv.crmStage || '')}`}
-                          title="Estágio no CRM (Kanban)"
-                        >
-                          {conv.crmStage?.trim() || 'CRM'}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="text-xs text-[var(--cv-text-muted)] whitespace-nowrap">
-                      {conv.lastMessageDate ? formatHour(conv.lastMessageDate) : ''}
-                    </span>
-                  </div>
-                  <p className="text-[var(--cv-text-muted)] text-sm truncate">
-                    {conv.lastMessageContent || 'Toque para abrir conversa'}
-                  </p>
-                </div>
-                  </div>
+                        <LeadInstagramAvatar
+                          className="h-full w-full bg-[var(--cv-panel)]"
+                          leadId={conv.leadId ?? conv.sessionId}
+                          displayName={conv.displayName}
+                          profilePicUrlInstagram={conv.profilePicUrlInstagram}
+                          lastProfileSyncInstagram={conv.lastProfileSyncInstagram}
+                          instagramIdCliente={conv.instagramIdCliente}
+                          companyTokenInstagram={companyTokenInstagram}
+                        />
+                      </div>
+                    }
+                  />
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-52">
                   <ContextMenuItem
@@ -1032,7 +1134,7 @@ export function ConversasViewInstagram() {
                           key={title}
                           onClick={async () => {
                             try {
-                              await setConversationCrmStage(conv.sessionId, title);
+                              await setConversationCrmStage(conv.leadId, title);
                               toast({ title: 'Estágio do lead atualizado', description: title });
                             } catch (e: any) {
                               toast({
@@ -1061,7 +1163,7 @@ export function ConversasViewInstagram() {
       </div>
 
       {/* MAIN CHAT AREA */}
-      <div className={`${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-[var(--cv-chat)] relative w-full h-full`}>
+      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full`}>
         {hasNoAccounts ? (
           <InstagramEmptyState
             onRefresh={refreshInstances}
@@ -1069,7 +1171,7 @@ export function ConversasViewInstagram() {
             showConnectCta={!hasLegacyInstagramMessaging}
           />
         ) : !selectedConversation ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] bg-[var(--cv-empty)]"
+          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px]"
                style={{ borderColor: '#d62976' }}>
             <div className="max-w-[560px]">
               <div
@@ -1106,7 +1208,7 @@ export function ConversasViewInstagram() {
                   {headerConversation ? (
                     <LeadInstagramAvatar
                       className="h-full w-full bg-white"
-                      leadId={headerConversation.sessionId}
+                      leadId={headerConversation.leadId ?? headerConversation.sessionId}
                       displayName={headerConversation.displayName}
                       profilePicUrlInstagram={headerConversation.profilePicUrlInstagram}
                       lastProfileSyncInstagram={headerConversation.lastProfileSyncInstagram}
@@ -1155,7 +1257,7 @@ export function ConversasViewInstagram() {
             {/* MESSAGES */}
             <div
               ref={messagesScrollRef}
-              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar bg-[var(--cv-chat)] bg-opacity-95"
+              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar"
             >
               <div className="space-y-2 pb-2">
                 {loadingMessages ? (
@@ -1167,7 +1269,36 @@ export function ConversasViewInstagram() {
                     Sem mensagens ainda. Inicie a conversa.
                   </div>
                 ) : (
-                  messages.map((row: any) => {
+                  displayChatItems.map((item) => {
+                    if (item.kind === 'image_album') {
+                      const isMe = item.isAI;
+                      const isHit = item.rows.some((r) => chatSearchHighlightId === String(r.id));
+                      const albumRow: ConversaMessage = {
+                        ...item.rows[0],
+                        id: item.id,
+                        mediaImages: item.images,
+                        message: { ...item.rows[0].message, content: item.caption },
+                        data: item.data,
+                      };
+                      return (
+                        <motion.div
+                          key={item.id}
+                          data-chat-message-id={item.rows[0].id}
+                          variants={bubble}
+                          initial="hidden"
+                          animate="visible"
+                          className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
+                        >
+                          <InstagramMessageBubble
+                            row={albumRow}
+                            highlightQuery={inChatSearchQuery}
+                            onOpenMedia={openMediaViewer}
+                          />
+                        </motion.div>
+                      );
+                    }
+
+                    const row = item.row;
                     const msgType = row.message?.type;
                     const isMe = msgType === 'ai' || msgType === 'assistant';
                     const isHit = chatSearchHighlightId === String(row.id);

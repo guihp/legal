@@ -2,36 +2,30 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useUserProfile } from './useUserProfile';
-import { extractLabeledMessageSegments, extractMessageContent, extractMediaImages, type ConversaMessage } from './useConversaMessages';
-import { instagramLegacyMessagesTableName } from '@/lib/companyInstagramTable';
+import { type ConversaMessage } from './useConversaMessages';
+import { mapMensagemRow, PLATAFORMA_INSTAGRAM } from '@/lib/mensagensRow';
+
+const REALTIME_TABLE = 'mensagens';
 
 /**
- * Mensagens da conversa Instagram ativa (`activeSessionId`).
- * Polling e realtime não alternam `loading` (evita piscar). Troca de sessão limpa canal e intervalo.
+ * Thread Instagram via `public.mensagens` (plataforma Instagram).
+ * `activeSessionId` = `contact_norm` (instagram_id_cliente em minúsculas).
  */
 export function useInstagramMessages(
-  companyInstagramId?: string | null,
-  activeSessionId?: string | null
+  _companyInstagramId?: string | null,
+  activeSessionId?: string | null,
 ) {
   const [messages, setMessages] = useState<ConversaMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { profile } = useUserProfile();
 
-  /** Evita aplicar resposta de fetch após o usuário já ter trocado de conversa. */
   const latestSessionRef = useRef<string | null>(null);
-  latestSessionRef.current = activeSessionId?.trim() ?? null;
+  latestSessionRef.current = activeSessionId?.trim().toLowerCase() ?? null;
 
   const rtChannelRef = useRef<RealtimeChannel | null>(null);
   const rtDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /**
-   * Defesa contra duplicação no n8n: às vezes o flow pai dispara o
-   * sub-workflow `evo_saida_b` 2x, e a tabela `imobipro_messages_*_instagram`
-   * recebe 2 inserts idênticos (mesmo type + content + data). A RPC do IG
-   * não tem dedup interno, então filtramos aqui no client. Critério: mesmo
-   * type + content + timestamp exato (ms) → considera duplicata.
-   */
   const dedupeRows = useCallback((rows: ConversaMessage[]): ConversaMessage[] => {
     const seen = new Set<string>();
     const out: ConversaMessage[] = [];
@@ -44,76 +38,47 @@ export function useInstagramMessages(
     return out;
   }, []);
 
-  const mapRows = useCallback((data: any[]): ConversaMessage[] => {
-    return (data || []).map((row: any) => {
-      let parsedMessage: any;
-      if (typeof row.message === 'string') {
-        try { parsedMessage = JSON.parse(row.message); } catch { parsedMessage = { type: 'human', content: row.message }; }
-      } else {
-        parsedMessage = row.message;
-      }
-      const rawContent = parsedMessage?.content || '';
-      const cleanContent = extractMessageContent(rawContent);
-      const contentSegments = extractLabeledMessageSegments(rawContent);
-      const mediaImages = extractMediaImages(row.media);
-
-      return {
-        id: String(row.id),
-        sessionId: row.session_id,
-        instancia: row.instancia || '(sem instância)',
-        message: {
-          type: parsedMessage?.type || 'human',
-          content: cleanContent,
-          contentSegments: contentSegments.length > 1 ? contentSegments : undefined,
-          additional_kwargs: parsedMessage?.additional_kwargs,
-          response_metadata: parsedMessage?.response_metadata,
-          tool_calls: parsedMessage?.tool_calls,
-          invalid_tool_calls: parsedMessage?.invalid_tool_calls,
-        },
-        data: row.data,
-        media: row.media ?? null,
-        mediaImages,
-        before_handoff: Boolean(row.before_handoff),
-        handoff_ts: row.handoff_ts != null ? String(row.handoff_ts) : null,
-      } as ConversaMessage;
-    });
-  }, []);
-
   const fetchConversation = useCallback(
     async (sessionId: string, opts?: { background?: boolean }) => {
       if (!profile?.company_id) return;
       const background = opts?.background === true;
+      const sid = sessionId.trim().toLowerCase();
+      if (!sid) return;
+
       try {
         if (!background) setLoading(true);
         setError(null);
 
-        const useLegacy = Boolean(companyInstagramId?.trim());
-        const { data, error: rpcErr } = useLegacy
-          ? await (supabase.rpc as any)('conversation_for_session_instagram_legacy', {
-              p_company_id: profile.company_id,
-              p_session_id: sessionId,
-              p_limit: 500,
-              p_offset: 0,
-            })
-          : await (supabase.rpc as any)('instagram_conversation_for_session', {
-              p_company_id: profile.company_id,
-              p_session_id: sessionId,
-              p_limit: 500,
-              p_offset: 0,
-            });
+        const { data, error: rpcErr } = await (supabase.rpc as any)('mensagens_thread', {
+          p_company_id: profile.company_id,
+          p_phone: sid,
+          p_plataforma: PLATAFORMA_INSTAGRAM,
+          p_limit: 500,
+          p_offset: 0,
+        });
 
         if (rpcErr) throw rpcErr;
 
-        if (latestSessionRef.current !== sessionId) return;
-        setMessages(dedupeRows(mapRows(data ?? [])));
-      } catch (e: any) {
-        console.error('[useInstagramMessages] erro:', e);
-        setError(e?.message ?? 'Erro ao carregar conversa');
+        if (latestSessionRef.current !== sid) return;
+
+        const mapped = (data ?? []).map((row: Record<string, unknown>) =>
+          mapMensagemRow({
+            ...(row as object),
+            plataforma: PLATAFORMA_INSTAGRAM,
+            created_at: String(row.created_at ?? ''),
+          } as Parameters<typeof mapMensagemRow>[0]),
+        );
+
+        setMessages(dedupeRows(mapped));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Erro ao carregar conversa';
+        console.error('[useInstagramMessages]', msg);
+        setError(msg);
       } finally {
         if (!background) setLoading(false);
       }
     },
-    [mapRows, profile?.company_id, companyInstagramId]
+    [dedupeRows, profile?.company_id],
   );
 
   const detachRealtime = useCallback(() => {
@@ -125,16 +90,18 @@ export function useInstagramMessages(
       const ch = rtChannelRef.current;
       rtChannelRef.current = null;
       if (ch) {
-        (ch as any).unsubscribe?.();
-        (supabase as any).removeChannel?.(ch);
+        (ch as { unsubscribe?: () => void }).unsubscribe?.();
+        (supabase as { removeChannel?: (c: RealtimeChannel) => void }).removeChannel?.(ch);
       }
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
   }, []);
 
   useEffect(() => {
     detachRealtime();
 
-    const sid = activeSessionId?.trim();
+    const sid = activeSessionId?.trim().toLowerCase();
     if (!sid || !profile?.company_id) {
       setMessages([]);
       setLoading(false);
@@ -145,30 +112,35 @@ export function useInstagramMessages(
     let poll: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
-    void (async () => {
-      await fetchConversation(sid, { background: false });
-    })();
+    void fetchConversation(sid, { background: false });
 
-    const legacyTable = instagramLegacyMessagesTableName(companyInstagramId);
-    const table = legacyTable || 'crm_instagram_messages';
-
+    const companyId = profile.company_id;
     const channel = supabase
-      .channel(`crm_ig_msgs_${sid}_${Date.now()}`)
+      .channel(`mensagens_ig_${sid}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table,
-          filter: `session_id=eq.${sid}`,
-        } as any,
-        () => {
+          table: REALTIME_TABLE,
+          filter: `company_id=eq.${companyId}`,
+        },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Record<string, unknown> | undefined;
+          if (!row) return;
+          const plat = String(row.plataforma ?? '').trim().toLowerCase();
+          if (plat !== 'instagram') return;
+          const norm = String(row.contact_norm ?? row.phone ?? '')
+            .trim()
+            .toLowerCase();
+          if (norm !== sid) return;
+
           if (rtDebounceRef.current) clearTimeout(rtDebounceRef.current);
           rtDebounceRef.current = setTimeout(() => {
             rtDebounceRef.current = null;
             if (!cancelled) void fetchConversation(sid, { background: true });
           }, 350);
-        }
+        },
       )
       .subscribe();
 
@@ -180,26 +152,17 @@ export function useInstagramMessages(
 
     return () => {
       cancelled = true;
-      if (poll) {
-        clearInterval(poll);
-        poll = null;
-      }
+      if (poll) clearInterval(poll);
       if (rtDebounceRef.current) {
         clearTimeout(rtDebounceRef.current);
         rtDebounceRef.current = null;
       }
-      try {
-        (channel as any).unsubscribe?.();
-        (supabase as any).removeChannel?.(channel);
-      } catch { /* empty */ }
-      if (rtChannelRef.current === (channel as unknown as RealtimeChannel)) {
-        rtChannelRef.current = null;
-      }
+      detachRealtime();
     };
-  }, [activeSessionId, profile?.company_id, companyInstagramId, fetchConversation, detachRealtime]);
+  }, [activeSessionId, profile?.company_id, fetchConversation, detachRealtime]);
 
   const refetch = useCallback(() => {
-    const sid = activeSessionId?.trim();
+    const sid = activeSessionId?.trim().toLowerCase();
     if (sid) void fetchConversation(sid, { background: true });
   }, [fetchConversation, activeSessionId]);
 

@@ -20,8 +20,10 @@ import {
   Zap,
   Clock,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  User,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -41,23 +43,54 @@ import {
   ContextMenuSubTrigger,
 } from '@/components/ui/context-menu';
 import { useChatInstancesFromMessages } from '@/hooks/useChatInstancesFromMessages';
-import { mediaPreviewLabel, inferMediaKind, extractMediaAudio } from '@/lib/conversaMedia';
-import { CRM_KANBAN_STAGE_TITLES, crmStageBadgeClasses } from '@/lib/crmKanbanStages';
-import { conversationLabelListBadgeClasses } from '@/lib/conversationContactLabels';
+import {
+  mediaPreviewLabel,
+  inferMediaKind,
+  extractMediaAudio,
+  resolveConversationListPreview,
+  type ConversationPreviewKind,
+} from '@/lib/conversaMedia';
+import { processTextWithBold } from '@/lib/formatChatMessageText';
+import { ConversationListItem } from '@/components/chat/ConversationListItem';
+import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
 import { useConversasList } from '@/hooks/useConversasList';
-import { useConversaMessages, mapRowToConversaMessage } from '@/hooks/useConversaMessages';
+import { useConversaMessages } from '@/hooks/useConversaMessages';
+import { mapMensagemWhatsappRow } from '@/lib/mensagensWhatsapp';
+import { ChatAudioPlayer } from '@/components/ChatAudioPlayer';
+import { ChatImageGrid } from '@/components/ChatImageGrid';
+import { groupChatMessagesForDisplay } from '@/lib/groupChatImageMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
+import { useConversasUnread } from '@/hooks/useConversasUnread';
+import { useMensagensNotifications } from '@/hooks/useMensagensNotifications';
+import { normalizePhoneDigits } from '@/lib/normalizePhone';
+import { unlockChatNotificationSound } from '@/lib/chatNotificationSound';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { LeadDetailsModal } from './LeadDetailsModal';
+import { LeadViewModal } from './LeadViewModal';
 import { useChatTemplates } from '@/hooks/useChatTemplates';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
+
+/** Chave da conversa em Mensagens_Whatsapp (telefone só dígitos). */
+function conversationPhoneKey(
+  selectedLead: { phone?: string } | null,
+  selectedConversation: string | null,
+): string | null {
+  if (selectedLead?.phone) {
+    const p = String(selectedLead.phone).replace(/\D/g, '');
+    if (p) return p;
+  }
+  if (selectedConversation) {
+    const p = String(selectedConversation).replace(/\D/g, '');
+    if (p) return p;
+  }
+  return null;
+}
 
 
 function CountdownTimer({ date }: { date: Date | null }) {
@@ -263,51 +296,33 @@ async function uploadMediaAndGetPublicUrl(
   return url;
 }
 
-// Insercao otimista direta na tabela imobipro_messages_{phoneSanitizado}.
-// Usado pelo envio de audio para que a bolha apareca imediatamente sem
-// depender da gravacao via webhook/n8n. Em caso de falha (RLS, tabela
-// inexistente, etc.) retornamos null e o caller continua confiando no
-// webhook como fonte de verdade.
+// Inserção otimista em Mensagens_Whatsapp (envio pelo painel = type user).
 async function insertWhatsappMessageRow(params: {
   companyId: string;
   sessionId: string;
   instancia: string;
   audioUrl: string;
   content?: string;
-}): Promise<{ tableName: string; id: any } | null> {
+  userId?: string | null;
+}): Promise<{ id: string | number } | null> {
   try {
-    const { data: companyRow, error: companyErr } = await supabase
-      .from("companies")
-      .select("phone")
-      .eq("id", params.companyId)
-      .single();
-    if (companyErr) {
-      console.warn("[insertWhatsappMessageRow] erro ao ler companies.phone:", companyErr);
+    const phone = String(params.sessionId || "").replace(/\D/g, "");
+    if (!phone) {
+      console.warn("[insertWhatsappMessageRow] telefone da conversa inválido");
       return null;
     }
-    const phoneSanitizado = String(companyRow?.phone || "").replace(/\D/g, "");
-    if (!phoneSanitizado) {
-      console.warn("[insertWhatsappMessageRow] companies.phone vazio/invalido");
-      return null;
-    }
-    const tableName = `imobipro_messages_${phoneSanitizado}`;
-    const messageJson = {
-      // Audio enviado pelo painel sai do lado da plataforma (AI) no chat.
-      type: "ai" as const,
-      content: params.content ?? "",
-      additional_kwargs: {},
-      response_metadata: {},
-      tool_calls: [],
-      invalid_tool_calls: [],
-    };
-    const mediaJson = JSON.stringify({ audio: params.audioUrl });
     const { data, error } = await (supabase as any)
-      .from(tableName)
+      .from("mensagens")
       .insert({
-        session_id: params.sessionId,
+        phone,
+        company_id: params.companyId,
         instancia: params.instancia,
-        message: messageJson,
-        media: mediaJson,
+        type: "user",
+        user_id: params.userId || null,
+        mensage_type: "audio",
+        text: params.content ?? "",
+        conteudo_media: params.audioUrl,
+        plataforma: "WhatsApp",
       })
       .select("id")
       .single();
@@ -315,7 +330,7 @@ async function insertWhatsappMessageRow(params: {
       console.warn("[insertWhatsappMessageRow] insert falhou:", error);
       return null;
     }
-    return { tableName, id: data?.id };
+    return { id: data?.id };
   } catch (err) {
     console.warn("[insertWhatsappMessageRow] excecao inesperada:", err);
     return null;
@@ -454,61 +469,22 @@ function buildDataUrlFromMedia(raw: unknown): string | null {
   return result;
 }
 
-// Preview da última mensagem (prioridade para media). Sem emoji — devolve
-// rótulo curto em texto puro ("[Imagem]", "[Áudio]" etc.) para que a UI
-// fique uniforme com o que o WhatsApp/Instagram mostram nativamente.
-function previewFromLast(last_media: any, last_message: any): string {
-  const dataUrl = buildDataUrlFromMedia(last_media);
-  if (dataUrl) {
-    // dataUrl já tem MIME — confiável.
-    if (dataUrl.includes('image/')) return mediaPreviewLabel('data:image/');
-    if (dataUrl.includes('audio/')) return mediaPreviewLabel('data:audio/');
-    if (dataUrl.includes('video/')) return mediaPreviewLabel('data:video/');
-    return mediaPreviewLabel(null); // genérico
-  }
-
-  // Sem data URL válido: tenta classificar pelo conteúdo bruto (URL,
-  // JSON stringificado, base64). Se reconhecer alguma mídia, devolve rótulo.
-  if (last_media != null && String(last_media).trim() !== '' && String(last_media).toLowerCase() !== 'null') {
-    const kind = inferMediaKind(last_media);
-    if (kind !== 'unknown') return mediaPreviewLabel(last_media);
-  }
-
+function previewFromLast(last_media: any, last_message: any): { kind: ConversationPreviewKind | null; text: string } {
   const raw = last_message;
   const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
-  const txt = m?.content || '';
-  return txt.length > 80 ? txt.slice(0, 80) + '…' : txt;
+  const txt = String(m?.content ?? '').trim();
+  const preview = resolveConversationListPreview({ text: txt, media: last_media });
+  const text = preview.text.length > 80 ? `${preview.text.slice(0, 80)}…` : preview.text;
+  return { kind: preview.kind, text };
 }
 
-// Função para processar texto com markdown básico (**texto** → negrito)
-function processTextWithBold(text: string): React.ReactNode {
-  if (!text) return text;
-  
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  const regex = /\*\*(.*?)\*\*/g;
-  let match;
-  
-  while ((match = regex.exec(text)) !== null) {
-    // Adicionar texto antes do match
-    if (match.index > lastIndex) {
-      parts.push(text.substring(lastIndex, match.index));
-    }
-    // Adicionar texto em negrito
-    parts.push(
-      <strong key={match.index} className="font-bold">
-        {match[1]}
-      </strong>
-    );
-    lastIndex = regex.lastIndex;
-  }
-  
-  // Adicionar texto restante
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
-  }
-  
-  return parts.length > 0 ? parts : text;
+/** Avatar padrão quando não há foto do contato (silhueta estilo WhatsApp). */
+function ChatContactAvatarFallback() {
+  return (
+    <AvatarFallback className="bg-[var(--cv-panel-muted)] text-[var(--cv-text-muted)]">
+      <User className="h-6 w-6" strokeWidth={1.5} aria-hidden />
+    </AvatarFallback>
+  );
 }
 
 // Renderer da mensagem (prioridade: URLs de imagem > base64 > texto)
@@ -523,57 +499,41 @@ function MessageBubble({
   const raw = row?.message;
   const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
   const isAI = String(m?.type || '').toLowerCase() === 'ai';
-  const content = m?.content ?? '';
+  const content =
+    typeof m?.content === 'string'
+      ? m.content
+      : m?.content != null
+        ? String(m.content)
+        : '';
   const contentSegments = Array.isArray(m?.contentSegments)
     ? m.contentSegments.filter((segment: unknown): segment is string => typeof segment === 'string' && segment.trim().length > 0)
     : [];
   const mediaImages = row?.mediaImages as string[] | undefined;
 
-  // 1) PRIORIDADE MÁXIMA: Se há mediaImages (URLs de imagens do Supabase), renderizar imagens + texto
+  // 1) URLs de imagem (Storage) — grade estilo WhatsApp
   if (mediaImages && mediaImages.length > 0) {
+    const hasCaption = Boolean(String(content ?? '').trim());
     return (
-      <div className={isAI ? 'self-end' : 'self-start'}>
-        <div className={isAI
-          ? 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tr-none bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
-          : 'max-w-[72ch] rounded-lg px-3 py-2 shadow-sm rounded-tl-none bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]'}>
-          {/* Grid de imagens estilo WhatsApp */}
-          <div className={`grid gap-1 mb-2 ${
-            mediaImages.length === 1 ? 'grid-cols-1' :
-            mediaImages.length === 2 ? 'grid-cols-2' :
-            mediaImages.length === 3 ? 'grid-cols-2' :
-            'grid-cols-2'
-          }`}>
-            {mediaImages.slice(0, 4).map((imgUrl, imgIdx) => (
-              <div
-                key={imgIdx} 
-                className={`relative overflow-hidden rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${
-                  mediaImages.length === 3 && imgIdx === 0 ? 'col-span-2' : ''
-                }`}
-                onClick={() => onOpenMedia?.(mediaImages, imgIdx)}
-              >
-                <img 
-                  src={imgUrl} 
-                  alt={`Imagem ${imgIdx + 1}`}
-                  className="w-full h-auto max-h-48 object-cover rounded-lg"
-                  loading="lazy"
-                />
-                {mediaImages.length > 4 && imgIdx === 3 && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
-                    <span className="text-white text-lg font-semibold">
-                      +{mediaImages.length - 4}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-           {/* Texto da mensagem */}
-           {content && (
-             <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
-               {processTextWithBold(content)}
-             </div>
-           )}
-          <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
+      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
+        <div
+          className={
+            isAI
+              ? `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tr-sm overflow-hidden bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
+              : `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tl-sm overflow-hidden bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
+          }
+        >
+          <ChatImageGrid
+            images={mediaImages}
+            onImageClick={(idx) => onOpenMedia?.(mediaImages, idx)}
+          />
+          {hasCaption ? (
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed px-1.5 pt-1.5 pb-0.5">
+              {processTextWithBold(content)}
+            </div>
+          ) : null}
+          <div
+            className={`text-[10px] text-right px-2 pb-1 pt-0.5 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
+          >
             {row.data ? formatHour(row.data) : ''}
           </div>
         </div>
@@ -588,29 +548,18 @@ function MessageBubble({
     return (
       <div className={isAI ? 'self-end' : 'self-start'}>
         <div className={isAI
-          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
-          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
-          <div className="flex items-center gap-3 p-2 bg-black/15 rounded-lg border border-white/10">
-            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-full flex items-center justify-center">
-              <span className="text-xl">🎧</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium opacity-80 mb-1">Mensagem de áudio</div>
-              <audio
-                src={audioUrl}
-                controls
-                preload="metadata"
-                className="w-full max-w-xs"
-                style={{ height: '32px' }}
-              />
-            </div>
-          </div>
+          ? 'max-w-[72ch] rounded-2xl rounded-tr-sm bg-blue-600/90 px-3 py-2.5 text-white shadow border border-blue-500/30'
+          : 'max-w-[72ch] rounded-2xl rounded-tl-sm bg-zinc-800/80 px-3 py-2.5 text-zinc-100 shadow border border-white/10'}>
+          <ChatAudioPlayer
+            src={audioUrl}
+            variant={isAI ? 'outgoing' : 'incoming'}
+          />
           {content && (
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-2">
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-2 pt-2 border-t border-white/10">
               {processTextWithBold(content)}
             </div>
           )}
-          <div className={`text-[10px] text-right mt-1 -mb-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}>
+          <div className={`text-[10px] text-right mt-1 -mb-0.5 ${isAI ? 'text-white/60' : 'text-zinc-500'}`}>
             {row.data ? formatHour(row.data) : ''}
           </div>
         </div>
@@ -663,31 +612,12 @@ function MessageBubble({
 
       if (mediaType === 'audio') {
         return (
-          <div className="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600/30">
-            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-full flex items-center justify-center">
-              <span className="text-xl">🎧</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-zinc-200 mb-1">Mensagem de áudio</div>
-              <audio
-                src={dataUrl}
-                controls
-                className="w-full max-w-xs"
-                preload="metadata"
-                onLoadedMetadata={(e) => {
-                  console.log('✅ Áudio carregado com sucesso:', e.target);
-                }}
-                onError={(e) => {
-                  console.log('❌ Áudio também falhou, tentando documento');
-                  setMediaType('document'); // FALLBACK FINAL: erro ou doc
-                }}
-                style={{
-                  height: '32px',
-                  backgroundColor: 'transparent'
-                }}
-              />
-            </div>
-          </div>
+          <ChatAudioPlayer
+            src={dataUrl}
+            variant={isAI ? 'outgoing' : 'incoming'}
+            className="py-0.5"
+            onError={() => setMediaType('document')}
+          />
         );
       }
 
@@ -822,7 +752,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [loadingLeadMessages, setLoadingLeadMessages] = useState(false);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [viewContactLeadId, setViewContactLeadId] = useState<string | null>(null);
+  const [resolvingContactInfo, setResolvingContactInfo] = useState(false);
   const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
 
   // Hook e estados de Templates de Chat
@@ -952,6 +883,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   // Hooks de dados
   const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
   const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
+
+  const conversasRef = useRef(conversas);
+  conversasRef.current = conversas;
+
+  const { getUnreadCount, handleRealtimeMessage, markOpened } = useConversasUnread(
+    selectedConversation,
+    (sessionId) => conversasRef.current.find((c) => c.sessionId === sessionId)?.leadStage,
+    conversas,
+  );
   const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages, setMyInstance } = useConversaMessages();
 
   // Determinar restrição de API Oficial (24 horas)
@@ -961,6 +901,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     () => (selectedLead ? leadMessages : messages) as Array<{ id: string; message?: { content?: unknown } }>,
     [selectedLead, leadMessages, messages]
   );
+
+  const displayChatItems = useMemo(
+    () =>
+      groupChatMessagesForDisplay(messages, (row) => {
+        const u = buildDataUrlFromMedia(row.media);
+        return u?.includes('image/') ? u : null;
+      }),
+    [messages],
+  );
   const lastHumanMessage = activeMessages.slice().reverse().find((m: any) => m.message?.type === 'human');
     
   const lastHumanDate = lastHumanMessage ? new Date(lastHumanMessage.data) : null;
@@ -969,28 +918,56 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
 
 
-  // Realtime (única assinatura): novas mensagens e deleções
+  // Libera áudio após gesto na área de conversas (autoplay dos browsers).
+  useEffect(() => {
+    const unlock = () => unlockChatNotificationSound();
+    const opts = { capture: true } as const;
+    document.addEventListener('pointerdown', unlock, opts);
+    document.addEventListener('keydown', unlock, opts);
+    return () => {
+      document.removeEventListener('pointerdown', unlock, opts);
+      document.removeEventListener('keydown', unlock, opts);
+    };
+  }, []);
+
+  const isActiveSession = useCallback(
+    (sessionId: string) =>
+      normalizePhoneDigits(sessionId) === normalizePhoneDigits(selectedConversation ?? ''),
+    [selectedConversation],
+  );
+
+  useMensagensNotifications(profile?.company_id, {
+    onIncoming: (sessionId, message) => {
+      handleRealtimeMessage(sessionId, message);
+      updateConversation(sessionId);
+      if (isActiveSession(sessionId)) {
+        refetchMessages();
+        controls.start('highlight');
+        setTimeout(() => controls.start('visible'), 250);
+      }
+    },
+    onOutgoing: (sessionId, message) => {
+      handleRealtimeMessage(sessionId, message);
+      updateConversation(sessionId);
+      if (isActiveSession(sessionId)) {
+        refetchMessages();
+      }
+    },
+  });
+
+  // Deletes na lista (INSERT → useMensagensNotifications)
   useConversasRealtime({
     onInstanceUpdate: refetchInstances,
     onConversationUpdate: (sessionId) => {
       updateConversation(sessionId);
     },
-    onMessageUpdate: (sessionId, message) => {
-      if (sessionId === selectedConversation) {
-        refetchMessages();
-        controls.start('highlight');
-        setTimeout(() => controls.start('visible'), 250);
-      }
-      // Atualizar lista (move para topo)
-      updateConversation(sessionId);
-    },
-    onMessageDelete: (_sessionId, messageId) => {
-      if (_sessionId === selectedConversation) {
+    onMessageDelete: (_sessionId) => {
+      if (isActiveSession(_sessionId)) {
         refetchMessages();
       }
       refetchConversas();
       refetchInstances();
-    }
+    },
   });
 
   // Auto scroll apenas quando:
@@ -1054,15 +1031,92 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     refetchConversas();
   }, [profile?.company_id, profile?.id, refetchConversas]);
 
-  /** Atualiza coluna do Kanban (`leads.stage`) quando a conversa usa o mesmo id do lead. */
+  /** Atualiza estágio do CRM (`leads.stage`) pelo lead vinculado à conversa (telefone). */
   const setConversationCrmStage = useCallback(async (sessionId: string, stage: LeadStage) => {
-    const { error } = await supabase.from('leads').update({ stage }).eq('id', sessionId);
-    if (error) throw error;
+    const conv = conversas.find((c) => c.sessionId === sessionId);
+    if (conv?.leadId) {
+      const { error } = await supabase.from('leads').update({ stage }).eq('id', conv.leadId);
+      if (error) throw error;
+    } else if (profile?.company_id) {
+      const phoneNorm = String(sessionId).replace(/\D/g, '');
+      const { data: leads } = await supabase
+        .from('leads')
+        .select('id, phone')
+        .eq('company_id', profile.company_id);
+      const match = (leads || []).find(
+        (l) => l.phone && String(l.phone).replace(/\D/g, '') === phoneNorm,
+      );
+      if (!match?.id) throw new Error('Lead não encontrado para este telefone');
+      const { error } = await supabase.from('leads').update({ stage }).eq('id', match.id);
+      if (error) throw error;
+    } else {
+      throw new Error('Empresa não identificada');
+    }
     refetchConversas();
-  }, [refetchConversas]);
+  }, [refetchConversas, conversas, profile?.company_id]);
 
   // Conversa atual
   const currentConversation = conversas.find(conv => conv.sessionId === selectedConversation);
+
+  const openContactInfo = useCallback(async () => {
+    if (resolvingContactInfo) return;
+
+    const directId = selectedLead?.id ?? currentConversation?.leadId;
+    if (directId) {
+      setViewContactLeadId(String(directId));
+      return;
+    }
+
+    const phoneRaw =
+      currentConversation?.leadPhone ||
+      selectedLead?.phone ||
+      (selectedConversation ? String(selectedConversation) : '');
+    const phoneNorm = String(phoneRaw || '').replace(/\D/g, '');
+
+    if (!phoneNorm || !profile?.company_id) {
+      toast({
+        title: 'Lead não encontrado no CRM',
+        description: 'Este contato ainda não está vinculado a um lead.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setResolvingContactInfo(true);
+      const { data: leads, error } = await supabase
+        .from('leads')
+        .select('id, phone')
+        .eq('company_id', profile.company_id);
+      if (error) throw error;
+
+      const match = (leads || []).find(
+        (l) => l.phone && String(l.phone).replace(/\D/g, '') === phoneNorm,
+      );
+
+      if (match?.id) {
+        setViewContactLeadId(String(match.id));
+      } else {
+        toast({
+          title: 'Lead não encontrado no CRM',
+          description: 'Cadastre o contato em Clientes para ver o perfil completo.',
+          variant: 'destructive',
+        });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erro ao buscar lead';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
+    } finally {
+      setResolvingContactInfo(false);
+    }
+  }, [
+    resolvingContactInfo,
+    selectedLead,
+    currentConversation,
+    selectedConversation,
+    profile?.company_id,
+    toast,
+  ]);
 
   // Função para buscar mensagens do lead
   const fetchLeadMessages = async (lead: any) => {
@@ -1080,40 +1134,21 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       setSelectedLead(lead);
       setLeadMessages([]);
 
-      // Buscar whatsapp_ai_phone da empresa
-      const { data: companyData, error: companyError } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('id', profile.company_id)
-        .single();
-
-      if (companyError) {
-        throw new Error('Erro ao buscar dados da empresa');
-      }
-
-      // A coluna whatsapp_ai_phone pode não estar no tipo, mas existe no banco
-      const companyPhone = (companyData as any)?.whatsapp_ai_phone;
-      if (!companyPhone) {
-        throw new Error('Telefone da empresa não encontrado');
-      }
-
-      // Limpar o telefone do lead (remover + e caracteres não numéricos)
       const leadPhoneClean = lead.phone.replace(/[^0-9]/g, '');
+      if (!leadPhoneClean) {
+        throw new Error('Telefone do lead inválido');
+      }
 
-      console.log('[ConversasViewPremium] Buscando mensagens do lead:', {
-        leadPhone: lead.phone,
-        leadId: lead.id,
-        companyPhone
-      });
-
-      // Usar a função RPC para buscar mensagens (usar any para contornar tipo não registrado)
-      // FIX: usar lead.id como session_id, pois é assim que está salvo no banco
-      const { data: messagesData, error: messagesError } = await (supabase.rpc as any)('conversation_for_user_by_phone', {
-        p_session_id: lead.id,
-        p_phone: companyPhone,
-        p_limit: 500,
-        p_offset: 0,
-      });
+      const { data: messagesData, error: messagesError } = await (supabase.rpc as any)(
+        'mensagens_whatsapp_thread',
+        {
+          p_company_id: profile.company_id,
+          p_phone: leadPhoneClean,
+          p_plataforma: 'WhatsApp',
+          p_limit: 500,
+          p_offset: 0,
+        },
+      );
 
       if (messagesError) {
         console.error('[ConversasViewPremium] Erro ao buscar mensagens:', messagesError);
@@ -1121,15 +1156,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       }
 
       const messagesArray = Array.isArray(messagesData) ? messagesData : [];
-      console.log('[ConversasViewPremium] Mensagens encontradas:', messagesArray.length);
-
-      // Mesmo mapeamento que fetch + realtime (inclui limpeza de rótulos n8n).
       const filteredMessages = messagesArray
-        .map((row: any) => mapRowToConversaMessage(row))
-        .filter((msg: any) => {
-          const t = String(msg.message?.type || '').toLowerCase();
-          return t === 'ai' || t === 'human';
-        })
+        .map((row: any) => mapMensagemWhatsappRow(row))
         .sort((a: any, b: any) => new Date(a.data).getTime() - new Date(b.data).getTime());
 
       setLeadMessages(filteredMessages);
@@ -1301,7 +1329,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       setBusy(true);
 
       // Target: se tiver lead selecionado usa lead, senao conversation
-      const targetSession = selectedLead?.id || selectedConversation;
+      const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
       // Usar a instância selecionada globalmente ou da conversa
       const targetInstancia = selectedInstance || currentConversation?.instancia || "";
 
@@ -1400,7 +1428,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
     try {
       setBusy(true);
-      const targetSession = selectedLead ? selectedLead.id : selectedConversation;
+      const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
       const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
 
       if (!targetSession) throw new Error("Sessão inválida");
@@ -1529,7 +1557,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           const audioFile = new File([blob], `audio-${Date.now()}.${ext}`, { type: resolvedMime });
           const audioUrl = await uploadMediaAndGetPublicUrl(audioFile, "whatsapp", profile?.company_id);
 
-          const targetSession = selectedLead ? selectedLead.id : selectedConversation;
+          const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
           const targetInstancia = selectedInstance || currentConversation?.instancia || "";
 
           if (targetSession) {
@@ -1546,6 +1574,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 instancia: targetInstancia,
                 audioUrl,
                 content: "",
+                userId: profile.id,
               });
               if (!inserted) {
                 console.warn("[audio] insert otimista falhou; continuando via webhook");
@@ -1701,7 +1730,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     // Ajuste de altura para compensar o layout pai (sidebar/header) e padding (aprox 7rem / 112px)
     <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR (Lista de Conversas) */}
-      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] z-20`}>
+      <div
+        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0`}
+      >
         {/* HEADER SIDEBAR */}
         <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -1759,46 +1790,28 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             filteredConversas.map((conv: any) => (
               <ContextMenu key={conv.sessionId}>
                 <ContextMenuTrigger asChild>
-                  <div
+                  <ConversationListItem
+                    selected={selectedConversation === conv.sessionId}
                     onClick={() => {
                       setSelectedConversation(conv.sessionId);
                       openSession(conv.sessionId);
                       setSelectedLead(null);
+                      markOpened(conv.sessionId, conv.leadStage);
                     }}
-                    className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--cv-hover)] transition-colors border-b border-[var(--cv-border)] ${selectedConversation === conv.sessionId ? 'bg-[var(--cv-panel-muted)]' : ''}`}
-                  >
-                <div className="w-12 h-12 rounded-full bg-slate-600 flex-shrink-0 relative overflow-hidden">
-                  <Avatar className="h-full w-full">
-                    <AvatarFallback>{(conv.displayName?.charAt(0) || '?').toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0 max-w-[78%] flex-wrap">
-                      <h3 className="text-[var(--cv-text)] font-normal truncate text-base max-w-full">{conv.displayName}</h3>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${conversationLabelListBadgeClasses(conv.leadStage)}`}
-                      >
-                        {conv.leadStage || 'AI ATIVA'}
-                      </span>
-                      {conv.hasCrmLead ? (
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${crmStageBadgeClasses(conv.crmStage || '')}`}
-                          title="Estágio no CRM (Kanban)"
-                        >
-                          {conv.crmStage?.trim() || 'CRM'}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="text-xs text-[var(--cv-text-muted)] whitespace-nowrap">
-                      {conv.lastMessageDate ? formatHour(conv.lastMessageDate) : ''}
-                    </span>
-                  </div>
-                  <p className="text-[var(--cv-text-muted)] text-sm truncate flex items-center">
-                    <span className="truncate">{conv.lastMessageContent || "Toque para abrir conversa"}</span>
-                  </p>
-                </div>
-                  </div>
+                    unreadCount={getUnreadCount(conv.sessionId)}
+                    displayName={conv.displayName}
+                    leadStage={conv.leadStage}
+                    crmStage={conv.crmStage}
+                    hasCrmLead={conv.hasCrmLead}
+                    timeLabel={conv.lastMessageDate ? formatHour(conv.lastMessageDate) : undefined}
+                    previewKind={conv.lastMessagePreviewKind}
+                    previewText={conv.lastMessageContent}
+                    avatar={
+                      <Avatar className="h-full w-full">
+                        <ChatContactAvatarFallback />
+                      </Avatar>
+                    }
+                  />
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-52">
                   <ContextMenuItem
@@ -1879,9 +1892,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       </div>
 
       {/* MAIN CHAT AREA */}
-      <div className={`${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-[var(--cv-chat)] relative w-full h-full`}>
+      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full`}>
         {!selectedConversation && !selectedLead ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[var(--cv-accent)] bg-[var(--cv-empty)]">
+          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[var(--cv-accent)]">
             <div className="max-w-[560px]">
 
               <h2 className="text-3xl font-light text-[var(--cv-text)] mb-5">
@@ -1907,16 +1920,29 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 }}>
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
-                <div className="w-10 h-10 rounded-full bg-slate-600 flex-shrink-0 cursor-pointer overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => void openContactInfo()}
+                  disabled={resolvingContactInfo}
+                  className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ring-offset-2 ring-offset-[var(--cv-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cv-accent)] disabled:opacity-60"
+                  title="Ver informações do contato"
+                  aria-label="Ver informações do contato"
+                >
                   <Avatar className="h-full w-full">
-                    <AvatarFallback>{(currentConversation?.displayName?.charAt(0) || selectedLead?.name?.charAt(0) || '?').toUpperCase()}</AvatarFallback>
+                    <ChatContactAvatarFallback />
                   </Avatar>
-                </div>
-                <div className="flex flex-col overflow-hidden">
-                  <div className="flex items-center overflow-hidden">
-                    <span className="text-[var(--cv-text)] font-normal text-base truncate cursor-pointer hover:underline">
+                </button>
+                <div className="flex flex-col overflow-hidden min-w-0">
+                  <div className="flex items-center overflow-hidden gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void openContactInfo()}
+                      disabled={resolvingContactInfo}
+                      title="Ver informações do contato"
+                      className="text-[var(--cv-text)] font-semibold text-base truncate text-left hover:text-[var(--cv-accent)] focus-visible:outline-none focus-visible:underline disabled:opacity-60 min-w-0"
+                    >
                       {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
-                    </span>
+                    </button>
                     {isApiOficialUser && <CountdownTimer date={lastHumanDate} />}
                   </div>
                   <p className="text-xs text-[var(--cv-text-muted)] truncate">
@@ -1943,11 +1969,11 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </div>
 
             {/* MESSAGES */}
-            <div 
+            <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar bg-[var(--cv-chat)] bg-opacity-95"
-              style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay' }}>
+              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar"
+            >
               <div className="space-y-2 pb-2">
                 {/* LEAD MESSAGES */}
                 {selectedLead && leadMessages.map((msg: any) => {
@@ -1967,15 +1993,39 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   );
                 })}
 
-                {/* CONVERSATION MESSAGES */}
-                {!selectedLead && messages.map((row: any) => {
-                  // Ajuste de Lógica de Alinhamento:
-                  // row é ConversaMessage { message: { type: 'human' | 'ai' ... } }
-                  // 'ai' -> Agent/System -> Right (isMe=true)
-                  // 'human' -> Lead -> Left (isMe=false)
+                {/* CONVERSATION MESSAGES (álbuns de imagem agrupados estilo WhatsApp) */}
+                {!selectedLead && displayChatItems.map((item) => {
+                  if (item.kind === 'image_album') {
+                    const isMe = item.isAI;
+                    const isHit = item.rows.some((r) => chatSearchHighlightId === String(r.id));
+                    const albumRow = {
+                      ...item.rows[0],
+                      id: item.id,
+                      mediaImages: item.images,
+                      message: {
+                        ...item.rows[0].message,
+                        content: item.caption,
+                      },
+                      data: item.data,
+                    };
+                    return (
+                      <motion.div
+                        key={item.id}
+                        data-chat-message-id={item.rows[0].id}
+                        variants={bubble}
+                        layout
+                        initial="hidden"
+                        animate="visible"
+                        className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
+                      >
+                        <MessageBubble row={albumRow} onOpenMedia={openMediaViewer} />
+                      </motion.div>
+                    );
+                  }
+
+                  const row = item.row;
                   const msgType = row.message?.type;
                   const isMe = msgType === 'ai' || msgType === 'assistant';
-
                   const isHit = chatSearchHighlightId === String(row.id);
                   return (
                     <motion.div
@@ -2270,10 +2320,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         summaryData={summaryModal.data}
       />
 
-      <LeadDetailsModal
-        isOpen={showLeadModal}
-        onClose={() => setShowLeadModal(false)}
-        leadId={selectedLead ? selectedLead.id : selectedConversation}
+      <LeadViewModal
+        isOpen={!!viewContactLeadId}
+        onClose={() => setViewContactLeadId(null)}
+        leadId={viewContactLeadId}
       />
 
       {/* MODAL DE GERENCIAMENTO DE TEMPLATES */}

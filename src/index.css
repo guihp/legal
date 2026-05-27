@@ -32,6 +32,8 @@
   --cv-panel: #202c33;
   --cv-panel-muted: #2a3942;
   --cv-chat: #0b141a;
+  --cv-chat-wallpaper: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+  --cv-chat-wallpaper-opacity: 0.2;
   --cv-empty: #222e35;
   --cv-border: #202c33;
   --cv-text: #e9edef;
@@ -75,7 +77,9 @@
   --cv-shell: #ffffff;
   --cv-panel: #f3f4f6;
   --cv-panel-muted: #e5e7eb;
-  --cv-chat: #fafafa;
+  --cv-chat: #e5ddd5;
+  --cv-chat-wallpaper: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+  --cv-chat-wallpaper-opacity: 0.22;
   --cv-empty: #f9fafb;
   --cv-border: #e5e7eb;
   --cv-text: #111827;
@@ -103,11 +107,236 @@
   --cv-ring: #e5e7eb;
 }
 
-/* Padrão de papel de parede do chat: só no escuro */
-[data-theme="light"] .conversas-chat-area {
-  background-image: none !important;
-  background-color: var(--cv-chat) !important;
-  background-blend-mode: normal !important;
+/* Modo escuro — papel de parede visível (mesmo padrão WhatsApp, ajustado para fundo escuro) */
+[data-theme="dark"] {
+  --cv-chat: #0b141a;
+  --cv-chat-wallpaper: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+  --cv-chat-wallpaper-opacity: 0.42;
+  --cv-empty: #0b141a;
+}
+
+/* Papel de parede suave no chat (estilo WhatsApp) — claro e escuro */
+.conversas-chat-shell,
+.conversas-chat-area {
+  position: relative;
+  background-color: var(--cv-chat);
+}
+
+.conversas-chat-shell::before,
+.conversas-chat-area::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--cv-chat-wallpaper);
+  background-size: 412px auto;
+  background-repeat: repeat;
+  opacity: var(--cv-chat-wallpaper-opacity, 0.35);
+  pointer-events: none;
+}
+
+/* Padrão claro: multiply natural no bege */
+[data-theme="light"] .conversas-chat-shell::before,
+[data-theme="light"] .conversas-chat-area::before {
+  filter: none;
+}
+
+/* Padrão escuro: escurece o tile para contrastar com #0b141a */
+[data-theme="dark"] .conversas-chat-shell::before,
+[data-theme="dark"] .conversas-chat-area::before {
+  filter: brightness(0.38) contrast(1.08);
+  opacity: var(--cv-chat-wallpaper-opacity, 0.42);
+}
+
+.conversas-chat-shell > *,
+.conversas-chat-area > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Lista de conversas “flutuando” sobre o painel do chat */
+.conversas-list-panel {
+  box-shadow: 4px 0 28px -6px rgba(0, 0, 0, 0.38);
+}
+
+[data-theme="light"] .conversas-list-panel {
+  box-shadow: 4px 0 22px -8px rgba(11, 20, 26, 0.14);
+}
+
+/* Item da lista de conversas (WhatsApp / Instagram) */
+.conversas-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.875rem 0.625rem 1rem;
+  border: none;
+  border-bottom: 1px solid var(--cv-border);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.conversas-list-item:hover {
+  background: var(--cv-hover);
+}
+
+.conversas-list-item[data-selected='true'] {
+  background: color-mix(in srgb, var(--cv-panel-muted) 88%, #00a884 12%);
+}
+
+.conversas-list-item[data-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, #25d366, #00a884);
+}
+
+.conversas-list-item__avatar-ring {
+  width: 3.25rem;
+  height: 3.25rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--cv-border) 70%, transparent);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.conversas-list-item[data-selected='true'] .conversas-list-item__avatar-ring,
+.conversas-list-item:hover .conversas-list-item__avatar-ring {
+  background: linear-gradient(135deg, #25d366 0%, #00a884 55%, #128c7e 100%);
+  box-shadow: 0 2px 10px rgba(0, 168, 132, 0.28);
+}
+
+.conversas-list-item__avatar-ring > * {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.conversas-list-item__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--cv-text);
+  letter-spacing: -0.01em;
+}
+
+.conversas-list-item__time {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--cv-text-muted);
+  margin-top: 0.125rem;
+}
+
+.conversas-list-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.25rem;
+}
+
+.conversas-list-item__badges-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+  min-height: 1.375rem;
+}
+
+.conversas-list-item__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.conversas-list-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conversas-list-item__preview {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--cv-text-muted);
+  opacity: 0.92;
+  display: flex;
+  min-width: 0;
+}
+
+.conversas-list-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  min-width: 1.375rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff !important;
+  background: #25d366;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.conversas-list-unread-badge--wide {
+  width: auto;
+  min-width: 1.375rem;
+  padding: 0 0.35rem;
+  border-radius: 9999px;
+}
+
+.conversas-list-item__name--unread {
+  font-weight: 700;
+}
+
+.conversas-list-item__time--unread {
+  color: #25d366;
+  font-weight: 600;
+}
+
+[data-theme='light'] .conversas-list-unread-badge {
+  border-color: var(--cv-shell, #fff);
+  background: #00a884;
+}
+
+.conversas-list-item__preview .truncate {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+
+[data-theme='light'] .conversas-list-item[data-selected='true'] {
+  background: color-mix(in srgb, var(--cv-panel-muted) 92%, #00a884 8%);
+}
+
+.conversas-list-item--instagram[data-selected='true']::before {
+  background: linear-gradient(180deg, #fa7e1e, #d62976, #962fbf);
+}
+
+.conversas-list-item--instagram[data-selected='true'] .conversas-list-item__avatar-ring,
+.conversas-list-item--instagram:hover .conversas-list-item__avatar-ring {
+  background: linear-gradient(135deg, #feda75 0%, #fa7e1e 20%, #d62976 45%, #962fbf 75%, #4f5bd5 100%);
+  box-shadow: 0 2px 12px rgba(214, 41, 118, 0.32);
 }
 
 .dashboard-chart-toggle {

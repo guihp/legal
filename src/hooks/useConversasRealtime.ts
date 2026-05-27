@@ -1,106 +1,119 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
+import { mensagemSessionId } from '@/lib/mensagensRow';
 
-interface RealtimeCallbacks {
+export interface RealtimeCallbacks {
   onInstanceUpdate: () => void;
   onConversationUpdate: (sessionId: string) => void;
-  onMessageUpdate: (sessionId: string, message: any) => void;
-  onMessageDelete?: (sessionId: string, messageId: any) => void;
+  /** Se omitido, INSERT não é assinado aqui (use useMensagensNotifications no Premium). */
+  onMessageUpdate?: (sessionId: string, message: Record<string, unknown>) => void;
+  onMessageDelete?: (sessionId: string, messageId: unknown) => void;
+}
+
+const REALTIME_TABLE = 'mensagens';
+
+function sessionFromRow(row: Record<string, unknown> | null | undefined): string | null {
+  if (!row) return null;
+  const sid = mensagemSessionId({
+    phone: row.phone as string | null,
+    contact_norm: row.contact_norm as string | null,
+    plataforma: row.plataforma as string | null,
+  });
+  return sid || null;
 }
 
 export function useConversasRealtime(callbacks: RealtimeCallbacks) {
   const { profile } = useUserProfile();
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
-  const handleNewMessage = useCallback((payload: any) => {
-    const newMessage = payload.new;
+  const listenInserts = Boolean(callbacks.onMessageUpdate);
 
-    if (!newMessage || !profile) return;
+  const rowMatchesCompany = useCallback((row: Record<string, unknown>, companyId: string) => {
+    return String(row.company_id ?? '') === companyId;
+  }, []);
 
-    // Aplicar filtro por role
-    if (profile.role === 'corretor') {
+  const passesInstanceScope = useCallback(
+    (row: Record<string, unknown>) => {
+      if (!profile || profile.role !== 'corretor') return true;
       const userInstance = profile.chat_instance?.toLowerCase().trim();
-      const messageInstance = newMessage.instancia?.toLowerCase().trim();
+      const messageInstance = String(row.instancia ?? '').toLowerCase().trim();
+      if (!userInstance || !messageInstance) return true;
+      return userInstance === messageInstance;
+    },
+    [profile],
+  );
 
-      if (userInstance !== messageInstance) {
-        return; // Ignorar mensagem que não é da instância do corretor
-      }
-    }
+  const processInsert = useCallback(
+    (newMessage: Record<string, unknown>) => {
+      if (!profile?.company_id) return;
+      if (!rowMatchesCompany(newMessage, profile.company_id)) return;
+      if (!passesInstanceScope(newMessage)) return;
 
-    // Notificar callbacks
-    callbacks.onInstanceUpdate(); // atualizar contadores
-    callbacks.onConversationUpdate(newMessage.session_id); // mover conversa ao topo
-    callbacks.onMessageUpdate(newMessage.session_id, newMessage); // inserir mensagem
-  }, [profile, callbacks]);
+      const sid = sessionFromRow(newMessage);
+      if (!sid) return;
 
-  const handleDeleteMessage = useCallback((payload: any) => {
-    const oldMessage = payload.old;
-    if (!oldMessage || !profile) return;
+      const cb = callbacksRef.current;
+      cb.onInstanceUpdate();
+      cb.onConversationUpdate(sid);
+      cb.onMessageUpdate?.(sid, newMessage);
+    },
+    [profile, rowMatchesCompany, passesInstanceScope],
+  );
 
-    if (profile.role === 'corretor') {
-      const userInstance = profile.chat_instance?.toLowerCase().trim();
-      const messageInstance = oldMessage.instancia?.toLowerCase().trim();
-      if (userInstance !== messageInstance) {
-        return;
-      }
-    }
+  const processDelete = useCallback(
+    (oldMessage: Record<string, unknown>) => {
+      if (!profile?.company_id) return;
+      if (!rowMatchesCompany(oldMessage, profile.company_id)) return;
+      if (!passesInstanceScope(oldMessage)) return;
 
-    callbacks.onInstanceUpdate();
-    callbacks.onConversationUpdate(oldMessage.session_id);
-    callbacks.onMessageDelete?.(oldMessage.session_id, oldMessage.id);
-  }, [profile, callbacks]);
+      const sid = sessionFromRow(oldMessage);
+      if (!sid) return;
+
+      const cb = callbacksRef.current;
+      cb.onInstanceUpdate();
+      cb.onConversationUpdate(sid);
+      cb.onMessageDelete?.(sid, oldMessage.id);
+    },
+    [profile, rowMatchesCompany, passesInstanceScope],
+  );
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile?.company_id) return;
 
-    // Subscrever inserções na tabela dinâmica crm_whatsapp_messages_{telefone}
-    // Buscar telefone da empresa para saber qual tabela escutar
-    const setupSubscription = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('companies')
-          .select('phone')
-          .eq('id', profile.company_id)
-          .single();
+    const companyId = profile.company_id;
+    const channel = supabase.channel(`mensagens_rt_${companyId}_${listenInserts ? 'full' : 'del'}`);
 
-        if (error || !data?.phone) {
-          console.error('Erro ao buscar telefone para realtime:', error);
-          return;
-        }
+    if (listenInserts) {
+      channel.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: REALTIME_TABLE },
+        (payload) => {
+          const row = payload.new as Record<string, unknown> | undefined;
+          if (row) processInsert(row);
+        },
+      );
+    }
 
-        const cleanPhone = data.phone.replace(/\D/g, '');
-        const tableName = `crm_whatsapp_messages_${cleanPhone}`;
-        console.log(`[Realtime] Escutando tabela dinâmica: ${tableName}`);
+    channel.on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: REALTIME_TABLE },
+      (payload) => {
+        const row = payload.old as Record<string, unknown> | undefined;
+        if (row) processDelete(row);
+      },
+    );
 
-        const subscription = supabase
-          .channel(`${tableName}_changes`)
-          .on(
-            'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: tableName },
-            handleNewMessage
-          )
-          .on(
-            'postgres_changes',
-            { event: 'DELETE', schema: 'public', table: tableName },
-            handleDeleteMessage
-          )
-          .subscribe();
-
-        return subscription;
-      } catch (err) {
-        console.error('Erro setupSubscription:', err);
-      }
-    };
-
-    let subscription: any = null;
-    setupSubscription().then(sub => { subscription = sub; });
+    channel.subscribe();
 
     return () => {
-      if (subscription) {
-        console.log('[Realtime] Desinscrevendo...');
-        subscription.unsubscribe();
-        supabase.removeChannel(subscription);
+      try {
+        void channel.unsubscribe();
+        supabase.removeChannel(channel);
+      } catch {
+        /* empty */
       }
     };
-  }, [profile, handleNewMessage, handleDeleteMessage]);
+  }, [profile?.company_id, listenInserts, processInsert, processDelete]);
 }

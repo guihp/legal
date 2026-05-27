@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
-import { extractMessageContent } from './useConversaMessages';
-import { mediaPreviewPrefix } from '@/lib/conversaMedia';
+import { resolveConversationListPreview, type ConversationPreviewKind } from '@/lib/conversaMedia';
 import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
 import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
+import { mensagemPreviewType, PLATAFORMA_INSTAGRAM } from '@/lib/mensagensRow';
 
 function instagramListaFallbackLabel(sessionId: string): string {
   const id = String(sessionId || '').trim();
@@ -16,6 +16,7 @@ export interface InstagramConversa {
   sessionId: string;
   instancia: string;
   displayName: string;
+  leadId?: string | null;
   /** @ do cliente em `leads.arroba_instagram_cliente` (quando session_id = leads.id). */
   arrobaInstagramCliente?: string | null;
   profilePicUrlInstagram?: string | null;
@@ -28,6 +29,7 @@ export interface InstagramConversa {
   lastMessageDate: string;
   messageCount: number;
   lastMessageContent: string;
+  lastMessagePreviewKind?: ConversationPreviewKind | null;
   lastMessageType: 'human' | 'ai';
 }
 
@@ -68,125 +70,142 @@ export function useInstagramConversasList(
         effectiveInstance = inst ? String(inst).trim().toLowerCase() : null;
       }
 
-      const useLegacy = Boolean(companyInstagramId?.trim());
-      // Tabela legada (n8n): instancia costuma ser o token do fluxo IG, não o chat_instance do WhatsApp —
-      // filtrar por chat_instance zera a lista. CRM unificado continua filtrando por instância.
-      const instanciaRpc = useLegacy ? null : (effectiveInstance || null);
+      const instanciaRpc = effectiveInstance || null;
 
-      const { data: rows, error: fetchError } = useLegacy
-        ? await (supabase.rpc as any)('list_conversations_by_instagram_company', {
-            p_company_id: profile.company_id,
-            p_instancia: instanciaRpc,
-          })
-        : await (supabase.rpc as any)('list_instagram_conversations', {
-            p_company_id: profile.company_id,
-            p_instancia: instanciaRpc,
-          });
+      const { data: rows, error: fetchError } = await (supabase.rpc as any)(
+        'list_mensagens_conversations',
+        {
+          p_company_id: profile.company_id,
+          p_plataforma: PLATAFORMA_INSTAGRAM,
+          p_instancia: instanciaRpc,
+        },
+      );
 
       if (fetchError) throw fetchError;
 
-      const list: InstagramConversa[] = ((rows as any[]) || []).map((r: any) => {
-        const sid = String(r.session_id ?? '').trim();
-        let parsedMessage: any = r.message;
-        if (typeof parsedMessage === 'string') {
-          try { parsedMessage = JSON.parse(parsedMessage); } catch { parsedMessage = { content: parsedMessage, type: 'human' }; }
-        }
-        const rawContent = String(parsedMessage?.content || '');
-        const cleanContent = extractMessageContent(rawContent);
-        // Sem emoji — texto curto via helper compartilhado (mesmo do WhatsApp).
-        const mediaPrefix = mediaPreviewPrefix(r.media);
-        const lastContent = `${mediaPrefix}${cleanContent}`.trim();
-        const lastType = (parsedMessage?.type === 'ai' ? 'ai' : 'human') as 'ai' | 'human';
-
-        const rpcName = String((r as any).lead_display_name ?? '').trim();
-        const rpcPic = String((r as any).lead_profile_pic_url ?? '').trim();
-        const rpcSync =
-          (r as any).lead_last_profile_sync != null ? String((r as any).lead_last_profile_sync) : '';
-        const rpcArroba = String((r as any).lead_arroba_instagram ?? '').trim();
-        const rpcIgId = String((r as any).lead_instagram_id_cliente ?? '').trim();
+      const list: InstagramConversa[] = ((rows as Record<string, unknown>[]) || []).map((r) => {
+        const sid = String(r.contact_norm ?? r.phone ?? '')
+          .trim()
+          .toLowerCase();
+        const lastText = String(r.last_text ?? '').trim();
+        const preview = resolveConversationListPreview({
+          text: lastText,
+          media: r.last_media,
+          mensageType: r.last_mensage_type,
+        });
+        const lastContent = preview.text;
+        const lastType = mensagemPreviewType(r.last_sender_type);
+        const leadName = String(r.lead_name ?? '').trim();
+        const leadId = r.lead_id != null ? String(r.lead_id) : null;
+        const crmStage =
+          r.lead_stage != null && String(r.lead_stage).trim() !== ''
+            ? String(r.lead_stage).trim()
+            : null;
 
         return {
           sessionId: sid,
-          instancia: String(r.instancia || effectiveInstance || ''),
-          displayName: rpcName || instagramListaFallbackLabel(sid),
-          arrobaInstagramCliente: rpcArroba || null,
-          profilePicUrlInstagram: rpcPic || null,
-          lastProfileSyncInstagram: rpcSync || null,
-          instagramIdCliente: rpcIgId || null,
+          instancia: String(r.instancia ?? effectiveInstance ?? ''),
+          displayName: leadName || instagramListaFallbackLabel(sid),
+          leadId,
+          arrobaInstagramCliente: null,
+          profilePicUrlInstagram: null,
+          lastProfileSyncInstagram: null,
+          instagramIdCliente: sid || null,
           leadPhone: null,
           leadStage: null,
-          crmStage: null,
-          hasCrmLead: false,
-          lastMessageDate: String(r.data),
+          crmStage,
+          hasCrmLead: Boolean(leadId),
+          lastMessageDate: String(r.last_message_at ?? ''),
           messageCount: 1,
           lastMessageContent: lastContent,
+          lastMessagePreviewKind: preview.kind,
           lastMessageType: lastType,
         };
       });
 
       let leadRows: Array<{ id: string }> = [];
       if (list.length > 0) {
-        const sids = list.map(l => l.sessionId);
+        const igIds = [...new Set(list.map((l) => l.sessionId).filter(Boolean))];
+        const leadIds = [
+          ...new Set(list.map((l) => l.leadId).filter((id): id is string => Boolean(id))),
+        ];
         try {
-          const { data: fetchedLeads } = await supabase
-            .from('leads')
-            .select(
-              'id, name, stage, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente'
-            )
-            .in('id', sids as any);
+          const orParts: string[] = [];
+          if (leadIds.length) orParts.push(`id.in.(${leadIds.join(',')})`);
+          if (igIds.length) orParts.push(`instagram_id_cliente.in.(${igIds.join(',')})`);
+
+          const { data: fetchedLeads } = orParts.length
+            ? await supabase
+                .from('leads')
+                .select(
+                  'id, name, stage, nome_instagram_cliente, arroba_instagram_cliente, profile_pic_url_instagram, last_profile_sync_instagram, instagram_id_cliente',
+                )
+                .eq('company_id', profile.company_id)
+                .or(orParts.join(','))
+            : { data: [] };
+
           leadRows = (fetchedLeads || []) as typeof leadRows;
 
-          const displayNameById = new Map<string, string>();
-          const arrobaById = new Map<string, string>();
-          const picById = new Map<string, string>();
-          const syncById = new Map<string, string>();
-          const igIdById = new Map<string, string>();
-          const crmStageById = new Map<string, string | null>();
-          leadRows.forEach((lr: any) => {
+          const leadById = new Map<string, Record<string, unknown>>();
+          const leadByIg = new Map<string, Record<string, unknown>>();
+          (fetchedLeads || []).forEach((lr) => {
             if (!lr?.id) return;
-            const id = String(lr.id);
-            crmStageById.set(id, lr.stage != null && String(lr.stage).trim() !== '' ? String(lr.stage).trim() : null);
+            leadById.set(String(lr.id), lr as Record<string, unknown>);
+            const igc =
+              lr.instagram_id_cliente != null ? String(lr.instagram_id_cliente).trim().toLowerCase() : '';
+            if (igc) leadByIg.set(igc, lr as Record<string, unknown>);
+          });
+
+          list.forEach((item) => {
+            const lr =
+              (item.leadId ? leadById.get(item.leadId) : undefined) ??
+              leadByIg.get(item.sessionId.toLowerCase());
+            if (!lr) {
+              if (!item.displayName?.trim()) {
+                item.displayName = instagramListaFallbackLabel(item.sessionId);
+              }
+              return;
+            }
+
+            if (!item.leadId) item.leadId = String(lr.id);
+
             const nomeIg =
               lr.nome_instagram_cliente != null ? String(lr.nome_instagram_cliente).trim() : '';
             const nm = lr.name != null ? String(lr.name).trim() : '';
-            const ab = lr.arroba_instagram_cliente != null ? String(lr.arroba_instagram_cliente).trim() : '';
+            const ab =
+              lr.arroba_instagram_cliente != null ? String(lr.arroba_instagram_cliente).trim() : '';
             const label = nomeIg || nm || (ab ? (ab.startsWith('@') ? ab : `@${ab}`) : '');
-            if (label) displayNameById.set(id, label);
-            if (ab) arrobaById.set(id, ab);
-            const pic = lr.profile_pic_url_instagram != null ? String(lr.profile_pic_url_instagram).trim() : '';
-            if (pic) picById.set(id, pic);
-            if (lr.last_profile_sync_instagram != null) {
-              syncById.set(id, String(lr.last_profile_sync_instagram));
+            if (label) item.displayName = label;
+            else if (!item.displayName?.trim()) {
+              item.displayName = instagramListaFallbackLabel(item.sessionId);
             }
-            const igc = lr.instagram_id_cliente != null ? String(lr.instagram_id_cliente).trim() : '';
-            if (igc) igIdById.set(id, igc);
-          });
 
-          list.forEach(item => {
-            const resolved = displayNameById.get(item.sessionId);
-            if (resolved) item.displayName = resolved;
-            else if (!item.displayName?.trim()) item.displayName = instagramListaFallbackLabel(item.sessionId);
-
-            const ab = arrobaById.get(item.sessionId);
             if (ab) item.arrobaInstagramCliente = ab;
 
-            const pic = picById.get(item.sessionId);
+            const pic =
+              lr.profile_pic_url_instagram != null
+                ? String(lr.profile_pic_url_instagram).trim()
+                : '';
             if (pic) item.profilePicUrlInstagram = pic;
 
-            const sync = syncById.get(item.sessionId);
-            if (sync) item.lastProfileSyncInstagram = sync;
+            if (lr.last_profile_sync_instagram != null) {
+              item.lastProfileSyncInstagram = String(lr.last_profile_sync_instagram);
+            }
 
-            const igc = igIdById.get(item.sessionId);
+            const igc =
+              lr.instagram_id_cliente != null ? String(lr.instagram_id_cliente).trim() : '';
             if (igc) item.instagramIdCliente = igc;
 
-            if (crmStageById.has(item.sessionId)) {
-              item.hasCrmLead = true;
-              item.crmStage = crmStageById.get(item.sessionId) ?? null;
+            item.hasCrmLead = true;
+            if (lr.stage != null && String(lr.stage).trim() !== '') {
+              item.crmStage = String(lr.stage).trim();
             }
           });
         } catch {
-          list.forEach(item => {
-            if (!item.displayName?.trim()) item.displayName = instagramListaFallbackLabel(item.sessionId);
+          list.forEach((item) => {
+            if (!item.displayName?.trim()) {
+              item.displayName = instagramListaFallbackLabel(item.sessionId);
+            }
           });
         }
       }
@@ -227,7 +246,7 @@ export function useInstagramConversasList(
     } finally {
       if (!background) setLoading(false);
     }
-  }, [profile?.company_id, scopedInstance, isManager, profile, companyInstagramId]);
+  }, [profile?.company_id, scopedInstance, isManager, profile]);
 
   useEffect(() => {
     fetchConversas({ background: false });

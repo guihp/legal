@@ -53,7 +53,81 @@ Ou usando user_id:
 }
 ```
 
-### 5. vivareal-scraper
+### 5. mensagem-media-ingest
+**Arquivo:** `mensagem-media-ingest/index.ts`  
+**Propósito:** INSERT em `public.mensagens` + upload no bucket `company-assets` numa única chamada (sem nó Supabase no n8n para mídia).  
+**Endpoint:** `POST /functions/v1/mensagem-media-ingest`
+
+**Autenticação (mesmo padrão das tools HTTP do agente n8n):**
+- Header `apikey`: service_role key do projeto
+- Header `Authorization`: `Bearer <service_role key>`
+
+**Modo recomendado — Form-Data + arquivo binário do n8n (após nó que baixa a mídia):**
+
+No HTTP Request:
+- Method: POST
+- URL: `https://<project>.supabase.co/functions/v1/mensagem-media-ingest`
+- Headers: `apikey` + `Authorization` (service_role, igual `property-search-api`)
+- **Send Body:** ON
+- **Body Content Type:** `Form-Data`
+- Parâmetro binário:
+  - **Parameter Type:** `n8n Binary File`
+  - **Name:** `file`
+  - **Input Data Field Name:** `data` (nome da aba Binary do nó anterior, ex. `baixar o arquivo`)
+- Parâmetros texto (Form Data → Text):
+  - `company_id`, `phone`, `mensagem_id` (obrigatórios)
+  - `text` = legenda (opcional)
+  - `mensage_type`, `type` (`lead`), `plataforma` (`WhatsApp`)
+
+**Recomendado — JSON + `source_url` (1 nó HTTP; sem Supabase e sem “baixar arquivo”):**
+```json
+{
+  "company_id": "uuid-da-empresa",
+  "phone": "5511999999999",
+  "mensagem_id": "wamid....",
+  "source_url": "https://lookaside.fbsbx.com/...",
+  "mensage_type": "audio",
+  "text": "legenda opcional",
+  "type": "lead",
+  "plataforma": "WhatsApp",
+  "fetch_authorization": "Bearer <token_api_whatsapp_meta>"
+}
+```
+
+A edge: baixa a mídia → Storage → **INSERT** em `mensagens` (`text` + `conteudo_media`).
+
+**Limite:** 25 MB por arquivo.
+
+**Fluxo n8n mídia:** `If` (não é texto) → **só** HTTP Request → `mensagem-media-ingest`.
+
+**Não use** `file_base64` no body — aumenta payload e custo.
+
+### 6. mensagem-ingest
+**Arquivo:** `mensagem-ingest/index.ts`  
+**Propósito:** Gravar mensagem de **texto** em `public.mensagens` de forma **idempotente** (`upsert_mensagem` no Postgres). Evita erro 409 quando o n8n reenvia o mesmo `wamid`.  
+**Endpoint:** `POST /functions/v1/mensagem-ingest`
+
+**Autenticação:** igual `mensagem-media-ingest` (`apikey` + `Authorization: Bearer <service_role>`).
+
+**Body JSON:**
+```json
+{
+  "company_id": "uuid-da-empresa",
+  "phone": "5511999999999",
+  "mensagem_id": "wamid....",
+  "mensage_type": "conversation",
+  "text": "conteúdo da mensagem",
+  "type": "lead",
+  "plataforma": "WhatsApp",
+  "instancia": "opcional"
+}
+```
+
+**n8n:** substitua o nó Supabase *Create row* em `mensagens` por um **HTTP Request** para esta URL (ou importe `n8n/adicionar-mensagem-usuario-texto-upsert.json`).
+
+**Alternativa direta (RPC):** `POST /rest/v1/rpc/upsert_mensagem` com parâmetros `p_company_id`, `p_phone`, `p_mensagem_id`, etc.
+
+### 7. vivareal-scraper
 **Arquivo:** `vivareal-scraper/index.ts`
 **Propósito:** Fazer scraping interno do VivaReal para importar imóveis automaticamente
 **Permissões:** Usuários autenticados podem importar imóveis da sua empresa
