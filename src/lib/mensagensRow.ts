@@ -67,6 +67,7 @@ export function mapMensagemRow(row: {
     data: row.created_at,
     media,
     mediaImages,
+    mensageType: row.mensage_type ? String(row.mensage_type) : null,
     before_handoff: false,
     handoff_ts: null,
   };

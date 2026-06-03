@@ -39,7 +39,7 @@ function formatNowSP(): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
-export type InstagramMessageType = 'texto' | 'imagem' | 'audio' | 'arquivo';
+export type InstagramMessageType = 'texto' | 'imagem' | 'audio' | 'video' | 'arquivo';
 
 export interface SendInstagramPayload {
   session_id: string;        // ID/handle do contato no Instagram
@@ -83,6 +83,7 @@ export function useInstagramSendMessage() {
       body.media_url = payload.media_url;
       if (payload.tipo === 'imagem') body.image_url = payload.media_url;
       if (payload.tipo === 'audio') body.audio_url = payload.media_url;
+      if (payload.tipo === 'video') body.video_url = payload.media_url;
       if (payload.tipo === 'arquivo') body.file_url = payload.media_url;
     }
     if (payload.mutiplos === true) {

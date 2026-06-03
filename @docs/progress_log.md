@@ -1,5 +1,16 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-06-01 — Chat: composer unificado WhatsApp + Instagram
+
+- **Motivo:** mudanças no WhatsApp (colar imagem, preview, anexo, áudio OGG) exigiam duplicar código no Instagram.
+- **Solução:** módulos compartilhados — `useChatComposerMedia`, `ChatComposer`, `ChatMediaPreviewOverlay`, `chatMediaFiles.ts`, `chatImage.ts`, `clipboardImages.ts`.
+- `ConversasViewPremium` e `ConversasViewInstagram` usam os mesmos componentes; Instagram alinhado a `pickVoiceRecorderMimeType` + `finalizeVoiceRecordingForWhatsapp` (OGG no webhook).
+- **Fix IG foto no chat:** `insertMensagemOptimistic` — Instagram grava em `mensagens` (type IA + `conteudo_media`) antes do webhook, igual WhatsApp.
+- **IG áudio MP4:** `voiceAudioInstagram.ts` — gravação/anexo/envio com `audio/mp4` (WhatsApp continua OGG).
+- **Vídeo + PDF (WA + IG):** upload por tipo (`uploadChatMedia`), insert otimista (`sendChatMediaItems`), webhook `video`/`arquivo`, exibição `ChatMessageMediaBody` (player MP4 + card PDF).
+- **Limite vídeo 16 MB:** `compressChatVideo.ts` (ffmpeg.wasm H.264) ao anexar; se não couber, toast com `ChatVideoSizeLimitError`.
+- **Próximo:** opcional unificar bolhas; deploy front Hostinger após build.
+
 ## 2026-06-01 — Config IA: agendamento de visitas (DB + schedule-api)
 
 - Migration `20260601120000_companies_ai_visit_scheduling.sql`: `ai_visit_broker_mode`, `ai_visit_priority_criterion`, `ai_visit_broker_priorities` + validação em `update_own_company`.

@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
-  MessageCircle, MessageSquare, Search, Send, Paperclip, ArrowLeft,
-  MoreVertical, Mic, Plus, AlertCircle, Instagram, Image as ImageIcon, ChevronLeft, ChevronRight,
+  MessageCircle, MessageSquare, Search, ArrowLeft,
+  MoreVertical, Plus, AlertCircle, Instagram, Image as ImageIcon, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -38,13 +38,30 @@ import { ConversationActionsMenu } from '@/components/ConversationActionsMenu';
 import { SummaryModalAnimated } from '@/components/SummaryModalAnimated';
 import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
-import { ChatImageGrid } from '@/components/ChatImageGrid';
-import { ChatAudioPlayer } from '@/components/ChatAudioPlayer';
 import { ConversationListItem } from '@/components/chat/ConversationListItem';
-import { extractMediaAudio } from '@/lib/conversaMedia';
+import { ChatMessageMediaBody } from '@/components/chat/ChatMessageMediaBody';
+import { hasChatRenderableMedia } from '@/lib/conversaMedia';
 import { processTextWithBold } from '@/lib/formatChatMessageText';
 import { groupChatMessagesForDisplay } from '@/lib/groupChatImageMessages';
 import type { ConversaMessage } from '@/hooks/useConversaMessages';
+import { useChatComposerMedia } from '@/hooks/useChatComposerMedia';
+import { ChatComposer } from '@/components/chat/ChatComposer';
+import { ChatMediaPreviewOverlay } from '@/components/chat/ChatMediaPreviewOverlay';
+import {
+  finalizeVoiceRecordingForInstagram,
+  INSTAGRAM_VOICE_MIME,
+  pickVoiceRecorderMimeTypeForInstagram,
+} from '@/lib/voiceAudioInstagram';
+import { insertMensagemOptimistic } from '@/lib/insertMensagemOptimistic';
+import { resolveWebhookMediaMessage } from '@/lib/chatMediaCaption';
+import { formatConteudoMediaForDb } from '@/lib/chatMediaStorage';
+import {
+  insertOptimisticChatMediaRows,
+  resolveBatchWebhookTipo,
+  uploadAndBuildChatMediaItems,
+  toWebhookMidiasPayload,
+} from '@/lib/sendChatMediaItems';
+import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
 
 /* ---------- utils ---------- */
 
@@ -54,50 +71,6 @@ function formatHour(dateString: string) {
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function uploadMediaAndGetPublicUrl(file: File, companyId?: string | null): Promise<string> {
-  const bucket = (import.meta as any).env?.VITE_CHAT_MEDIA_BUCKET || 'company-assets';
-  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  const safeCompany = (companyId || 'sem_empresa').replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!companyId) throw new Error('company_id ausente para upload da mídia');
-  const path = `${safeCompany}/chat-media/instagram/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    contentType: file.type || undefined,
-    upsert: false,
-  });
-  if (error) throw new Error(`Falha ao subir mídia: ${error.message}`);
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  const url = String(data?.publicUrl || '').trim();
-  if (!url) throw new Error('URL pública da mídia não foi gerada');
-  return url;
-}
-
-async function convertImageFileToPng(file: File): Promise<File> {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('Falha ao carregar imagem para conversão'));
-      el.src = objectUrl;
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Falha ao criar contexto para conversão PNG');
-    ctx.drawImage(img, 0, 0);
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Falha ao converter imagem para PNG'))), 'image/png');
-    });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return new File([blob], `${baseName}.png`, { type: 'image/png' });
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
 }
 
 const bubble = {
@@ -173,8 +146,20 @@ function InstagramMessageBubble({
   const msgType = row.message?.type;
   const isAI = String(msgType || '').toLowerCase() === 'ai';
   const content = String(row.message?.content ?? '');
-  const mediaImages = row.mediaImages ?? [];
   const hq = highlightQuery?.trim();
+
+  if (hasChatRenderableMedia(row)) {
+    return (
+      <ChatMessageMediaBody
+        row={row}
+        isAI={isAI}
+        content={content}
+        formatHour={formatHour}
+        onOpenMedia={onOpenMedia}
+        highlightQuery={hq}
+      />
+    );
+  }
 
   const textBody =
     content && hq ? (
@@ -194,55 +179,6 @@ function InstagramMessageBubble({
         {processTextWithBold(content)}
       </div>
     ) : null;
-
-  if (mediaImages.length > 0) {
-    const hasCaption = Boolean(content.trim());
-    return (
-      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
-        <div
-          className={
-            isAI
-              ? `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tr-sm overflow-hidden bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
-              : `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tl-sm overflow-hidden bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
-          }
-        >
-          <ChatImageGrid
-            images={mediaImages}
-            onImageClick={(idx) => onOpenMedia?.(mediaImages, idx)}
-          />
-          {hasCaption ? <div className="px-1.5 pt-1.5 pb-0.5">{textBody}</div> : null}
-          <div
-            className={`text-[10px] text-right px-2 pb-1 pt-0.5 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
-          >
-            {formatHour(row.data)}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const audioUrl = extractMediaAudio(row.media);
-  if (audioUrl) {
-    return (
-      <div className={isAI ? 'self-end' : 'self-start'}>
-        <div
-          className={
-            isAI
-              ? 'max-w-[min(100%,330px)] rounded-2xl rounded-tr-sm bg-[var(--cv-bubble-out)] px-3 py-2.5 text-[var(--cv-bubble-out-text)] shadow-sm'
-              : 'max-w-[min(100%,330px)] rounded-2xl rounded-tl-sm bg-[var(--cv-bubble-in)] px-3 py-2.5 text-[var(--cv-bubble-in-text)] shadow-sm'
-          }
-        >
-          <ChatAudioPlayer src={audioUrl} variant={isAI ? 'outgoing' : 'incoming'} />
-          {content ? <div className="mt-2 pt-2 border-t border-white/10">{textBody}</div> : null}
-          <div
-            className={`text-[10px] text-right mt-1 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
-          >
-            {formatHour(row.data)}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={isAI ? 'self-end' : 'self-start'}>
@@ -281,10 +217,6 @@ export function ConversasViewInstagram() {
   const [recording, setRecording] = useState(false);
   const [sec, setSec] = useState(0);
   const [recordingLevels, setRecordingLevels] = useState<number[]>(Array.from({ length: 24 }, () => 8));
-  const [previewData, setPreviewData] = useState<{
-    items: Array<{ file: File; previewUrl: string; type: 'imagem' | 'audio' | 'arquivo'; caption: string }>;
-    activeIndex: number;
-  } | null>(null);
   const [companyTokenInstagram, setCompanyTokenInstagram] = useState<string | null>(null);
   const [summaryModal, setSummaryModal] = useState<{ isOpen: boolean; data: any }>({ isOpen: false, data: null });
   const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
@@ -295,7 +227,13 @@ export function ConversasViewInstagram() {
   const [inChatSearchQuery, setInChatSearchQuery] = useState('');
   const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
 
-  const imgInputRef = useRef<HTMLInputElement | null>(null);
+  const composerMedia = useChatComposerMedia({
+    surface: 'instagram',
+    hasActiveConversation: Boolean(selectedConversation),
+    toast,
+    noConversationTitle: 'Selecione uma conversa primeiro',
+  });
+
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -705,8 +643,16 @@ export function ConversasViewInstagram() {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeCandidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
-      const mime = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m)) || '';
+      const mime = pickVoiceRecorderMimeTypeForInstagram();
+      if (!mime) {
+        toast({
+          title: 'Gravação MP4 indisponível',
+          description:
+            'Seu navegador não grava áudio em MP4 (exigido pelo Instagram). Use Safari no Mac/iPhone ou anexe um arquivo .m4a/.mp4.',
+          variant: 'destructive',
+        });
+        return;
+      }
       const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
 
       try {
@@ -745,28 +691,55 @@ export function ConversasViewInstagram() {
       mr.ondataavailable = e => {
         if (e.data) chunksRef.current.push(e.data);
       };
-      const sessionId = selectedConversation;
+      const sessionId = normInstagramSessionId(selectedConversation);
       mr.onstop = async () => {
         try {
           setBusy(true);
           const resolvedMime = mr.mimeType || mime || 'audio/webm';
-          const ext = resolvedMime.includes('mp4') ? 'mp4' : resolvedMime.includes('ogg') ? 'ogg' : 'webm';
-          const blob = new Blob(chunksRef.current, { type: resolvedMime });
-          const audioFile = new File([blob], `audio-${Date.now()}.${ext}`, { type: resolvedMime });
-          const audioUrl = await uploadMediaAndGetPublicUrl(audioFile, companyId);
+          const audioFile = await finalizeVoiceRecordingForInstagram(chunksRef.current, resolvedMime);
+          const audioUrl = await uploadChatMediaAndGetPublicUrl(
+            audioFile,
+            'instagram',
+            'audio',
+            companyId,
+          );
 
-          await sendPayload({
+          if (companyId) {
+            const inserted = await insertMensagemOptimistic({
+              companyId,
+              sessionId,
+              instancia: targetInstancia,
+              platform: 'instagram',
+              mediaUrl: formatConteudoMediaForDb('audio', audioUrl),
+              messageType: 'audio',
+              content: '',
+              userId: profile?.id,
+            });
+            if (!inserted) {
+              console.warn('[audio] insert otimista IG falhou; continuando via webhook');
+            }
+          }
+
+          refetchMessages();
+
+          sendPayload({
             session_id: sessionId,
             instancia: targetInstancia,
             tipo: 'audio',
             mensagem: '',
-            mime_type: audioFile.type,
+            mime_type: INSTAGRAM_VOICE_MIME,
             company_id: companyId,
             media_url: audioUrl,
+          }).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+            toast({
+              title: 'Falha ao encaminhar áudio ao Instagram',
+              description: msg,
+              variant: 'destructive',
+            });
           });
 
           toast({ title: 'Áudio enviado com sucesso', variant: 'default' });
-          refetchMessages();
           refetchConversas();
           setTimeout(() => {
             refetchMessages();
@@ -816,94 +789,73 @@ export function ConversasViewInstagram() {
     }
   };
 
-  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    if (!selectedConversation) {
-      toast({ title: 'Selecione uma conversa primeiro', variant: 'destructive' });
-      return;
-    }
-    try {
-      setBusy(true);
-      const items = await Promise.all(
-        files.map(async (file) => {
-          let normalizedFile = file;
-          const tipo: 'imagem' | 'audio' | 'arquivo' = file.type.startsWith('image/') ? 'imagem' : (file.type.startsWith('audio/') ? 'audio' : 'arquivo');
-          if (tipo === 'imagem') {
-            try {
-              normalizedFile = await convertImageFileToPng(file);
-            } catch {
-              throw new Error(`Nao foi possivel converter a imagem "${file.name}" para PNG`);
-            }
-          } else if (tipo === 'audio') {
-            if (file.type !== 'audio/mp4') throw new Error('Audio deve estar no formato audio/mp4');
-          } else if (file.type.startsWith('video/')) {
-            if (file.type !== 'video/mp4') throw new Error('Video deve estar no formato video/mp4');
-          } else if (file.type === 'application/pdf') {
-            // ok
-          } else {
-            throw new Error('Arquivo deve ser PDF (application/pdf) ou video/mp4');
-          }
-
-          return { file: normalizedFile, previewUrl: URL.createObjectURL(normalizedFile), type: tipo, caption: '' };
-        })
-      );
-      setPreviewData({ items, activeIndex: 0 });
-    } catch (err: any) {
-      toast({ title: 'Erro ao processar arquivo', description: err.message, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-      if (e.target) e.target.value = '';
-    }
-  };
-
-  const cancelPreview = () => {
-    (previewData?.items || []).forEach((item) => {
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    });
-    setPreviewData(null);
-  };
-
   const sendPreview = async () => {
-    if (!previewData || !selectedConversation) return;
+    if (!composerMedia.previewData || !selectedConversation) return;
     const targetInstancia = resolveIgInstancia();
     try {
       setBusy(true);
-      const uploadedItems = await Promise.all(
-        previewData.items.map(async (item) => {
-          const uploadedUrl = await uploadMediaAndGetPublicUrl(item.file, profile?.company_id);
-          return {
-            url: uploadedUrl,
-            tipo: item.type,
-            mime_type: item.file.type,
-            nome: item.file.name,
-            caption: item.caption || '',
-          };
-        })
+      const uploadedItems = await uploadAndBuildChatMediaItems(
+        composerMedia.previewData.items.map((item) => ({
+          file: item.file,
+          type: item.type,
+          caption: item.caption || '',
+        })),
+        'instagram',
+        profile?.company_id,
       );
       const urls = uploadedItems.map((m) => m.url);
-      const allSameType = uploadedItems.every((m) => m.tipo === uploadedItems[0]?.tipo);
-      const requestType = allSameType ? (uploadedItems[0]?.tipo as 'imagem' | 'audio' | 'arquivo') : 'arquivo';
+      const requestType = resolveBatchWebhookTipo(uploadedItems);
+      const sessionId = normInstagramSessionId(selectedConversation);
+      const primary = uploadedItems[0];
+      const webhookMessage = resolveWebhookMediaMessage(primary?.caption, urls[0]);
 
-      await sendPayload({
-        session_id: selectedConversation,
+      if (profile?.company_id) {
+        await insertOptimisticChatMediaRows({
+          companyId: profile.company_id,
+          sessionId,
+          instancia: targetInstancia,
+          platform: 'instagram',
+          items: uploadedItems,
+          userId: profile.id,
+        });
+      }
+
+      refetchMessages();
+
+      sendPayload({
+        session_id: sessionId,
         instancia: targetInstancia,
         tipo: requestType,
-        mensagem: (uploadedItems[0]?.caption || '').trim() || urls[0] || '',
-        caption: uploadedItems[0]?.caption || '',
-        mime_type: uploadedItems[0]?.mime_type,
+        mensagem: webhookMessage,
+        caption: primary?.caption || '',
+        mime_type:
+          requestType === 'audio' ? INSTAGRAM_VOICE_MIME : primary?.mime_type,
         company_id: profile?.company_id,
         media_url: urls[0],
         mutiplos: uploadedItems.length > 1,
         media_urls: urls,
-        midias: uploadedItems,
+        midias: toWebhookMidiasPayload(uploadedItems),
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+        console.error('[media] webhook IG falhou:', err);
+        toast({
+          title: 'Falha ao encaminhar ao Instagram',
+          description: msg,
+          variant: 'destructive',
+        });
       });
-      (previewData?.items || []).forEach((item) => {
-        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+
+      toast({
+        title: uploadedItems.length > 1 ? `${uploadedItems.length} arquivos enviados` : 'Arquivo enviado',
+        variant: 'default',
       });
-      setPreviewData(null);
-      refetchMessages();
+
+      composerMedia.clearPreview();
       refetchConversas();
+      setTimeout(() => {
+        refetchMessages();
+        refetchConversas();
+      }, 2000);
     } catch (err: any) {
       toast({ title: 'Erro ao enviar', description: err.message, variant: 'destructive' });
     } finally {
@@ -1324,93 +1276,26 @@ export function ConversasViewInstagram() {
               </div>
             </div>
 
-            {/* INPUT AREA (paridade com WhatsApp / ConversasViewPremium: emoji, anexo, textarea ou ondas, enviar ou microfone) */}
-            <div className="relative z-30 min-h-[62px] bg-[var(--cv-panel)] px-4 py-2 flex items-end gap-2 shrink-0 w-full">
-              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" type="button" title="Emoji">
-                <span className="text-xl leading-none">😊</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1"
-                onClick={() => imgInputRef.current?.click()}
-                title="Anexar arquivo"
-                type="button"
-                disabled={recording || busy}
-              >
-                <Paperclip className="h-5 w-5" />
-              </Button>
-              <input
-                ref={imgInputRef}
-                type="file"
-                className="hidden"
-                onChange={onPickFile}
-                multiple
-                accept="image/*,video/mp4,audio/mp4,application/pdf"
-              />
-
-              <div className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]">
-                {recording ? (
-                  <div className="w-full flex items-center gap-3 px-1">
-                    <span className="text-xs text-red-400 font-medium whitespace-nowrap">
-                      Gravando {String(sec).padStart(2, '0')}s
-                    </span>
-                    <div className="flex items-end gap-[2px] h-8 w-full">
-                      {recordingLevels.map((h, i) => (
-                        <span
-                          key={i}
-                          className="w-1 rounded-full bg-red-400/90 transition-all duration-75"
-                          style={{ height: `${h}px` }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <textarea
-                    value={messageInput}
-                    onChange={e => setMessageInput(e.target.value)}
-                    onKeyDown={onTextareaKeyDown}
-                    placeholder="Enviar mensagem no Direct..."
-                    className="w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] placeholder:text-[var(--cv-text-muted)]"
-                    rows={1}
-                    style={{ minHeight: '24px' }}
-                    disabled={busy}
-                  />
-                )}
-              </div>
-
-              {messageInput.trim() ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Enviar"
-                  disabled={sending || busy || recording}
-                  className="shrink-0 text-white rounded-full h-10 w-10 mb-1 shadow-md transition-transform active:scale-95 disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg,#d62976 0%,#962fbf 100%)' }}
-                  onMouseDown={e => {
-                    if (!sending && !busy && !recording) e.preventDefault();
-                  }}
-                  onClick={() => void sendText()}
-                >
-                  <Send className="h-5 w-5 ml-0.5" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={recording ? stopRecord : () => void startRecord()}
-                  disabled={sending || busy}
-                  className={`rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-all ${
-                    recording
-                      ? 'bg-red-500 animate-pulse text-white'
-                      : 'bg-[var(--cv-tab-inactive-bg)] hover:bg-[var(--cv-hover-strong)] text-[var(--cv-text-muted)]'
-                  } disabled:opacity-50`}
-                  title={recording ? 'Parar e enviar áudio' : 'Gravar áudio'}
-                >
-                  <Mic className="h-5 w-5" />
-                </Button>
-              )}
-            </div>
+            <ChatComposer
+              surface="instagram"
+              zClassName="relative z-30"
+              messageInput={messageInput}
+              onMessageInputChange={setMessageInput}
+              onTextareaKeyDown={onTextareaKeyDown}
+              onSendText={() => void sendText()}
+              placeholder="Enviar mensagem no Direct..."
+              busy={busy || composerMedia.busy}
+              sending={sending}
+              recording={recording}
+              recordingLevels={recordingLevels}
+              recordingSec={sec}
+              onStartRecord={() => void startRecord()}
+              onStopRecord={stopRecord}
+              imgInputRef={composerMedia.imgInputRef}
+              messageTextareaRef={composerMedia.messageTextareaRef}
+              onPickFile={composerMedia.onPickFile}
+              onPasteMedia={composerMedia.onPasteMedia}
+            />
           </>
         )}
       </div>
@@ -1475,111 +1360,17 @@ export function ConversasViewInstagram() {
           </motion.div>
         )}
 
-        {previewData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[var(--cv-chat)] bg-opacity-95 flex flex-col"
-          >
-            <div className="h-16 flex items-center justify-between px-4 w-full text-[var(--cv-icon)]">
-              <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[var(--cv-preview-bar-hover)] rounded-full">
-                <ArrowLeft className="w-6 h-6" />
-              </Button>
-              <h2 className="font-medium text-[var(--cv-text)]">
-                Visualizar arquivo{previewData.items.length > 1 ? `s (${previewData.items.length})` : ''}
-              </h2>
-              <div className="w-10"></div>
-            </div>
-
-            <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
-              {previewData.items[previewData.activeIndex]?.type === 'imagem' ? (
-                <img src={previewData.items[previewData.activeIndex]?.previewUrl} alt="Preview" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
-              ) : previewData.items[previewData.activeIndex]?.type === 'audio' ? (
-                <div className="flex flex-col items-center gap-6 text-[var(--cv-text)] p-8 bg-[var(--cv-panel)] rounded-xl border border-[var(--cv-border)] max-w-md w-full">
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#d62976]/40 to-[#962fbf]/40 rounded-full flex items-center justify-center">
-                    <Mic className="w-8 h-8 text-white" />
-                  </div>
-                  <audio
-                    src={previewData.items[previewData.activeIndex]?.previewUrl}
-                    controls
-                    className="w-full max-w-sm"
-                    preload="metadata"
-                  />
-                  <p className="text-xs text-[var(--cv-text-muted)] truncate w-full text-center" title={previewData.items[previewData.activeIndex]?.file.name}>
-                    {previewData.items[previewData.activeIndex]?.file.name}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 text-[var(--cv-text)] p-10 bg-[var(--cv-panel)] rounded-xl border border-[var(--cv-border)]">
-                  <div className="w-20 h-20 bg-zinc-600 rounded-full flex items-center justify-center">
-                    <Paperclip className="w-10 h-10 text-white" />
-                  </div>
-                  <p className="font-semibold text-lg max-w-xs truncate" title={previewData.items[previewData.activeIndex]?.file.name}>
-                    {previewData.items[previewData.activeIndex]?.file.name}
-                  </p>
-                  <p className="text-sm text-zinc-400">
-                    {((previewData.items[previewData.activeIndex]?.file.size || 0) / 1024).toFixed(1)} KB • {previewData.items[previewData.activeIndex]?.file.type || 'Desconhecido'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {previewData.items.length > 1 && (
-              <div className="w-full max-w-3xl mx-auto px-4 pb-3">
-                <div className="flex gap-2 overflow-x-auto">
-                  {previewData.items.map((item, idx) => (
-                    <button
-                      key={`${item.file.name}-${idx}`}
-                      onClick={() => setPreviewData({ ...previewData, activeIndex: idx })}
-                      className={`h-14 w-14 rounded-md border overflow-hidden shrink-0 ${
-                        previewData.activeIndex === idx ? 'border-[#d62976]' : 'border-[var(--cv-border)]'
-                      }`}
-                      title={item.file.name}
-                    >
-                      {item.type === 'imagem' ? (
-                        <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="h-full w-full grid place-items-center bg-[var(--cv-panel)] text-[10px] text-[var(--cv-text-muted)]">
-                          {item.type === 'audio' ? 'AUDIO' : 'ARQ'}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="bg-[var(--cv-panel)] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg border border-[var(--cv-border)]">
-              <input
-                autoFocus
-                value={previewData.items[previewData.activeIndex]?.caption || ''}
-                onChange={e =>
-                  setPreviewData({
-                    ...previewData,
-                    items: previewData.items.map((item, idx) =>
-                      idx === previewData.activeIndex ? { ...item, caption: e.target.value } : item
-                    ),
-                  })
-                }
-                placeholder={`Adicione uma legenda para ${previewData.items[previewData.activeIndex]?.file.name || 'a mídia'}...`}
-                className="bg-transparent text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] w-full outline-none px-4"
-                onKeyDown={e => e.key === 'Enter' && sendPreview()}
-              />
-            </div>
-
-            <div className="flex justify-end px-6 pb-6 w-full max-w-5xl mx-auto">
-              <button
-                onClick={sendPreview}
-                className="text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
-                style={{ background: 'linear-gradient(135deg,#d62976 0%,#962fbf 100%)' }}
-              >
-                {busy || sending
-                  ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : <Send className="w-6 h-6 ml-0.5" />}
-              </button>
-            </div>
-          </motion.div>
+        {composerMedia.previewData && (
+          <ChatMediaPreviewOverlay
+            surface="instagram"
+            previewData={composerMedia.previewData}
+            busy={busy}
+            sending={sending}
+            onCancel={composerMedia.clearPreview}
+            onSend={() => void sendPreview()}
+            onUpdateCaption={composerMedia.updateCaption}
+            onSelectIndex={composerMedia.setActivePreviewIndex}
+          />
         )}
       </AnimatePresence>
 

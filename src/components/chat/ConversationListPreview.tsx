@@ -8,7 +8,14 @@ export function ConversationListPreview({
   kind?: ConversationPreviewKind | null;
   text: string;
 }) {
-  const label = text || 'Toque para abrir conversa';
+  const fallback = 'Toque para abrir conversa';
+  const kindFallback: Record<NonNullable<typeof kind>, string> = {
+    image: 'Foto',
+    audio: 'Áudio',
+    video: 'Vídeo',
+    document: 'Documento',
+  };
+  const label = text || (kind ? kindFallback[kind] : '') || fallback;
   if (!kind) {
     return <span className="truncate">{label}</span>;
   }

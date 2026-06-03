@@ -165,6 +165,8 @@ export interface ConversaMessage {
   data: string;
   media?: string | null;
   mediaImages?: string[];
+  /** `mensagens.mensage_type` — desambigua mp4 (áudio vs vídeo). */
+  mensageType?: string | null;
   before_handoff?: boolean;
   handoff_ts?: string | null;
 }

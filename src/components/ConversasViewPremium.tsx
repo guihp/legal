@@ -47,6 +47,7 @@ import {
   mediaPreviewLabel,
   inferMediaKind,
   extractMediaAudio,
+  hasChatRenderableMedia,
   resolveConversationListPreview,
   type ConversationPreviewKind,
 } from '@/lib/conversaMedia';
@@ -55,17 +56,30 @@ import { ConversationListItem } from '@/components/chat/ConversationListItem';
 import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
 import { useConversasList } from '@/hooks/useConversasList';
-import { useConversaMessages } from '@/hooks/useConversaMessages';
+import { useConversaMessages, type ConversaMessage } from '@/hooks/useConversaMessages';
 import { mapMensagemWhatsappRow } from '@/lib/mensagensWhatsapp';
 import { ChatAudioPlayer } from '@/components/ChatAudioPlayer';
 import { ChatImageGrid } from '@/components/ChatImageGrid';
 import { groupChatMessagesForDisplay } from '@/lib/groupChatImageMessages';
 import {
   finalizeVoiceRecordingForWhatsapp,
-  normalizeAudioFileForWhatsapp,
   pickVoiceRecorderMimeType,
   WHATSAPP_VOICE_MIME,
 } from '@/lib/voiceAudioWhatsapp';
+import { useChatComposerMedia } from '@/hooks/useChatComposerMedia';
+import { ChatComposer } from '@/components/chat/ChatComposer';
+import { ChatMediaPreviewOverlay } from '@/components/chat/ChatMediaPreviewOverlay';
+import { ChatMessageMediaBody } from '@/components/chat/ChatMessageMediaBody';
+import { insertMensagemOptimistic } from '@/lib/insertMensagemOptimistic';
+import {
+  insertOptimisticChatMediaRows,
+  resolveBatchWebhookTipo,
+  uploadAndBuildChatMediaItems,
+  toWebhookMidiasPayload,
+} from '@/lib/sendChatMediaItems';
+import { resolveWebhookMediaMessage } from '@/lib/chatMediaCaption';
+import { formatConteudoMediaForDb } from '@/lib/chatMediaStorage';
+import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { useConversasUnread } from '@/hooks/useConversasUnread';
 import { useMensagensNotifications } from '@/hooks/useMensagensNotifications';
@@ -216,7 +230,7 @@ function formatNowSP(): string {
 async function sendPayload(
   sessionId: string,
   instancia: string,
-  tipo: "texto" | "imagem" | "audio" | "arquivo",
+  tipo: "texto" | "imagem" | "audio" | "video" | "arquivo",
   mensagem: string,
   mimeType?: string,
   caption?: string,
@@ -258,6 +272,7 @@ async function sendPayload(
     if (tipo === "imagem") body.image_url = mediaUrl;
     if (tipo === "arquivo") body.file_url = mediaUrl;
     if (tipo === "audio") body.audio_url = mediaUrl;
+    if (tipo === "video") body.video_url = mediaUrl;
   }
   if (mutiplos === true) {
     body.mutiplos = true;
@@ -281,28 +296,6 @@ async function sendPayload(
   try { return await r.json(); } catch { return {}; }
 }
 
-async function uploadMediaAndGetPublicUrl(
-  file: File,
-  channel: "whatsapp" | "instagram",
-  companyId?: string | null
-): Promise<string> {
-  const bucket = (import.meta as any).env?.VITE_CHAT_MEDIA_BUCKET || "company-assets";
-  const ext = (file.name.split(".").pop() || "bin").toLowerCase();
-  const safeCompany = (companyId || "sem_empresa").replace(/[^a-zA-Z0-9_-]/g, "");
-  if (!companyId) throw new Error("company_id ausente para upload da mídia");
-  const path = `${safeCompany}/chat-media/${channel}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    contentType: file.type || undefined,
-    upsert: false,
-  });
-  if (error) throw new Error(`Falha ao subir mídia: ${error.message}`);
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  const url = String(data?.publicUrl || "").trim();
-  if (!url) throw new Error("URL pública da mídia não foi gerada");
-  return url;
-}
-
-// Inserção otimista em mensagens (envio pelo painel = type IA → bolha à direita, como texto/áudio do corretor).
 async function insertWhatsappMessageRow(params: {
   companyId: string;
   sessionId: string;
@@ -312,100 +305,7 @@ async function insertWhatsappMessageRow(params: {
   content?: string;
   userId?: string | null;
 }): Promise<{ id: string | number } | null> {
-  try {
-    const phone = String(params.sessionId || "").replace(/\D/g, "");
-    if (!phone) {
-      console.warn("[insertWhatsappMessageRow] telefone da conversa inválido");
-      return null;
-    }
-    const { data, error } = await (supabase as any)
-      .from("mensagens")
-      .insert({
-        phone,
-        company_id: params.companyId,
-        instancia: params.instancia,
-        type: "IA",
-        user_id: params.userId || null,
-        mensage_type: params.messageType,
-        text: params.content ?? "",
-        conteudo_media: params.mediaUrl,
-        plataforma: "WhatsApp",
-      })
-      .select("id")
-      .single();
-    if (error) {
-      console.warn("[insertWhatsappMessageRow] insert falhou:", error);
-      return null;
-    }
-    return { id: data?.id };
-  } catch (err) {
-    console.warn("[insertWhatsappMessageRow] excecao inesperada:", err);
-    return null;
-  }
-}
-
-function normalizeClipboardImageFile(file: File): File {
-  const hasName = file.name && file.name !== "image.png" && !file.name.startsWith("blob");
-  if (hasName) return file;
-  const ext =
-    file.type === "image/jpeg"
-      ? "jpg"
-      : file.type === "image/webp"
-        ? "webp"
-        : file.type === "image/gif"
-          ? "gif"
-          : "png";
-  return new File([file], `imagem-${Date.now()}.${ext}`, { type: file.type || "image/png" });
-}
-
-function getImageFilesFromClipboard(data: DataTransfer | null): File[] {
-  if (!data) return [];
-  const files: File[] = [];
-
-  if (data.items?.length) {
-    for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i];
-      if (item.kind === "file" && item.type.startsWith("image/")) {
-        const f = item.getAsFile();
-        if (f) files.push(normalizeClipboardImageFile(f));
-      }
-    }
-  }
-
-  if (!files.length && data.files?.length) {
-    Array.from(data.files)
-      .filter((f) => f.type.startsWith("image/"))
-      .forEach((f) => files.push(normalizeClipboardImageFile(f)));
-  }
-
-  return files;
-}
-
-async function convertImageFileToPng(file: File): Promise<File> {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Falha ao carregar imagem para conversão"));
-      el.src = objectUrl;
-    });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Falha ao criar contexto para conversão PNG");
-    ctx.drawImage(img, 0, 0);
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Falha ao converter imagem para PNG"))), "image/png");
-    });
-    const baseName = file.name.replace(/\.[^.]+$/, "");
-    return new File([blob], `${baseName}.png`, { type: "image/png" });
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
+  return insertMensagemOptimistic({ ...params, platform: "whatsapp" });
 }
 
 // Safe parse helper
@@ -554,75 +454,30 @@ function MessageBubble({
     : [];
   const mediaImages = row?.mediaImages as string[] | undefined;
 
-  // 1) URLs de imagem (Storage) — grade estilo WhatsApp
-  if (mediaImages && mediaImages.length > 0) {
-    const hasCaption = Boolean(String(content ?? '').trim());
+  const conversaRow: ConversaMessage = {
+    id: String(row.id ?? ''),
+    sessionId: String(row.sessionId ?? ''),
+    instancia: String(row.instancia ?? ''),
+    message: { type: isAI ? 'ai' : 'human', content },
+    data: row.data,
+    media: row.media,
+    mediaImages,
+    mensageType: row.mensageType ?? row.mensage_type ?? null,
+  };
+
+  if (hasChatRenderableMedia(conversaRow)) {
     return (
-      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
-        <div
-          className={
-            isAI
-              ? `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tr-sm overflow-hidden bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
-              : `inline-block w-fit max-w-full shadow-sm rounded-2xl rounded-tl-sm overflow-hidden bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)] ${hasCaption ? 'px-2 pt-2 pb-1' : 'p-1'}`
-          }
-        >
-          <ChatImageGrid
-            images={mediaImages}
-            onImageClick={(idx) => onOpenMedia?.(mediaImages, idx)}
-          />
-          {hasCaption ? (
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed px-1.5 pt-1.5 pb-0.5">
-              {processTextWithBold(content)}
-            </div>
-          ) : null}
-          <div
-            className={`text-[10px] text-right px-2 pb-1 pt-0.5 ${isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]'}`}
-          >
-            {row.data ? formatHour(row.data) : ''}
-          </div>
-        </div>
-      </div>
+      <ChatMessageMediaBody
+        row={conversaRow}
+        isAI={isAI}
+        content={content}
+        formatHour={formatHour}
+        onOpenMedia={onOpenMedia}
+      />
     );
   }
 
-  // 2) URL publica de audio (Supabase Storage) salva via insert otimista
-  // Formato esperado em row.media: {"audio":"https://.../audio-*.webm"} ou URL crua.
-  const audioUrl = extractMediaAudio(row.media);
-  if (audioUrl) {
-    return (
-      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
-        <div
-          className={cn(
-            'inline-flex flex-col w-fit max-w-[min(100%,320px)] shadow-sm rounded-2xl px-2 pt-2 pb-0.5',
-            isAI
-              ? 'rounded-tr-sm bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
-              : 'rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]',
-          )}
-        >
-          <ChatAudioPlayer
-            src={audioUrl}
-            variant="incoming"
-            bubbleTone={isAI ? 'out' : 'in'}
-          />
-          {content ? (
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-1.5 pt-1.5 px-0.5 border-t border-[color:var(--cv-border)]/40">
-              {processTextWithBold(content)}
-            </div>
-          ) : null}
-          <div
-            className={cn(
-              'text-[10px] text-right pr-0.5 pb-0.5 pt-0.5',
-              isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]',
-            )}
-          >
-            {row.data ? formatHour(row.data) : ''}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3) Se não há audio URL, verificar se há media base64
+  // Base64 / legado
   const dataUrl = buildDataUrlFromMedia(row.media);
   if (dataUrl) {
     const isImage = dataUrl.includes('image/');
@@ -859,9 +714,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [sec, setSec] = useState(0);
   const [recordingLevels, setRecordingLevels] = useState<number[]>(Array.from({ length: 24 }, () => 8));
 
-  // Refs para mídia
-  const imgInputRef = useRef<HTMLInputElement | null>(null);
-  const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerMedia = useChatComposerMedia({
+    surface: "whatsapp",
+    hasActiveConversation: Boolean(selectedConversation || selectedLead),
+    toast,
+  });
+
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -874,16 +732,6 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const shouldAutoScrollRef = useRef<boolean>(true);
   const prevConversationRef = useRef<string | null>(null);
 
-  // Estado para Preview de Mídia
-  const [previewData, setPreviewData] = useState<{
-    items: Array<{
-      file: File;
-      previewUrl: string;
-      type: "imagem" | "audio" | "arquivo";
-      caption: string;
-    }>;
-    activeIndex: number;
-  } | null>(null);
   const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
     isOpen: false,
     images: [],
@@ -1325,91 +1173,6 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     }
   };
 
-  // Handlers para mídia
-
-  // IMAGE / FILE / AUDIO — picker e colar da área de transferência
-  const processFilesForPreview = useCallback(
-    async (files: File[]) => {
-      if (!files.length) return;
-
-      if (!selectedConversation && !selectedLead) {
-        toast({
-          title: "Selecione uma conversa para enviar",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        setBusy(true);
-        const items = await Promise.all(
-          files.map(async (file) => {
-            let normalizedFile = file;
-            let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
-            if (file.type.startsWith("image/")) {
-              tipo = "imagem";
-              try {
-                normalizedFile = await convertImageFileToPng(file);
-              } catch {
-                throw new Error(`Nao foi possivel converter a imagem "${file.name}" para PNG`);
-              }
-            } else if (file.type.startsWith("audio/")) {
-              tipo = "audio";
-              normalizedFile = await normalizeAudioFileForWhatsapp(file);
-            } else if (file.type.startsWith("video/")) {
-              tipo = "arquivo";
-              if (file.type !== "video/mp4") throw new Error("Video deve estar no formato video/mp4");
-            } else {
-              tipo = "arquivo";
-              if (file.type !== "application/pdf") throw new Error("Arquivo deve ser PDF (application/pdf)");
-            }
-            return {
-              file: normalizedFile,
-              previewUrl: URL.createObjectURL(normalizedFile),
-              type: tipo,
-              caption: "",
-            };
-          })
-        );
-
-        setPreviewData({
-          items,
-          activeIndex: 0,
-        });
-      } catch (err: any) {
-        console.error("Erro ao processar arquivo:", err);
-        toast({
-          title: "Falha ao processar arquivo",
-          description: err.message,
-          variant: "destructive",
-        });
-      } finally {
-        setBusy(false);
-      }
-    },
-    [selectedConversation, selectedLead, toast]
-  );
-
-  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    await processFilesForPreview(files);
-    if (e.target) e.target.value = "";
-  };
-
-  const onPasteMedia = async (e: React.ClipboardEvent) => {
-    const imageFiles = getImageFilesFromClipboard(e.clipboardData);
-    if (!imageFiles.length) return;
-    e.preventDefault();
-    await processFilesForPreview(imageFiles);
-  };
-
-  const cancelPreview = () => {
-    (previewData?.items || []).forEach((item) => {
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    });
-    setPreviewData(null);
-  };
-
   const resolveTargetInstancia = useCallback(() => {
     const raw =
       selectedInstance ||
@@ -1421,9 +1184,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   }, [selectedInstance, currentConversation?.instancia, scopedInstance]);
 
   const sendPreview = async () => {
-    if (!previewData || busy) return;
+    if (!composerMedia.previewData || busy) return;
 
-    const itemsSnapshot = previewData.items;
+    const itemsSnapshot = composerMedia.previewData.items;
     const itemCount = itemsSnapshot.length;
 
     try {
@@ -1434,40 +1197,29 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
       if (!targetSession) throw new Error("Sessão inválida");
 
-      const uploadedItems = await Promise.all(
-        itemsSnapshot.map(async (item) => {
-          const uploadedUrl = await uploadMediaAndGetPublicUrl(item.file, "whatsapp", profile?.company_id);
-          return {
-            url: uploadedUrl,
-            tipo: item.type,
-            mime_type: item.file.type,
-            nome: item.file.name,
-            caption: item.caption || "",
-          };
-        })
+      const uploadedItems = await uploadAndBuildChatMediaItems(
+        itemsSnapshot.map((item) => ({
+          file: item.file,
+          type: item.type,
+          caption: item.caption || "",
+        })),
+        "whatsapp",
+        profile?.company_id,
       );
       const urls = uploadedItems.map((m) => m.url);
-      const allSameType = uploadedItems.every((m) => m.tipo === uploadedItems[0]?.tipo);
-      const requestType = allSameType ? (uploadedItems[0]?.tipo as "imagem" | "audio" | "arquivo") : "arquivo";
+      const requestType = resolveBatchWebhookTipo(uploadedItems);
       const primary = uploadedItems[0];
-      const webhookMessage = (primary?.caption || "").trim() || urls[0] || "";
+      const webhookMessage = resolveWebhookMediaMessage(primary?.caption, urls[0]);
 
       if (profile?.company_id) {
-        for (const item of uploadedItems) {
-          if (item.tipo !== "imagem" && item.tipo !== "audio") continue;
-          const inserted = await insertWhatsappMessageRow({
-            companyId: profile.company_id,
-            sessionId: targetSession,
-            instancia: targetInstancia,
-            mediaUrl: item.url,
-            messageType: item.tipo === "audio" ? "audio" : "image",
-            content: item.caption || "",
-            userId: profile.id,
-          });
-          if (!inserted) {
-            console.warn(`[${item.tipo}] insert otimista falhou; continuando via webhook`);
-          }
-        }
+        await insertOptimisticChatMediaRows({
+          companyId: profile.company_id,
+          sessionId: targetSession,
+          instancia: targetInstancia,
+          platform: "whatsapp",
+          items: uploadedItems,
+          userId: profile.id,
+        });
       }
 
       sendPayload(
@@ -1481,7 +1233,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         urls[0],
         uploadedItems.length > 1,
         urls,
-        uploadedItems
+        toWebhookMidiasPayload(uploadedItems)
       ).catch((err: any) => {
         console.error("[media] webhook falhou:", err);
         if (err?.message === "INSTANCE_REQUIRED") {
@@ -1503,10 +1255,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         variant: "default",
       });
 
-      itemsSnapshot.forEach((item) => {
-        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-      });
-      setPreviewData(null);
+      composerMedia.clearPreview();
 
       if (selectedLead) {
         fetchLeadMessages(selectedLead);
@@ -1671,7 +1420,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           setBusy(true);
           const resolvedMime = mr.mimeType || mime || "audio/webm";
           const audioFile = await finalizeVoiceRecordingForWhatsapp(chunksRef.current, resolvedMime);
-          const audioUrl = await uploadMediaAndGetPublicUrl(audioFile, "whatsapp", profile?.company_id);
+          const audioUrl = await uploadChatMediaAndGetPublicUrl(
+            audioFile,
+            "whatsapp",
+            "audio",
+            profile?.company_id,
+          );
 
           const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
           const targetInstancia =
@@ -1688,7 +1442,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 companyId: profile.company_id,
                 sessionId: targetSession,
                 instancia: targetInstancia,
-                mediaUrl: audioUrl,
+                mediaUrl: formatConteudoMediaForDb("audio", audioUrl),
                 messageType: "audio",
                 content: "",
                 userId: profile.id,
@@ -2196,75 +1950,37 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               )}
             </AnimatePresence>
 
-            {/* INPUT AREA */}
-            <div className="min-h-[62px] bg-[var(--cv-panel)] px-4 py-2 flex items-end gap-2 shrink-0 z-10 w-full">
-              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1">
-                <span className="text-xl">😊</span>
-              </Button>
-              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => imgInputRef.current?.click()} title="Anexar arquivo">
-                <Paperclip className="h-5 w-5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1" onClick={() => setShowManageTemplatesModal(true)} title="Gerenciar Templates e Atalhos">
-                <Zap className="h-5 w-5" />
-              </Button>
-              <input
-                ref={imgInputRef}
-                type="file"
-                className="hidden"
-                onChange={onPickFile}
-                multiple
-                accept="image/*,video/mp4,audio/ogg,audio/webm,application/pdf"
-              />
-
-              <div
-                className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]"
-                onMouseDown={() => messageTextareaRef.current?.focus()}
-                onPaste={onPasteMedia}
-              >
-                {recording ? (
-                  <div className="w-full flex items-center gap-3 px-1">
-                    <span className="text-xs text-red-400 font-medium whitespace-nowrap">Gravando {String(sec).padStart(2, '0')}s</span>
-                    <div className="flex items-end gap-[2px] h-8 w-full">
-                      {recordingLevels.map((h, i) => (
-                        <span
-                          key={i}
-                          className="w-1 rounded-full bg-red-400/90 transition-all duration-75"
-                          style={{ height: `${h}px` }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <textarea
-                    ref={messageTextareaRef}
-                    value={messageInput}
-                    onChange={handleInputChange}
-                    onKeyDown={onTextareaKeyDown}
-                    onPaste={onPasteMedia}
-                    placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
-                    className={`w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] ${disableFreeText ? 'placeholder:text-red-400/80' : 'placeholder:text-[var(--cv-text-muted)]'}`}
-                    rows={1}
-                    style={{ minHeight: '24px' }}
-                  />
-                )}
-              </div>
-
-              {messageInput.trim() ? (
+            <ChatComposer
+              surface="whatsapp"
+              messageInput={messageInput}
+              onMessageInputChange={(v) => handleInputChange({ target: { value: v } } as React.ChangeEvent<HTMLTextAreaElement>)}
+              onTextareaKeyDown={onTextareaKeyDown}
+              onSendText={sendText}
+              placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
+              textareaClassName={disableFreeText ? "placeholder:text-red-400/80" : undefined}
+              busy={busy || composerMedia.busy}
+              recording={recording}
+              recordingLevels={recordingLevels}
+              recordingSec={sec}
+              onStartRecord={startRecord}
+              onStopRecord={stopRecord}
+              imgInputRef={composerMedia.imgInputRef}
+              messageTextareaRef={composerMedia.messageTextareaRef}
+              onPickFile={composerMedia.onPickFile}
+              onPasteMedia={composerMedia.onPasteMedia}
+              leadingActions={
                 <Button
-                  onClick={sendText}
-                  className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-[var(--cv-tab-active-text)] rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-transform active:scale-95"
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  className="text-[var(--cv-text-muted)] hover:bg-transparent rounded-full mb-1"
+                  onClick={() => setShowManageTemplatesModal(true)}
+                  title="Gerenciar Templates e Atalhos"
                 >
-                  <Send className="h-5 w-5 ml-0.5" />
+                  <Zap className="h-5 w-5" />
                 </Button>
-              ) : (
-                <Button
-                  onClick={recording ? stopRecord : startRecord}
-                  className={`rounded-full h-10 w-10 p-0 mb-1 flex items-center justify-center shadow-md transition-all ${recording ? "bg-red-500 animate-pulse text-white" : "bg-[var(--cv-tab-inactive-bg)] hover:bg-[var(--cv-hover-strong)] text-[var(--cv-text-muted)]"}`}
-                >
-                  <Mic className="h-5 w-5" />
-                </Button>
-              )}
-            </div>
+              }
+            />
           </>
         )}
       </div>
@@ -2329,118 +2045,16 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           </motion.div>
         )}
 
-        {previewData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[var(--cv-chat)] bg-opacity-95 flex flex-col"
-          >
-            {/* Header Preview */}
-            <div className="h-16 flex items-center justify-between px-4 w-full text-[var(--cv-icon)]">
-              <Button variant="ghost" size="icon" onClick={cancelPreview} className="hover:bg-[var(--cv-preview-bar-hover)] rounded-full">
-                <ArrowLeft className="w-6 h-6" />
-              </Button>
-              <h2 className="font-medium text-[var(--cv-text)]">
-                Visualizar arquivo{previewData.items.length > 1 ? `s (${previewData.items.length})` : ""}
-              </h2>
-              <div className="w-10"></div> {/* Spacer */}
-            </div>
-
-            {/* Content Preview */}
-            <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
-              {previewData.items[previewData.activeIndex]?.type === 'imagem' ? (
-                <img
-                  src={previewData.items[previewData.activeIndex]?.previewUrl}
-                  alt="Preview"
-                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xl"
-                />
-              ) : previewData.items[previewData.activeIndex]?.type === 'arquivo' ? (
-                <div className="flex flex-col items-center gap-4 text-[var(--cv-text)] p-10 bg-[var(--cv-panel)] rounded-xl border border-[var(--cv-border)]">
-                  <div className="w-20 h-20 bg-zinc-600 rounded-full flex items-center justify-center">
-                    <Paperclip className="w-10 h-10 text-white" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-lg max-w-xs truncate" title={previewData.items[previewData.activeIndex]?.file.name}>
-                      {previewData.items[previewData.activeIndex]?.file.name}
-                    </p>
-                    <p className="text-sm text-zinc-400">
-                      {((previewData.items[previewData.activeIndex]?.file.size || 0) / 1024).toFixed(1)} KB • {previewData.items[previewData.activeIndex]?.file.type || 'Desconhecido'}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 text-zinc-300">
-                  <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center animate-pulse">
-                    <Mic className="w-8 h-8 text-white" />
-                  </div>
-                  <p>Áudio gravado</p>
-                </div>
-              )}
-            </div>
-
-            {previewData.items.length > 1 && (
-              <div className="w-full max-w-3xl mx-auto px-4 pb-3">
-                <div className="flex gap-2 overflow-x-auto">
-                  {previewData.items.map((item, idx) => (
-                    <button
-                      key={`${item.file.name}-${idx}`}
-                      onClick={() => setPreviewData({ ...previewData, activeIndex: idx })}
-                      className={`h-14 w-14 rounded-md border overflow-hidden shrink-0 ${
-                        previewData.activeIndex === idx ? 'border-[var(--cv-accent)]' : 'border-[var(--cv-border)]'
-                      }`}
-                      title={item.file.name}
-                    >
-                      {item.type === 'imagem' ? (
-                        <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="h-full w-full grid place-items-center bg-[var(--cv-panel)] text-[10px] text-[var(--cv-text-muted)]">
-                          {item.type === 'audio' ? 'AUDIO' : 'ARQ'}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Caption Input */}
-            <div className="bg-[var(--cv-panel)] p-3 flex items-center gap-2 justify-center w-full max-w-3xl mx-auto mb-4 rounded-full shadow-lg border border-[var(--cv-border)]">
-              <input
-                autoFocus
-                value={previewData.items[previewData.activeIndex]?.caption || ""}
-                onChange={(e) =>
-                  setPreviewData({
-                    ...previewData,
-                    items: previewData.items.map((item, idx) =>
-                      idx === previewData.activeIndex ? { ...item, caption: e.target.value } : item
-                    ),
-                  })
-                }
-                placeholder={`Adicione uma legenda para ${previewData.items[previewData.activeIndex]?.file.name || "a mídia"}...`}
-                className="bg-transparent text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] w-full outline-none px-4"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !busy) {
-                    e.preventDefault();
-                    void sendPreview();
-                  }
-                }}
-              />
-            </div>
-
-            {/* Send Button FAB */}
-            <div className="flex justify-end w-full max-w-3xl mx-auto pb-6">
-              <button
-                onClick={() => void sendPreview()}
-                type="button"
-                disabled={busy}
-                aria-busy={busy}
-                className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90 disabled:opacity-60 disabled:pointer-events-none"
-              >
-                {busy ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-6 h-6 ml-0.5" />}
-              </button>
-            </div>
-          </motion.div>
+        {composerMedia.previewData && (
+          <ChatMediaPreviewOverlay
+            surface="whatsapp"
+            previewData={composerMedia.previewData}
+            busy={busy}
+            onCancel={composerMedia.clearPreview}
+            onSend={sendPreview}
+            onUpdateCaption={composerMedia.updateCaption}
+            onSelectIndex={composerMedia.setActivePreviewIndex}
+          />
         )}
       </AnimatePresence>
 
