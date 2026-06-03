@@ -12,7 +12,16 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
+import { AiVisitSchedulingCard } from '@/components/AiVisitSchedulingCard';
+import { PendingVisitBrokerAssignments } from '@/components/PendingVisitBrokerAssignments';
 import { BusinessHoursFields } from '@/components/BusinessHoursFields';
+import {
+  clearLegacyLocalVisitSchedulingConfig,
+  companyRowToVisitSchedulingConfig,
+  configsEqual,
+  loadLegacyLocalVisitSchedulingConfig,
+  type AiVisitSchedulingConfig,
+} from '@/lib/aiVisitScheduling';
 import {
   DEFAULT_BUSINESS_SCHEDULE,
   parseBusinessHours,
@@ -109,6 +118,33 @@ export function AiConfigurationView() {
     businessHoursSchedule: DEFAULT_BUSINESS_SCHEDULE as DaySchedule[],
   });
   const [hasChanges, setHasChanges] = useState(false);
+  const [visitSchedulingConfig, setVisitSchedulingConfig] = useState<AiVisitSchedulingConfig>(
+    () => companyRowToVisitSchedulingConfig(null)
+  );
+
+  useEffect(() => {
+    if (!company) return;
+    setVisitSchedulingConfig(companyRowToVisitSchedulingConfig(company));
+  }, [company]);
+
+  useEffect(() => {
+    if (!company?.id || !isManager) return;
+    const legacy = loadLegacyLocalVisitSchedulingConfig(company.id);
+    if (!legacy?.updatedAt) return;
+    const dbConfig = companyRowToVisitSchedulingConfig(company);
+    if (!configsEqual(legacy, dbConfig)) {
+      void (async () => {
+        const ok = await updateCompany({
+          ai_visit_broker_mode: legacy.mode,
+          ai_visit_priority_criterion: legacy.priorityCriterion,
+          ai_visit_broker_priorities: legacy.brokerPriorities,
+        });
+        if (ok) clearLegacyLocalVisitSchedulingConfig(company.id);
+      })();
+    } else {
+      clearLegacyLocalVisitSchedulingConfig(company.id);
+    }
+  }, [company?.id, isManager]);
 
   useEffect(() => {
     if (!company) return;
@@ -398,6 +434,22 @@ export function AiConfigurationView() {
           </div>
         </CardContent>
       </Card>
+
+      <AiVisitSchedulingCard
+        companyId={company?.id}
+        isManager={isManager}
+        initialConfig={visitSchedulingConfig}
+        externalSaving={updating}
+        onSave={async (config) =>
+          updateCompany({
+            ai_visit_broker_mode: config.mode,
+            ai_visit_priority_criterion: config.priorityCriterion,
+            ai_visit_broker_priorities: config.brokerPriorities,
+          })
+        }
+      />
+
+      <PendingVisitBrokerAssignments />
     </div>
     </TooltipProvider>
   );

@@ -180,6 +180,9 @@ export type Database = {
           ai_visit_policy: string | null
           ai_rules: string | null
           ai_additional_info: string | null
+          ai_visit_broker_mode: string
+          ai_visit_priority_criterion: string
+          ai_visit_broker_priorities: Json
           grace_period_days: number | null
           id: string
           id_instagram: string | null
@@ -1965,6 +1968,9 @@ export type Database = {
           ai_target_audience: string
           ai_rules: string
           ai_additional_info: string
+          ai_visit_broker_mode: string
+          ai_visit_priority_criterion: string
+          ai_visit_broker_priorities: Json
           cnpj: string
           contact_name: string
           created_at: string
@@ -2129,6 +2135,9 @@ export type Database = {
           p_ai_target_audience?: string
           p_ai_rules?: string
           p_ai_additional_info?: string
+          p_ai_visit_broker_mode?: string
+          p_ai_visit_priority_criterion?: string
+          p_ai_visit_broker_priorities?: Json
           p_cnpj?: string
           p_contact_name?: string
           p_email?: string

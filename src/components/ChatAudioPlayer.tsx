@@ -14,18 +14,22 @@ function formatAudioTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** incoming = áudio recebido (play verde); outgoing = áudio enviado (bolha verde, play claro). */
 export type ChatAudioPlayerVariant = "incoming" | "outgoing";
 
 type ChatAudioPlayerProps = {
   src: string;
   variant?: ChatAudioPlayerVariant;
+  /** Cor das barras conforme a bolha (enviada = verde escuro, recebida = cinza). */
+  bubbleTone?: "in" | "out";
   className?: string;
   onError?: () => void;
 };
 
 export function ChatAudioPlayer({
   src,
-  variant = "incoming",
+  variant: _variant = "incoming",
+  bubbleTone = "in",
   className,
   onError,
 }: ChatAudioPlayerProps) {
@@ -36,7 +40,8 @@ export function ChatAudioPlayer({
   const [current, setCurrent] = useState(0);
 
   const progress = duration > 0 ? Math.min(1, current / duration) : 0;
-  const isOutgoing = variant === "outgoing";
+  const onSentBubble = bubbleTone === "out";
+  void _variant;
 
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
@@ -103,26 +108,29 @@ export function ChatAudioPlayer({
   }, [playing, current, duration]);
 
   return (
-    <div className={cn("flex items-center gap-2.5 min-w-[200px] max-w-[min(100%,280px)]", className)}>
+    <div
+      className={cn(
+        "flex items-center gap-2 min-w-[220px] max-w-[min(100%,280px)]",
+        className,
+      )}
+    >
       <button
         type="button"
         onClick={togglePlay}
         aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
         className={cn(
-          "flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full transition-transform active:scale-95",
-          isOutgoing
-            ? "bg-white/20 text-white hover:bg-white/30"
-            : "bg-[#25D366] text-white hover:bg-[#20bd5a] shadow-sm",
+          "flex-shrink-0 flex items-center justify-center w-[34px] h-[34px] rounded-full transition-transform active:scale-95",
+          "bg-[#25D366] text-white hover:bg-[#20bd5a] shadow-sm",
         )}
       >
         {playing ? (
-          <Pause className="w-4 h-4 fill-current" />
+          <Pause className="w-[15px] h-[15px] fill-current" />
         ) : (
-          <Play className="w-4 h-4 fill-current ml-0.5" />
+          <Play className="w-[15px] h-[15px] fill-current ml-0.5" />
         )}
       </button>
 
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5 pt-0.5">
         <div
           ref={trackRef}
           role="slider"
@@ -130,7 +138,7 @@ export function ChatAudioPlayer({
           aria-valuemax={duration || 0}
           aria-valuenow={current}
           tabIndex={0}
-          className="flex items-end gap-[2px] h-7 cursor-pointer select-none"
+          className="flex items-end gap-[2px] h-[26px] cursor-pointer select-none"
           onClick={(e) => seekFromClientX(e.clientX)}
           onKeyDown={(e) => {
             const el = audioRef.current;
@@ -146,23 +154,21 @@ export function ChatAudioPlayer({
                 key={i}
                 className={cn(
                   "w-[3px] rounded-full transition-colors duration-150",
-                  isOutgoing
-                    ? filled
-                      ? "bg-white"
-                      : "bg-white/35"
-                    : filled
-                      ? "bg-[#25D366]"
-                      : "bg-zinc-500/55",
+                  filled
+                    ? "bg-[#25D366]"
+                    : onSentBubble
+                      ? "bg-white/40"
+                      : "bg-[color:var(--cv-bubble-in-text)]/35",
                 )}
-                style={{ height: `${h * 2}px` }}
+                style={{ height: `${Math.round(h * 1.75)}px` }}
               />
             );
           })}
         </div>
         <span
           className={cn(
-            "text-[11px] tabular-nums leading-none",
-            isOutgoing ? "text-white/75" : "text-zinc-400",
+            "text-[11px] tabular-nums leading-none pl-0.5",
+            onSentBubble ? "text-[color:var(--cv-bubble-out-meta)]" : "text-[color:var(--cv-bubble-in-meta)]",
           )}
         >
           {displayTime}

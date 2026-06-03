@@ -4,10 +4,10 @@ import { normalizePhoneDigits } from '@/lib/normalizePhone';
 export const PLATAFORMA_WHATSAPP = 'WhatsApp';
 export const PLATAFORMA_INSTAGRAM = 'Instagram';
 
-/** lead | ia | user (aceita IA em qualquer caixa). */
+/** lead = cliente (esquerda); IA/ia/ai/user = lado da imobiliária (direita). */
 export function mensagemSenderToChatType(raw: unknown): 'human' | 'ai' {
   const t = String(raw ?? '').trim().toLowerCase();
-  if (t === 'ia' || t === 'ai') return 'ai';
+  if (t === 'ia' || t === 'ai' || t === 'user' || t === 'assistant') return 'ai';
   return 'human';
 }
 

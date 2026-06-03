@@ -60,6 +60,12 @@ import { mapMensagemWhatsappRow } from '@/lib/mensagensWhatsapp';
 import { ChatAudioPlayer } from '@/components/ChatAudioPlayer';
 import { ChatImageGrid } from '@/components/ChatImageGrid';
 import { groupChatMessagesForDisplay } from '@/lib/groupChatImageMessages';
+import {
+  finalizeVoiceRecordingForWhatsapp,
+  normalizeAudioFileForWhatsapp,
+  pickVoiceRecorderMimeType,
+  WHATSAPP_VOICE_MIME,
+} from '@/lib/voiceAudioWhatsapp';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { useConversasUnread } from '@/hooks/useConversasUnread';
 import { useMensagensNotifications } from '@/hooks/useMensagensNotifications';
@@ -296,12 +302,13 @@ async function uploadMediaAndGetPublicUrl(
   return url;
 }
 
-// Inserção otimista em Mensagens_Whatsapp (envio pelo painel = type user).
+// Inserção otimista em mensagens (envio pelo painel = type IA → bolha à direita, como texto/áudio do corretor).
 async function insertWhatsappMessageRow(params: {
   companyId: string;
   sessionId: string;
   instancia: string;
-  audioUrl: string;
+  mediaUrl: string;
+  messageType: "audio" | "image";
   content?: string;
   userId?: string | null;
 }): Promise<{ id: string | number } | null> {
@@ -317,11 +324,11 @@ async function insertWhatsappMessageRow(params: {
         phone,
         company_id: params.companyId,
         instancia: params.instancia,
-        type: "user",
+        type: "IA",
         user_id: params.userId || null,
-        mensage_type: "audio",
+        mensage_type: params.messageType,
         text: params.content ?? "",
-        conteudo_media: params.audioUrl,
+        conteudo_media: params.mediaUrl,
         plataforma: "WhatsApp",
       })
       .select("id")
@@ -335,6 +342,43 @@ async function insertWhatsappMessageRow(params: {
     console.warn("[insertWhatsappMessageRow] excecao inesperada:", err);
     return null;
   }
+}
+
+function normalizeClipboardImageFile(file: File): File {
+  const hasName = file.name && file.name !== "image.png" && !file.name.startsWith("blob");
+  if (hasName) return file;
+  const ext =
+    file.type === "image/jpeg"
+      ? "jpg"
+      : file.type === "image/webp"
+        ? "webp"
+        : file.type === "image/gif"
+          ? "gif"
+          : "png";
+  return new File([file], `imagem-${Date.now()}.${ext}`, { type: file.type || "image/png" });
+}
+
+function getImageFilesFromClipboard(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files: File[] = [];
+
+  if (data.items?.length) {
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) files.push(normalizeClipboardImageFile(f));
+      }
+    }
+  }
+
+  if (!files.length && data.files?.length) {
+    Array.from(data.files)
+      .filter((f) => f.type.startsWith("image/"))
+      .forEach((f) => files.push(normalizeClipboardImageFile(f)));
+  }
+
+  return files;
 }
 
 async function convertImageFileToPng(file: File): Promise<File> {
@@ -546,20 +590,31 @@ function MessageBubble({
   const audioUrl = extractMediaAudio(row.media);
   if (audioUrl) {
     return (
-      <div className={isAI ? 'self-end' : 'self-start'}>
-        <div className={isAI
-          ? 'max-w-[72ch] rounded-2xl rounded-tr-sm bg-blue-600/90 px-3 py-2.5 text-white shadow border border-blue-500/30'
-          : 'max-w-[72ch] rounded-2xl rounded-tl-sm bg-zinc-800/80 px-3 py-2.5 text-zinc-100 shadow border border-white/10'}>
+      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
+        <div
+          className={cn(
+            'inline-flex flex-col w-fit max-w-[min(100%,320px)] shadow-sm rounded-2xl px-2 pt-2 pb-0.5',
+            isAI
+              ? 'rounded-tr-sm bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+              : 'rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]',
+          )}
+        >
           <ChatAudioPlayer
             src={audioUrl}
-            variant={isAI ? 'outgoing' : 'incoming'}
+            variant="incoming"
+            bubbleTone={isAI ? 'out' : 'in'}
           />
-          {content && (
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-2 pt-2 border-t border-white/10">
+          {content ? (
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed mt-1.5 pt-1.5 px-0.5 border-t border-[color:var(--cv-border)]/40">
               {processTextWithBold(content)}
             </div>
-          )}
-          <div className={`text-[10px] text-right mt-1 -mb-0.5 ${isAI ? 'text-white/60' : 'text-zinc-500'}`}>
+          ) : null}
+          <div
+            className={cn(
+              'text-[10px] text-right pr-0.5 pb-0.5 pt-0.5',
+              isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]',
+            )}
+          >
             {row.data ? formatHour(row.data) : ''}
           </div>
         </div>
@@ -614,7 +669,8 @@ function MessageBubble({
         return (
           <ChatAudioPlayer
             src={dataUrl}
-            variant={isAI ? 'outgoing' : 'incoming'}
+            variant="incoming"
+            bubbleTone={isAI ? 'out' : 'in'}
             className="py-0.5"
             onError={() => setMediaType('document')}
           />
@@ -656,11 +712,26 @@ function MessageBubble({
     };
 
     return (
-      <div className={isAI ? 'self-end' : 'self-start'}>
-        <div className={isAI
-          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
-          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
+      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
+        <div
+          className={cn(
+            'inline-flex flex-col w-fit max-w-[min(100%,320px)] shadow-sm rounded-2xl px-2 pt-2 pb-0.5',
+            isAI
+              ? 'rounded-tr-sm bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+              : 'rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]',
+          )}
+        >
           <MediaComponent />
+          {row.data ? (
+            <div
+              className={cn(
+                'text-[10px] text-right pr-0.5 pb-0.5 pt-0.5',
+                isAI ? 'text-[color:var(--cv-bubble-out-meta)]' : 'text-[color:var(--cv-bubble-in-meta)]',
+              )}
+            >
+              {formatHour(row.data)}
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -675,11 +746,16 @@ function MessageBubble({
       row.media.toLowerCase() !== 'null' && !hasImageUrls) {
     console.log('⚠️ Mídia detectada mas base64 inválido, mostrando placeholder');
     return (
-      <div className={isAI ? 'self-end' : 'self-start'}>
-        <div className={isAI
-          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
-          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
-          <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
+      <div className={cn('shrink-0 max-w-full', isAI ? 'self-end' : 'self-start')}>
+        <div
+          className={cn(
+            'inline-flex flex-col w-fit max-w-[min(100%,320px)] shadow-sm rounded-2xl px-2.5 py-2',
+            isAI
+              ? 'rounded-tr-sm bg-[var(--cv-bubble-out)] text-[var(--cv-bubble-out-text)]'
+              : 'rounded-tl-sm bg-[var(--cv-bubble-in)] text-[var(--cv-bubble-in-text)]',
+          )}
+        >
+          <div className="p-4 text-center text-[var(--cv-text-muted)] border border-dashed border-[var(--cv-border)] rounded-lg">
             Mídia indisponível
             <br />
             <small className="text-xs text-zinc-500">Conteúdo da mensagem não pôde ser carregado</small>
@@ -785,6 +861,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   // Refs para mídia
   const imgInputRef = useRef<HTMLInputElement | null>(null);
+  const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -1250,69 +1327,80 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   // Handlers para mídia
 
-  // IMAGE
-  // FILE / IMAGE / AUDIO UPLOAD
+  // IMAGE / FILE / AUDIO — picker e colar da área de transferência
+  const processFilesForPreview = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+
+      if (!selectedConversation && !selectedLead) {
+        toast({
+          title: "Selecione uma conversa para enviar",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        setBusy(true);
+        const items = await Promise.all(
+          files.map(async (file) => {
+            let normalizedFile = file;
+            let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
+            if (file.type.startsWith("image/")) {
+              tipo = "imagem";
+              try {
+                normalizedFile = await convertImageFileToPng(file);
+              } catch {
+                throw new Error(`Nao foi possivel converter a imagem "${file.name}" para PNG`);
+              }
+            } else if (file.type.startsWith("audio/")) {
+              tipo = "audio";
+              normalizedFile = await normalizeAudioFileForWhatsapp(file);
+            } else if (file.type.startsWith("video/")) {
+              tipo = "arquivo";
+              if (file.type !== "video/mp4") throw new Error("Video deve estar no formato video/mp4");
+            } else {
+              tipo = "arquivo";
+              if (file.type !== "application/pdf") throw new Error("Arquivo deve ser PDF (application/pdf)");
+            }
+            return {
+              file: normalizedFile,
+              previewUrl: URL.createObjectURL(normalizedFile),
+              type: tipo,
+              caption: "",
+            };
+          })
+        );
+
+        setPreviewData({
+          items,
+          activeIndex: 0,
+        });
+      } catch (err: any) {
+        console.error("Erro ao processar arquivo:", err);
+        toast({
+          title: "Falha ao processar arquivo",
+          description: err.message,
+          variant: "destructive",
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [selectedConversation, selectedLead, toast]
+  );
+
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    await processFilesForPreview(files);
+    if (e.target) e.target.value = "";
+  };
 
-    // Se não tiver conversa/lead selecionado, alerta
-    if (!selectedConversation && !selectedLead) {
-      toast({
-        title: "Selecione uma conversa para enviar",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setBusy(true);
-      const items = await Promise.all(
-        files.map(async (file) => {
-          let normalizedFile = file;
-          let tipo: "imagem" | "audio" | "arquivo" = "arquivo";
-          if (file.type.startsWith("image/")) {
-            tipo = "imagem";
-            try {
-              normalizedFile = await convertImageFileToPng(file);
-            } catch {
-              throw new Error(`Nao foi possivel converter a imagem "${file.name}" para PNG`);
-            }
-          } else if (file.type.startsWith("audio/")) {
-            tipo = "audio";
-            if (file.type !== "audio/mp4") throw new Error("Audio deve estar no formato audio/mp4");
-          } else if (file.type.startsWith("video/")) {
-            tipo = "arquivo";
-            if (file.type !== "video/mp4") throw new Error("Video deve estar no formato video/mp4");
-          } else {
-            tipo = "arquivo";
-            if (file.type !== "application/pdf") throw new Error("Arquivo deve ser PDF (application/pdf)");
-          }
-          return {
-            file: normalizedFile,
-            previewUrl: URL.createObjectURL(normalizedFile),
-            type: tipo,
-            caption: "",
-          };
-        })
-      );
-
-      setPreviewData({
-        items,
-        activeIndex: 0,
-      });
-
-    } catch (err: any) {
-      console.error('Erro ao processar arquivo:', err);
-      toast({
-        title: "Falha ao processar arquivo",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setBusy(false);
-      if (e.target) e.target.value = "";
-    }
+  const onPasteMedia = async (e: React.ClipboardEvent) => {
+    const imageFiles = getImageFilesFromClipboard(e.clipboardData);
+    if (!imageFiles.length) return;
+    e.preventDefault();
+    await processFilesForPreview(imageFiles);
   };
 
   const cancelPreview = () => {
@@ -1322,22 +1410,32 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     setPreviewData(null);
   };
 
+  const resolveTargetInstancia = useCallback(() => {
+    const raw =
+      selectedInstance ||
+      currentConversation?.instancia ||
+      scopedInstance ||
+      "default";
+    const trimmed = String(raw || "").trim();
+    return trimmed || "default";
+  }, [selectedInstance, currentConversation?.instancia, scopedInstance]);
+
   const sendPreview = async () => {
-    if (!previewData) return;
+    if (!previewData || busy) return;
+
+    const itemsSnapshot = previewData.items;
+    const itemCount = itemsSnapshot.length;
 
     try {
       setBusy(true);
 
-      // Target: se tiver lead selecionado usa lead, senao conversation
       const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
-      // Usar a instância selecionada globalmente ou da conversa
-      const targetInstancia = selectedInstance || currentConversation?.instancia || "";
+      const targetInstancia = resolveTargetInstancia();
 
       if (!targetSession) throw new Error("Sessão inválida");
-      if (!targetInstancia) throw new Error("Selecione uma instância antes de enviar");
 
       const uploadedItems = await Promise.all(
-        previewData.items.map(async (item) => {
+        itemsSnapshot.map(async (item) => {
           const uploadedUrl = await uploadMediaAndGetPublicUrl(item.file, "whatsapp", profile?.company_id);
           return {
             url: uploadedUrl,
@@ -1351,36 +1449,65 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       const urls = uploadedItems.map((m) => m.url);
       const allSameType = uploadedItems.every((m) => m.tipo === uploadedItems[0]?.tipo);
       const requestType = allSameType ? (uploadedItems[0]?.tipo as "imagem" | "audio" | "arquivo") : "arquivo";
-      const webhookMessage = (uploadedItems[0]?.caption || "").trim() || urls[0] || "";
+      const primary = uploadedItems[0];
+      const webhookMessage = (primary?.caption || "").trim() || urls[0] || "";
 
-      await sendPayload(
+      if (profile?.company_id) {
+        for (const item of uploadedItems) {
+          if (item.tipo !== "imagem" && item.tipo !== "audio") continue;
+          const inserted = await insertWhatsappMessageRow({
+            companyId: profile.company_id,
+            sessionId: targetSession,
+            instancia: targetInstancia,
+            mediaUrl: item.url,
+            messageType: item.tipo === "audio" ? "audio" : "image",
+            content: item.caption || "",
+            userId: profile.id,
+          });
+          if (!inserted) {
+            console.warn(`[${item.tipo}] insert otimista falhou; continuando via webhook`);
+          }
+        }
+      }
+
+      sendPayload(
         targetSession,
         targetInstancia,
         requestType,
         webhookMessage,
-        undefined,
-        uploadedItems[0]?.caption || "",
+        primary?.mime_type,
+        primary?.caption || "",
         profile?.company_id,
         urls[0],
         uploadedItems.length > 1,
         urls,
         uploadedItems
-      );
+      ).catch((err: any) => {
+        console.error("[media] webhook falhou:", err);
+        if (err?.message === "INSTANCE_REQUIRED") {
+          toast({
+            title: "Selecione uma instância antes de enviar",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Falha ao encaminhar ao WhatsApp",
+            description: err?.message || "A mídia foi salva no chat, mas o envio externo falhou.",
+            variant: "destructive",
+          });
+        }
+      });
 
       toast({
-        title: previewData.items.length > 1
-          ? `${previewData.items.length} arquivos enviados com sucesso`
-          : "Arquivo enviado com sucesso",
+        title: itemCount > 1 ? `${itemCount} arquivos enviados com sucesso` : "Arquivo enviado com sucesso",
         variant: "default",
       });
 
-      (previewData?.items || []).forEach((item) => {
+      itemsSnapshot.forEach((item) => {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       });
       setPreviewData(null);
 
-      // Refresh
-      // Refresh imediato + 2s conforme solicitado
       if (selectedLead) {
         fetchLeadMessages(selectedLead);
         setTimeout(() => fetchLeadMessages(selectedLead), 2000);
@@ -1392,9 +1519,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           refetchConversas();
         }, 2000);
       }
-
     } catch (err: any) {
-      console.error('Erro ao enviar mídia:', err);
+      console.error("Erro ao enviar mídia:", err);
       toast({
         title: "Falha ao enviar",
         description: err.message,
@@ -1502,13 +1628,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeCandidates = [
-        "audio/mp4",
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-      ];
-      const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      const mime = pickVoiceRecorderMimeType();
       const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
 
       // Medidor de áudio (ondas em tempo real estilo WhatsApp)
@@ -1550,18 +1670,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         try {
           setBusy(true);
           const resolvedMime = mr.mimeType || mime || "audio/webm";
-          const ext =
-            resolvedMime.includes("mp4") ? "mp4" :
-              resolvedMime.includes("ogg") ? "ogg" : "webm";
-          const blob = new Blob(chunksRef.current, { type: resolvedMime });
-          const audioFile = new File([blob], `audio-${Date.now()}.${ext}`, { type: resolvedMime });
+          const audioFile = await finalizeVoiceRecordingForWhatsapp(chunksRef.current, resolvedMime);
           const audioUrl = await uploadMediaAndGetPublicUrl(audioFile, "whatsapp", profile?.company_id);
 
           const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
-          const targetInstancia = selectedInstance || currentConversation?.instancia || "";
+          const targetInstancia =
+            selectedInstance || currentConversation?.instancia || scopedInstance || "default";
 
           if (targetSession) {
-            if (!targetInstancia) throw new Error("Selecione uma instancia antes de enviar audio");
 
             // Insert otimista direto na tabela imobipro_messages_{phone}.
             // Faz a bolha aparecer imediatamente via realtime/polling
@@ -1572,7 +1688,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 companyId: profile.company_id,
                 sessionId: targetSession,
                 instancia: targetInstancia,
-                audioUrl,
+                mediaUrl: audioUrl,
+                messageType: "audio",
                 content: "",
                 userId: profile.id,
               });
@@ -1588,7 +1705,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               targetInstancia,
               "audio",
               "",
-              audioFile.type,
+              WHATSAPP_VOICE_MIME,
               undefined,
               profile?.company_id,
               audioUrl
@@ -2096,10 +2213,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 className="hidden"
                 onChange={onPickFile}
                 multiple
-                accept="image/*,video/mp4,audio/mp4,application/pdf"
+                accept="image/*,video/mp4,audio/ogg,audio/webm,application/pdf"
               />
 
-              <div className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]">
+              <div
+                className="flex-1 bg-[var(--cv-input-bg)] rounded-lg min-h-[42px] mb-1 flex items-center px-3 py-1 border border-[var(--cv-border)]"
+                onMouseDown={() => messageTextareaRef.current?.focus()}
+                onPaste={onPasteMedia}
+              >
                 {recording ? (
                   <div className="w-full flex items-center gap-3 px-1">
                     <span className="text-xs text-red-400 font-medium whitespace-nowrap">Gravando {String(sec).padStart(2, '0')}s</span>
@@ -2115,9 +2236,11 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   </div>
                 ) : (
                   <textarea
+                    ref={messageTextareaRef}
                     value={messageInput}
                     onChange={handleInputChange}
                     onKeyDown={onTextareaKeyDown}
+                    onPaste={onPasteMedia}
                     placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
                     className={`w-full bg-transparent border-none outline-none text-[var(--cv-input-text)] text-sm resize-none custom-scrollbar max-h-[100px] ${disableFreeText ? 'placeholder:text-red-400/80' : 'placeholder:text-[var(--cv-text-muted)]'}`}
                     rows={1}
@@ -2296,16 +2419,23 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 }
                 placeholder={`Adicione uma legenda para ${previewData.items[previewData.activeIndex]?.file.name || "a mídia"}...`}
                 className="bg-transparent text-[var(--cv-input-text)] placeholder:text-[var(--cv-text-muted)] w-full outline-none px-4"
-                onKeyDown={(e) => e.key === 'Enter' && sendPreview()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !busy) {
+                    e.preventDefault();
+                    void sendPreview();
+                  }
+                }}
               />
             </div>
 
             {/* Send Button FAB */}
             <div className="flex justify-end w-full max-w-3xl mx-auto pb-6">
               <button
-                onClick={sendPreview}
+                onClick={() => void sendPreview()}
                 type="button"
-                className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                disabled={busy}
+                aria-busy={busy}
+                className="bg-[var(--cv-accent)] hover:bg-[var(--cv-accent-hover)] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90 disabled:opacity-60 disabled:pointer-events-none"
               >
                 {busy ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-6 h-6 ml-0.5" />}
               </button>

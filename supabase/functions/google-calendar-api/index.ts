@@ -11,6 +11,40 @@ function env(name: string, fallback?: string) {
   return Deno.env.get(name) ?? fallback ?? "";
 }
 
+const INVALID_EMAIL_PLACEHOLDERS = new Set([
+  "n/a", "na", "null", "undefined", "none", "sem email", "sem e-mail",
+  "nao informado", "não informado", "nao tem", "não tem",
+]);
+
+/** E-mail aceito pelo Google Calendar (descarta placeholders do n8n/CRM). */
+function isValidCalendarEmail(raw: string): boolean {
+  const email = String(raw || "").trim().toLowerCase();
+  if (!email || email.length > 254) return false;
+  if (INVALID_EMAIL_PLACEHOLDERS.has(email)) return false;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)) return false;
+  if (email.includes("..") || email.startsWith("@") || email.endsWith("@")) return false;
+  return true;
+}
+
+function normalizeAttendeeEmails(raw: unknown): string[] {
+  let list: string[] = [];
+  if (Array.isArray(raw)) {
+    list = raw.map((e) => String(e || "").trim());
+  } else if (typeof raw === "string" && raw.trim()) {
+    list = raw.split(/[,;]+/).map((s) => s.trim());
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of list) {
+    if (!isValidCalendarEmail(item)) continue;
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 function getBearerToken(req: Request): string {
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   if (!auth.toLowerCase().startsWith("bearer ")) return "";
@@ -1007,14 +1041,8 @@ serve(async (req) => {
           }, { onConflict: "company_id" });
       }
 
-      // attendees pode chegar como array ou string (n8n às vezes manda string)
-      let attendeeEmails: string[] = [];
-      const rawAttendees = body?.attendees;
-      if (Array.isArray(rawAttendees)) {
-        attendeeEmails = rawAttendees.map((e: any) => String(e || "").trim()).filter(Boolean);
-      } else if (typeof rawAttendees === "string" && rawAttendees.trim()) {
-        attendeeEmails = rawAttendees.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
-      }
+      // attendees pode chegar como array ou string (n8n às vezes manda string inválida)
+      let attendeeEmails = normalizeAttendeeEmails(body?.attendees);
 
       const reminders = Array.isArray(body?.reminders) ? body.reminders : [];
 
@@ -1036,9 +1064,9 @@ serve(async (req) => {
           : clientHeader;
       }
 
-      // Se nenhum attendee veio do n8n, mas o lead tem email, convidamos o lead automaticamente
-      if (attendeeEmails.length === 0 && leadInfo.email && /@/.test(leadInfo.email)) {
-        attendeeEmails = [leadInfo.email];
+      // Se nenhum attendee válido veio do n8n, tenta e-mail do lead (somente se válido para o Google)
+      if (attendeeEmails.length === 0 && isValidCalendarEmail(leadInfo.email)) {
+        attendeeEmails = [leadInfo.email.trim()];
       }
 
       const attendees = attendeeEmails

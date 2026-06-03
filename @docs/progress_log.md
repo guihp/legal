@@ -1,5 +1,25 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-06-01 — Config IA: agendamento de visitas (DB + schedule-api)
+
+- Migration `20260601120000_companies_ai_visit_scheduling.sql`: `ai_visit_broker_mode`, `ai_visit_priority_criterion`, `ai_visit_broker_priorities` + validação em `update_own_company`.
+- `schedule-api` `book_visit`: lê config por `company_id`; aplica fila, prioridade (nota / ordem plantão / menos visitas no dia) ou manual (visita sem corretor no lead).
+- Front: salva no banco via RPC; migra `localStorage` legado uma vez; aviso verde “regra ativa”.
+- Painel: card **Visitas aguardando corretor** em `/ai-configuration` + `assign_visit_broker` na `schedule-api` (move evento Google + atualiza lead).
+- Testes: `pnpm test` (node) em `src/lib/aiVisitScheduling.test.ts`; `pnpm test:visit-scheduling` (deno, se instalado).
+- **Deploy produção (imobi / MCP `user-imobi`):**
+  - Migrations aplicadas: `companies_ai_visit_scheduling_columns`, `companies_ai_visit_scheduling_rpcs`, `update_own_company_ai_visit_scheduling`, `get_own_company_restore_business_hours_summary`.
+  - `schedule-api` **v28** (`verify_jwt: true`); fix typo `addMins(...)` em `index.ts` antes do bundle.
+  - Front Hostinger: ainda requer `pnpm build` + SFTP conforme CI (não feito nesta sessão).
+
+## 2026-05-28 — schedule-api: fix book_visit + deploy v25–v26
+
+- `book_visit`: grava `freeBroker` no pré-check e envia `calendar_id` + `broker_id` para `google-calendar-api` com `use_broker_queue: false` (alinha com `check_availability`).
+- Filtro de expediente unificado: `reqMin + SLOT_MIN <= fim` (igual busca direta).
+- Erros diferenciados: `error_code` (`outside_schedule`, `slot_busy`, `calendar_error`, `booking_failed`, `auth_error`) e mensagens distintas para conflito vs falha técnica (500).
+- v26: repassa `Authorization`/`apikey` do request (n8n JWT) nas chamadas internas a `google-calendar-api` — evita 401 Invalid JWT quando env `SUPABASE_SERVICE_ROLE_KEY` é `sb_secret_*`.
+- Deploy produção: `schedule-api` v26 (`bfcssdogttmqeujgmxdf`).
+
 ## 2026-03-25 — Remoção de marca legada anterior / padronização WhatsApp
 
 - Marca e textos: substituídos por IAFÉ IMOBI; emails de exemplo em seed/docs para `*@iafeimobi.local`; suporte `contato@iafeimobi.com.br` no alerta de assinatura.

@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  loadCompanyVisitScheduling,
+  persistQueueIndex,
+  pickFreeBrokerForSlot,
+} from "../_shared/visitScheduling.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -162,6 +167,68 @@ function buildDayText(lines: string[], dateObj: Date) {
   return [`📅 Para *${dia}, ${data}* temos disponível:`, ...(lines.length ? lines : ["❌ Nenhum horário disponível"])].join("\n");
 }
 
+/** Gestor/admin da empresa (quando o request traz JWT de usuário). Service role do n8n segue sem checagem. */
+async function assertCompanyManager(
+  req: Request,
+  service: ReturnType<typeof createClient>,
+  companyId: string,
+): Promise<string | null> {
+  const auth = req.headers.get("Authorization") || "";
+  if (!auth.startsWith("Bearer ")) return null;
+
+  const token = auth.slice(7).trim();
+  if (!token || token.split(".").length !== 3) return null;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (payload?.role === "service_role") return null;
+  } catch {
+    /* segue validação de usuário */
+  }
+
+  const anon = env("SUPABASE_ANON_KEY");
+  const url = env("SUPABASE_URL");
+  if (!anon || !url) return "Configuração de autenticação indisponível";
+
+  const userClient = createClient(url, anon, {
+    global: { headers: { Authorization: auth } },
+  });
+  const { data: { user }, error: authError } = await userClient.auth.getUser();
+  if (authError || !user) return "Não autenticado";
+
+  const { data: profile } = await service
+    .from("user_profiles")
+    .select("role, company_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!profile || profile.company_id !== companyId) {
+    return "Sem permissão para esta empresa";
+  }
+  if (!["admin", "gestor"].includes(String(profile.role || ""))) {
+    return "Apenas gestor ou admin pode atribuir corretor à visita";
+  }
+  return null;
+}
+
+/** Headers para chamadas server-to-server entre edge functions (verify_jwt exige JWT válido). */
+function nestedEdgeFnHeaders(req: Request): Record<string, string> {
+  const srkKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  const incomingAuth = req.headers.get("Authorization") || "";
+  const incomingApikey = req.headers.get("apikey") || "";
+  // env SRK pode ser sb_secret_* (não-JWT); o gateway rejeita com 401 Invalid JWT.
+  const authorization = incomingAuth.startsWith("Bearer ")
+    ? incomingAuth
+    : srkKey.startsWith("eyJ")
+      ? `Bearer ${srkKey}`
+      : `Bearer ${srkKey}`;
+  return {
+    "Content-Type": "application/json",
+    apikey: incomingApikey || srkKey,
+    Authorization: authorization,
+  };
+}
+
 // ========= MAIN =========
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -172,6 +239,7 @@ serve(async (req) => {
     if (!companyId) return ok({ success: false, error: "company_id obrigatório" }, 400);
 
     const service = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
+    const calFnHeaders = nestedEdgeFnHeaders(req);
     const gFetch = await setupGoogle(service, companyId);
 
     // Load oncall schedules
@@ -371,23 +439,45 @@ serve(async (req) => {
       const available = rows.filter((r: any) => {
         if (!r[`${wk}_works`]) return false;
         const s = minsHHMM(r[`${wk}_start`]), e = minsHHMM(r[`${wk}_end`]);
-        return s != null && e != null && reqMin >= s && reqMin < e;
+        return s != null && e != null && reqMin >= s && (reqMin + SLOT_MIN) <= e;
       });
 
-      if (available.length === 0) return ok({ success: false, response: "Informe ao cliente que está ocupado esse horario" });
+      if (available.length === 0) {
+        return ok({
+          success: false,
+          error_code: "outside_schedule",
+          response: "Informe ao cliente que está ocupado esse horario",
+        });
+      }
 
       // Calculate slot
       const slotStart = toISO(dt), slotEnd = toISO(addMins(dt, SLOT_MIN));
+      const visitDayKey = dateKeyISO(dt);
 
-      // Quick availability pre-check — só para garantir que há ao menos UM corretor livre
-      // (a escolha de qual corretor é feita via fila no google-calendar-api).
-      let anyFree = false;
-      for (const b of available) {
-        if (!b.calendar_id) continue;
-        const busy = await checkBusy(gFetch, b.calendar_id, slotStart, slotEnd);
-        if (busy.length === 0) { anyFree = true; break; }
+      const visitScheduling = await loadCompanyVisitScheduling(service, companyId);
+      const assignBrokerLater = visitScheduling.mode === "manual";
+
+      const { broker: freeBroker, queueIndexToPersist } = await pickFreeBrokerForSlot(
+        service,
+        companyId,
+        rows,
+        available,
+        visitScheduling,
+        visitDayKey,
+        async (b: any) => {
+          if (!b.calendar_id) return false;
+          const busy = await checkBusy(gFetch, b.calendar_id, slotStart, slotEnd);
+          return busy.length === 0;
+        },
+      );
+
+      if (!freeBroker) {
+        return ok({
+          success: false,
+          error_code: "slot_busy",
+          response: "Eita acabaram de agendar pra esse horário, teria alguma outra opção?",
+        });
       }
-      if (!anyFree) return ok({ success: false, response: "Eita acabaram de agendar pra esse horário, teria alguma outra opção?" });
 
       // Get property data
       let propertyData: any = {};
@@ -397,15 +487,16 @@ serve(async (req) => {
         if (props?.length) propertyData = props[0];
       }
 
-      // Call google-calendar-api — fila de corretores ativa (rodízio via broker_queue_state).
+      // Cria evento no corretor já validado (evita fila global ignorar plantão do dia).
       const calApiUrl = `${env("SUPABASE_URL")}/functions/v1/google-calendar-api`;
-      const srkKey = env("SUPABASE_SERVICE_ROLE_KEY");
       const createBody: any = {
         action: "create_event_from_n8n",
         company_id: companyId,
         lead_id: sessionId,
-        use_broker_queue: true,
-        auto_reassign_on_conflict: true,
+        calendar_id: freeBroker.calendar_id,
+        broker_id: freeBroker.assigned_user_id || "",
+        use_broker_queue: false,
+        auto_reassign_on_conflict: false,
         nome_cliente: nomeCliente,
         start: slotStart,
         end: slotEnd,
@@ -419,17 +510,38 @@ serve(async (req) => {
 
       const createRes = await fetch(calApiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: srkKey, Authorization: `Bearer ${srkKey}` },
+        headers: calFnHeaders,
         body: JSON.stringify(createBody),
       });
       const createJson = await createRes.json().catch(() => ({}));
 
       if (!createRes.ok || createJson?.conflict) {
-        return ok({ success: false, response: "Eita acabaram de agendar pra esse horário, teria alguma outra opção?" });
+        const isConflict = createRes.status === 409 || createJson?.conflict === true;
+        const isAuthError = createRes.status === 401 || createRes.status === 403;
+        const isServerError = createRes.status >= 500;
+        const errorCode = isConflict ? "slot_busy" : isAuthError ? "auth_error" : isServerError ? "calendar_error" : "booking_failed";
+        const response = isConflict
+          ? "Eita acabaram de agendar pra esse horário, teria alguma outra opção?"
+          : isAuthError
+            ? "Falha de autenticação ao confirmar no calendário. Verifique a chave service_role no n8n."
+            : isServerError
+              ? "Tivemos uma instabilidade ao confirmar no calendário. Pode tentar de novo em instantes ou escolher outro horário?"
+              : "Não conseguimos confirmar o agendamento agora. Pode tentar outro horário?";
+        return ok({
+          success: false,
+          error_code: errorCode,
+          response,
+          calendar_status: createRes.status,
+          calendar_error: createJson?.error || createJson?.message || null,
+        });
       }
 
-      const brokerId = createJson?.broker_id || null;
-      const brokerName = createJson?.broker_name || "";
+      if (queueIndexToPersist !== null && visitScheduling.mode !== "manual") {
+        await persistQueueIndex(service, companyId, queueIndexToPersist);
+      }
+
+      const brokerIdFromCalendar = createJson?.broker_id || null;
+      const brokerNameFromCalendar = createJson?.broker_name || "";
       const calendarId = createJson?.calendar_id || "";
       const eventId = createJson?.id || "";
 
@@ -437,7 +549,9 @@ serve(async (req) => {
       const startDT = createJson?.start?.dateTime || slotStart;
       const dataPt = new Date(startDT).toLocaleDateString("pt-BR", { timeZone: TZ, day: "numeric", month: "long", year: "numeric" });
       const horaPt = new Date(startDT).toLocaleTimeString("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
-      const resumo = `Visita agendada para ${dataPt} às ${horaPt} no imóvel ${idImovel}`;
+      const resumo = assignBrokerLater
+        ? `Visita agendada para ${dataPt} às ${horaPt} no imóvel ${idImovel}. Aguardando definição do corretor responsável.`
+        : `Visita agendada para ${dataPt} às ${horaPt} no imóvel ${idImovel}`;
 
       // Update lead
       if (sessionId) {
@@ -448,8 +562,10 @@ serve(async (req) => {
         };
         if (nomeCliente) updateFields.name = nomeCliente;
         if (emailCliente) updateFields.email = emailCliente;
-        if (brokerId) updateFields.id_corretor_responsavel = brokerId;
-        if (brokerName) updateFields.Corretor_responsavel = brokerName;
+        if (!assignBrokerLater) {
+          if (brokerIdFromCalendar) updateFields.id_corretor_responsavel = brokerIdFromCalendar;
+          if (brokerNameFromCalendar) updateFields.Corretor_responsavel = brokerNameFromCalendar;
+        }
         if (calendarId) updateFields.calenda_id = calendarId;
         if (eventId) updateFields.event_id = eventId;
         if (propertyData.tipo_imovel) updateFields.interest = propertyData.tipo_imovel;
@@ -459,8 +575,131 @@ serve(async (req) => {
         await service.from("leads").update(updateFields).eq("id", sessionId).eq("company_id", companyId);
       }
 
-      const respText = `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar!\n\nCorretor Responsável: ${brokerName || "da imobiliária"}\n\nO corretor responsável vai entrar em contato com você em instantes.\n\nCaso venha ser o nome da empresa, fale que o corretor responsavel vai entrar em contato. Nunca envente um nome`;
-      return ok({ success: true, response: respText, event_id: eventId, broker_name: brokerName, broker_id: brokerId, calendar_id: calendarId });
+      const respText = assignBrokerLater
+        ? `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar a visita para ${dataPt} às ${horaPt}!\n\nNossa equipe vai definir o corretor responsável e entrar em contato com você em instantes.`
+        : `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar!\n\nCorretor Responsável: ${brokerNameFromCalendar || "da imobiliária"}\n\nO corretor responsável vai entrar em contato com você em instantes.\n\nCaso venha ser o nome da empresa, fale que o corretor responsavel vai entrar em contato. Nunca envente um nome`;
+      return ok({
+        success: true,
+        response: respText,
+        event_id: eventId,
+        broker_name: assignBrokerLater ? null : brokerNameFromCalendar,
+        broker_id: assignBrokerLater ? null : brokerIdFromCalendar,
+        calendar_id: calendarId,
+        visit_assignment_mode: visitScheduling.mode,
+        broker_pending_assignment: assignBrokerLater,
+      });
+    }
+
+    // ==================== ASSIGN VISIT BROKER (modo manual) ====================
+    if (action === "assign_visit_broker") {
+      const leadId = String(body?.lead_id || "").trim();
+      const brokerUserId = String(body?.broker_id || "").trim();
+      if (!leadId || !brokerUserId) {
+        return ok({ success: false, error: "lead_id e broker_id são obrigatórios" }, 400);
+      }
+
+      const permError = await assertCompanyManager(req, service, companyId);
+      if (permError) return ok({ success: false, error: permError }, 403);
+
+      const { data: lead, error: leadError } = await service
+        .from("leads")
+        .select("id, event_id, calenda_id, notes, stage, id_corretor_responsavel")
+        .eq("id", leadId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+      if (leadError) return ok({ success: false, error: leadError.message }, 500);
+      if (!lead?.event_id || !lead?.calenda_id) {
+        return ok({ success: false, error: "Lead sem visita vinculada ao calendário" }, 400);
+      }
+
+      const stage = String(lead.stage || "").toLowerCase().replace(/\s+/g, "-");
+      if (stage !== "visita-agendada") {
+        return ok({ success: false, error: "Lead não está com visita agendada" }, 400);
+      }
+
+      if (lead.id_corretor_responsavel) {
+        return ok({ success: false, error: "Este lead já possui corretor responsável" }, 400);
+      }
+
+      const { data: scheduleRows, error: scheduleError } = await service
+        .from("oncall_schedules")
+        .select("calendar_id, assigned_user_id")
+        .eq("company_id", companyId)
+        .eq("assigned_user_id", brokerUserId)
+        .not("calendar_id", "is", null)
+        .limit(1);
+
+      if (scheduleError) return ok({ success: false, error: scheduleError.message }, 500);
+      const scheduleRow = Array.isArray(scheduleRows) ? scheduleRows[0] : null;
+      if (!scheduleRow?.calendar_id) {
+        return ok({
+          success: false,
+          error: "Corretor sem calendário configurado no plantão",
+        }, 400);
+      }
+
+      const { data: brokerProfile } = await service
+        .from("user_profiles")
+        .select("full_name, email, is_active, role")
+        .eq("id", brokerUserId)
+        .maybeSingle();
+
+      if (!brokerProfile?.is_active) {
+        return ok({ success: false, error: "Corretor inativo" }, 400);
+      }
+      if (!["corretor", "gestor"].includes(String(brokerProfile.role || ""))) {
+        return ok({ success: false, error: "Usuário selecionado não é corretor ou gestor" }, 400);
+      }
+
+      const brokerName = String(brokerProfile.full_name || brokerProfile.email || brokerUserId);
+      const destCalendarId = String(scheduleRow.calendar_id);
+      let eventId = String(lead.event_id);
+      let calendarId = String(lead.calenda_id);
+
+      if (destCalendarId !== calendarId) {
+        try {
+          const moved = await gFetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/move?destination=${encodeURIComponent(destCalendarId)}`,
+            { method: "POST" },
+          );
+          eventId = String(moved?.id || eventId);
+          calendarId = destCalendarId;
+        } catch (moveErr: any) {
+          return ok({
+            success: false,
+            error: moveErr?.message || "Não foi possível mover a visita para o calendário do corretor",
+          }, 500);
+        }
+      }
+
+      const cleanedNotes = String(lead.notes || "")
+        .replace(/\.?\s*Aguardando definição do corretor responsável\.?/gi, "")
+        .trim();
+
+      const { error: updateError } = await service
+        .from("leads")
+        .update({
+          id_corretor_responsavel: brokerUserId,
+          Corretor_responsavel: brokerName,
+          calenda_id: calendarId,
+          event_id: eventId,
+          notes: cleanedNotes || lead.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", leadId)
+        .eq("company_id", companyId);
+
+      if (updateError) return ok({ success: false, error: updateError.message }, 500);
+
+      return ok({
+        success: true,
+        lead_id: leadId,
+        broker_id: brokerUserId,
+        broker_name: brokerName,
+        calendar_id: calendarId,
+        event_id: eventId,
+      });
     }
 
     // ==================== CANCEL VISIT ====================
@@ -472,17 +711,19 @@ serve(async (req) => {
       if (!lead || !lead.event_id || !lead.calenda_id) return ok({ success: false, error: "Lead sem agendamento vinculado" }, 400);
 
       const calApiUrl = `${env("SUPABASE_URL")}/functions/v1/google-calendar-api`;
-      const srkKey = env("SUPABASE_SERVICE_ROLE_KEY");
       const cancelRes = await fetch(calApiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: srkKey, Authorization: `Bearer ${srkKey}` },
+        headers: calFnHeaders,
         body: JSON.stringify({ action: "cancel_event_from_n8n", company_id: companyId, calendar_id: lead.calenda_id, event_id: lead.event_id, lead_id: sessionId }),
       });
       const cancelJson = await cancelRes.json().catch(() => ({}));
       return ok({ success: true, response: "Agendamento cancelado com sucesso.", ...cancelJson });
     }
 
-    return ok({ success: false, error: "action inválida. Use: check_availability, book_visit, cancel_visit" }, 400);
+    return ok({
+      success: false,
+      error: "action inválida. Use: check_availability, book_visit, cancel_visit, assign_visit_broker",
+    }, 400);
   } catch (e: any) {
     return ok({ success: false, error: e?.message || "Erro interno" }, 500);
   }

@@ -1,5 +1,7 @@
 # Fix: schedule-api book_visit
 
+**Status: aplicado em 28/05/2026 — deploy `schedule-api` v25**
+
 ## Problema
 No `book_visit`, o loop encontra o broker livre mas não salva qual é.
 Depois chama `google-calendar-api` com `use_broker_queue: true`, que re-seleciona
