@@ -60,10 +60,11 @@ export async function hasConnectedWhatsApp(companyId: string): Promise<boolean> 
 export async function getAiActivationBlockers(
   companyId: string,
   company: AiPromptFields,
+  options?: { isOfficialApi?: boolean },
 ): Promise<string[]> {
   const blockers: string[] = [];
 
-  if (!(await hasConnectedWhatsApp(companyId))) {
+  if (!options?.isOfficialApi && !(await hasConnectedWhatsApp(companyId))) {
     blockers.push('WhatsApp não conectado — conecte em Conexões');
   }
 

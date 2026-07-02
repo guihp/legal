@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
+import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
 import { AiVisitSchedulingCard } from '@/components/AiVisitSchedulingCard';
 import { PendingVisitBrokerAssignments } from '@/components/PendingVisitBrokerAssignments';
 import { BusinessHoursFields } from '@/components/BusinessHoursFields';
@@ -110,6 +111,7 @@ function LabelWithHelp({ label, tooltip, htmlFor }: { label: string; tooltip: st
 
 export function AiConfigurationView() {
   const { company, loading, updating, isManager, updateCompany } = useOwnCompany();
+  const { isOfficialApi } = useCompanyApiMode();
   const [togglingAi, setTogglingAi] = useState(false);
   const [activationBlockers, setActivationBlockers] = useState<string[]>([]);
   const aiEnabled = company?.ai_assistant_enabled ?? false;
@@ -137,8 +139,8 @@ export function AiConfigurationView() {
       return;
     }
 
-    void getAiActivationBlockers(company.id, company).then(setActivationBlockers);
-  }, [company]);
+    void getAiActivationBlockers(company.id, company, { isOfficialApi }).then(setActivationBlockers);
+  }, [company, isOfficialApi]);
 
   const canEnableAi = useMemo(() => activationBlockers.length === 0, [activationBlockers]);
 
@@ -213,7 +215,7 @@ export function AiConfigurationView() {
     if (!isManager || !company) return;
 
     if (checked) {
-      const blockers = await getAiActivationBlockers(company.id, company);
+      const blockers = await getAiActivationBlockers(company.id, company, { isOfficialApi });
       if (blockers.length > 0) {
         setActivationBlockers(blockers);
         toast.error(formatActivationBlockersMessage(blockers), { duration: 8000 });
@@ -290,7 +292,9 @@ export function AiConfigurationView() {
             Ativar assistente IA
           </CardTitle>
           <CardDescription className="text-gray-400">
-            Liga ou desliga a IA no atendimento real do WhatsApp da sua imobiliária.
+            {isOfficialApi
+              ? 'API Oficial Meta — o WhatsApp já está integrado. Basta completar os textos abaixo e ativar.'
+              : 'Liga ou desliga a IA no atendimento real do WhatsApp da sua imobiliária.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -310,6 +314,12 @@ export function AiConfigurationView() {
               className="data-[state=checked]:bg-emerald-500"
             />
           </div>
+
+          {!aiEnabled && isOfficialApi && (
+            <p className="text-xs text-blue-400/90 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+              Não é necessário conectar WhatsApp em Conexões — empresas com API Oficial já usam o número vinculado à Meta automaticamente.
+            </p>
+          )}
 
           {!aiEnabled && activationBlockers.length > 0 && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">

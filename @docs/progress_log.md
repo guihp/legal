@@ -1,5 +1,10 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-02 — Config IA: API Oficial sem exigir Conexões WhatsApp
+
+- **`company_ai_activation_blockers`:** empresas com `APIOficial = true` não precisam de instância Evolution conectada para ativar a IA.
+- **`AiConfigurationView`:** texto e blockers ajustados — API Oficial usa WhatsApp Meta automaticamente.
+
 ## 2026-07-02 — Chat WhatsApp: instância, lista, áudio e conexões
 
 - **`enviar_mensagem`:** `resolveWhatsappSendInstancia` — empresas sem API Oficial usam instância real (`company_whatsapp_instances`), não `default`.
