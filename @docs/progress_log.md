@@ -3,7 +3,8 @@
 ## 2026-07-02 — Config IA: API Oficial sem exigir Conexões WhatsApp
 
 - **`company_ai_activation_blockers`:** empresas com `APIOficial = true` não precisam de instância Evolution conectada para ativar a IA.
-- **`AiConfigurationView`:** texto e blockers ajustados — API Oficial usa WhatsApp Meta automaticamente.
+- **`AiConfigurationView`:** aguarda `loadingApiMode` e corrige race condition nos blockers; API Oficial usa WhatsApp Meta automaticamente.
+- Migration `20260702130000` aplicada em produção via `supabase db query --linked`.
 
 ## 2026-07-02 — Chat WhatsApp: instância, lista, áudio e conexões
 

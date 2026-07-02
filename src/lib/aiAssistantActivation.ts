@@ -63,13 +63,22 @@ export async function getAiActivationBlockers(
   options?: { isOfficialApi?: boolean },
 ): Promise<string[]> {
   const blockers: string[] = [];
+  const isOfficialApi = Boolean(options?.isOfficialApi);
 
-  if (!options?.isOfficialApi && !(await hasConnectedWhatsApp(companyId))) {
+  if (!isOfficialApi && !(await hasConnectedWhatsApp(companyId))) {
     blockers.push('WhatsApp não conectado — conecte em Conexões');
   }
 
   blockers.push(...getMissingAiPromptFields(company));
-  return blockers;
+  return filterWhatsAppBlockerForOfficialApi(blockers, isOfficialApi);
+}
+
+export function filterWhatsAppBlockerForOfficialApi(
+  blockers: string[],
+  isOfficialApi: boolean,
+): string[] {
+  if (!isOfficialApi) return blockers;
+  return blockers.filter((item) => !item.toLowerCase().includes('whatsapp'));
 }
 
 export function formatActivationBlockersMessage(blockers: string[]): string {

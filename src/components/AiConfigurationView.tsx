@@ -111,7 +111,7 @@ function LabelWithHelp({ label, tooltip, htmlFor }: { label: string; tooltip: st
 
 export function AiConfigurationView() {
   const { company, loading, updating, isManager, updateCompany } = useOwnCompany();
-  const { isOfficialApi } = useCompanyApiMode();
+  const { isOfficialApi, loadingApiMode } = useCompanyApiMode();
   const [togglingAi, setTogglingAi] = useState(false);
   const [activationBlockers, setActivationBlockers] = useState<string[]>([]);
   const aiEnabled = company?.ai_assistant_enabled ?? false;
@@ -138,9 +138,16 @@ export function AiConfigurationView() {
       setActivationBlockers([]);
       return;
     }
+    if (loadingApiMode) return;
 
-    void getAiActivationBlockers(company.id, company, { isOfficialApi }).then(setActivationBlockers);
-  }, [company, isOfficialApi]);
+    let cancelled = false;
+    void getAiActivationBlockers(company.id, company, { isOfficialApi }).then((blockers) => {
+      if (!cancelled) setActivationBlockers(blockers);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [company, isOfficialApi, loadingApiMode]);
 
   const canEnableAi = useMemo(() => activationBlockers.length === 0, [activationBlockers]);
 
