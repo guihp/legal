@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Bot, HelpCircle, Loader2, Save } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bot, HelpCircle, Loader2, Save, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 import {
   Tooltip,
   TooltipContent,
@@ -28,6 +30,10 @@ import {
   serializeBusinessHours,
   type DaySchedule,
 } from '@/lib/businessHours';
+import {
+  formatActivationBlockersMessage,
+  getAiActivationBlockers,
+} from '@/lib/aiAssistantActivation';
 
 const TONE_PLACEHOLDER = `Ex.: Comunicação consultiva, humana e objetiva. Linguagem simples, sem termos técnicos em excesso. Sempre educada e proativa: responde com clareza, oferece próximos passos e evita pressão comercial. Pode usar emojis com moderação quando fizer sentido.`;
 
@@ -104,6 +110,9 @@ function LabelWithHelp({ label, tooltip, htmlFor }: { label: string; tooltip: st
 
 export function AiConfigurationView() {
   const { company, loading, updating, isManager, updateCompany } = useOwnCompany();
+  const [togglingAi, setTogglingAi] = useState(false);
+  const [activationBlockers, setActivationBlockers] = useState<string[]>([]);
+  const aiEnabled = company?.ai_assistant_enabled ?? false;
   const [form, setForm] = useState({
     aiInitialMessage: '',
     aiAssistantName: '',
@@ -121,6 +130,17 @@ export function AiConfigurationView() {
   const [visitSchedulingConfig, setVisitSchedulingConfig] = useState<AiVisitSchedulingConfig>(
     () => companyRowToVisitSchedulingConfig(null)
   );
+
+  useEffect(() => {
+    if (!company?.id) {
+      setActivationBlockers([]);
+      return;
+    }
+
+    void getAiActivationBlockers(company.id, company).then(setActivationBlockers);
+  }, [company]);
+
+  const canEnableAi = useMemo(() => activationBlockers.length === 0, [activationBlockers]);
 
   useEffect(() => {
     if (!company) return;
@@ -189,6 +209,31 @@ export function AiConfigurationView() {
     }));
   };
 
+  const handleToggleAi = async (checked: boolean) => {
+    if (!isManager || !company) return;
+
+    if (checked) {
+      const blockers = await getAiActivationBlockers(company.id, company);
+      if (blockers.length > 0) {
+        setActivationBlockers(blockers);
+        toast.error(formatActivationBlockersMessage(blockers), { duration: 8000 });
+        return;
+      }
+    }
+
+    setTogglingAi(true);
+    try {
+      const ok = await updateCompany({ ai_assistant_enabled: checked });
+      if (!ok) return;
+      toast.success(checked ? 'Assistente IA ativada' : 'Assistente IA desativada');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao atualizar status da IA';
+      toast.error(msg);
+    } finally {
+      setTogglingAi(false);
+    }
+  };
+
   const handleSave = async () => {
     const ok = await updateCompany({
       business_hours: serializeBusinessHours(form.businessHoursSchedule),
@@ -237,6 +282,53 @@ export function AiConfigurationView() {
           </p>
         </div>
       </div>
+
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-emerald-400" />
+            Ativar assistente IA
+          </CardTitle>
+          <CardDescription className="text-gray-400">
+            Liga ou desliga a IA no atendimento real do WhatsApp da sua imobiliária.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+            <div>
+              <Label className="text-white">Assistente IA ativa</Label>
+              <p className="text-xs text-gray-500 mt-1">
+                {aiEnabled
+                  ? 'A IA responde automaticamente aos clientes no WhatsApp'
+                  : 'Desativada — apenas atendimento humano'}
+              </p>
+            </div>
+            <Switch
+              checked={aiEnabled}
+              disabled={!isManager || togglingAi || updating}
+              onCheckedChange={handleToggleAi}
+              className="data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+
+          {!aiEnabled && activationBlockers.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+              <p className="font-medium text-amber-200 mb-2">Para ativar a IA, complete:</p>
+              <ul className="list-disc pl-5 space-y-1 text-amber-100/80">
+                {activationBlockers.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!aiEnabled && canEnableAi && (
+            <p className="text-xs text-emerald-400/90">
+              Tudo pronto — você pode ativar a assistente IA.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="bg-gray-800/50 border-gray-700">
         <CardHeader>

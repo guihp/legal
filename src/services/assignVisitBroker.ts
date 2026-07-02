@@ -12,7 +12,16 @@ export type AssignVisitBrokerResult = {
   brokerName?: string | null;
   calendarId?: string | null;
   eventId?: string | null;
+  calendarSyncWarning?: string | null;
 };
+
+function humanizeAssignVisitError(message: string): string {
+  const trimmed = message.trim();
+  if (/^not\s*found$/i.test(trimmed)) {
+    return 'Evento da visita não encontrado no Google Calendar. Verifique se a visita ainda existe no calendário.';
+  }
+  return trimmed;
+}
 
 export async function assignVisitBroker(
   params: AssignVisitBrokerParams
@@ -25,6 +34,7 @@ export async function assignVisitBroker(
       broker_name?: string | null;
       calendar_id?: string | null;
       event_id?: string | null;
+      calendar_sync_warning?: string | null;
     }
   >('schedule-api', {
     body: {
@@ -36,11 +46,17 @@ export async function assignVisitBroker(
   });
 
   if (error) {
-    return { success: false, error: error.message || 'Erro ao atribuir corretor' };
+    return {
+      success: false,
+      error: humanizeAssignVisitError(error.message || 'Erro ao atribuir corretor'),
+    };
   }
 
   if (!data?.success) {
-    return { success: false, error: data?.error || 'Não foi possível atribuir o corretor' };
+    return {
+      success: false,
+      error: humanizeAssignVisitError(data?.error || 'Não foi possível atribuir o corretor'),
+    };
   }
 
   return {
@@ -48,5 +64,6 @@ export async function assignVisitBroker(
     brokerName: data.broker_name ?? null,
     calendarId: data.calendar_id ?? null,
     eventId: data.event_id ?? null,
+    calendarSyncWarning: data.calendar_sync_warning ?? null,
   };
 }

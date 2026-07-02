@@ -94,15 +94,15 @@ export function PropertyImageGallery({
                 variant="outline"
                 size="sm"
                 onClick={() => setFitMode(m => (m === 'cover' ? 'contain' : 'cover'))}
-                className="border-gray-600 text-black hover:bg-gray-200"
+                className="border-gray-600 text-gray-100 hover:bg-gray-700 hover:text-white"
                 title={fitMode === 'cover' ? 'Ajustar: Contain' : 'Ajustar: Cover'}
               >
                 {fitMode === 'cover' ? 'Preencher' : 'Conter'}
               </Button>
               <div className="flex items-center gap-1 shrink-0">
-                <Button variant="outline" size="sm" className="border-gray-600 text-black hover:bg-gray-200" onClick={decreaseZoom} title="Diminuir zoom">-</Button>
+                <Button variant="outline" size="sm" className="border-gray-600 text-gray-100 hover:bg-gray-700 hover:text-white" onClick={decreaseZoom} title="Diminuir zoom">-</Button>
                 <span className="text-sm text-gray-300 w-14 text-center">{Math.round(zoom * 100)}%</span>
-                <Button variant="outline" size="sm" className="border-gray-600 text-black hover:bg-gray-200" onClick={increaseZoom} title="Aumentar zoom">+</Button>
+                <Button variant="outline" size="sm" className="border-gray-600 text-gray-100 hover:bg-gray-700 hover:text-white" onClick={increaseZoom} title="Aumentar zoom">+</Button>
                 <Button variant="ghost" size="sm" className="text-gray-300" onClick={resetZoom} title="Redefinir zoom">Reset</Button>
               </div>
               <Button variant="ghost" size="sm" onClick={onClose} className="text-white">

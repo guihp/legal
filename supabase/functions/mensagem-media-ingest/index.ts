@@ -117,6 +117,71 @@ function assertServiceRoleAuth(req: Request): Response | null {
   );
 }
 
+/** audioMessage → audio, imageMessage → image (Evolution/Baileys). */
+function normalizeMensageType(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "image";
+  const lower = t.toLowerCase();
+  if (lower.endsWith("message")) {
+    const base = lower.slice(0, -"message".length);
+    if (["audio", "image", "video", "document", "sticker"].includes(base)) return base;
+  }
+  if (["ptt", "voice", "voz"].includes(lower)) return "audio";
+  if (lower === "conversation") return "text";
+  return t;
+}
+
+function sniffKnownContentType(bytes: Uint8Array, mensageType: string): string | null {
+  if (bytes.length < 4) return null;
+  const b = bytes;
+  const head4 = String.fromCharCode(b[0], b[1], b[2], b[3]);
+  if (head4 === "OggS") return "audio/ogg";
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return "audio/mpeg";
+  if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return "audio/mpeg";
+  if (bytes.length >= 12 && String.fromCharCode(b[4], b[5], b[6], b[7]) === "ftyp") {
+    return normalizeMensageType(mensageType).toLowerCase() === "audio" ? "audio/mp4" : "video/mp4";
+  }
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) {
+    return normalizeMensageType(mensageType).toLowerCase() === "video" ? "video/webm" : "audio/webm";
+  }
+  if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (head4 === "RIFF" && bytes.length >= 12 && String.fromCharCode(b[8], b[9], b[10], b[11]) === "WAVE") {
+    return "audio/wav";
+  }
+  if (head4 === "GIF8") return "image/gif";
+  return null;
+}
+
+function resolveUploadContentType(
+  bytes: Uint8Array,
+  declared: string,
+  mensageType: string,
+): string {
+  const declaredClean = declared.split(";")[0]?.trim().toLowerCase() || "";
+  if (declaredClean && declaredClean !== "application/octet-stream") {
+    return declaredClean;
+  }
+  const sniffed = sniffKnownContentType(bytes, mensageType);
+  if (sniffed) return sniffed;
+
+  const norm = normalizeMensageType(mensageType).toLowerCase();
+  if (["audio", "image", "video"].includes(norm)) {
+    throw new Error(
+      "media_appears_encrypted_or_invalid: use Evolution getBase64FromMediaMessage (mídia descriptografada) ou source_url da API oficial",
+    );
+  }
+  return "application/octet-stream";
+}
+
+function decodeBase64Media(raw: string): Uint8Array {
+  const cleaned = raw.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  const bin = atob(cleaned);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 function extFromMime(ct: string, mensageType: string): string {
   const m = ct.toLowerCase();
   const t = mensageType.toLowerCase();
@@ -136,7 +201,7 @@ function extFromMime(ct: string, mensageType: string): string {
 }
 
 function mediaFolder(mensageType: string): string {
-  const t = mensageType.toLowerCase();
+  const t = normalizeMensageType(mensageType).toLowerCase();
   if (t === "image" || t === "video" || t === "audio") return t;
   return "outros";
 }
@@ -210,6 +275,8 @@ function parseMeta(
   sourceUrl: string;
   fetchAuthorization: string;
   bucket: string;
+  mimetype: string;
+  mediaBase64: string;
 } {
   const get = (k: string) => {
     const v = raw[k];
@@ -228,10 +295,12 @@ function parseMeta(
     text: caption,
     msgType: get("type").trim() || "lead",
     plataforma: get("plataforma").trim() || "WhatsApp",
-    mensageType: get("mensage_type").trim() || "image",
+    mensageType: normalizeMensageType(get("mensage_type").trim() || "image"),
     sourceUrl: get("source_url").trim(),
     fetchAuthorization: get("fetch_authorization").trim(),
     bucket: get("bucket").trim() || env("CHAT_MEDIA_BUCKET", DEFAULT_BUCKET),
+    mimetype: get("mimetype").trim() || get("mime_type").trim(),
+    mediaBase64: get("media_base64").trim(),
   };
 }
 
@@ -243,6 +312,8 @@ async function persistMensagem(
 ): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
   const patch = {
     conteudo_media: publicUrl,
+    mensage_type: meta.mensageType,
+    plataforma: meta.plataforma,
     ...(meta.text ? { text: meta.text } : {}),
   };
 
@@ -354,30 +425,42 @@ serve(async (req) => {
         source_url: form.get("source_url") ?? "",
         fetch_authorization: form.get("fetch_authorization") ?? "",
         bucket: form.get("bucket") ?? "",
+        mimetype: form.get("mimetype") ?? form.get("mime_type") ?? "",
+        media_base64: "",
       });
-      contentType = file.type || contentType;
-      if (!meta.mensageType || meta.mensageType === "image") {
-        const inferred = mensageTypeFromMime(contentType);
-        if (inferred !== "outros") meta.mensageType = inferred;
-      }
+      contentType = meta.mimetype || file.type || contentType;
       bytes = new Uint8Array(await file.arrayBuffer());
+      contentType = resolveUploadContentType(bytes, contentType, meta.mensageType);
+      const inferred = mensageTypeFromMime(contentType);
+      if (inferred !== "outros") meta.mensageType = inferred;
     } else {
       const body = await req.json().catch(() => ({}));
       meta = parseMeta(body as Record<string, string>);
-      if (!meta.sourceUrl) {
+      if (meta.mediaBase64) {
+        bytes = decodeBase64Media(meta.mediaBase64);
+        if (bytes.byteLength > MAX_BYTES) {
+          return json({ ok: false, error: "file_too_large", max_bytes: MAX_BYTES }, 413);
+        }
+        contentType = resolveUploadContentType(bytes, meta.mimetype, meta.mensageType);
+        const inferred = mensageTypeFromMime(contentType);
+        if (inferred !== "outros") meta.mensageType = inferred;
+      } else if (meta.sourceUrl) {
+        const fetched = await fetchMediaBytes(meta.sourceUrl, meta.fetchAuthorization);
+        bytes = fetched.bytes;
+        contentType = resolveUploadContentType(bytes, fetched.contentType, meta.mensageType);
+        const inferred = mensageTypeFromMime(contentType);
+        if (inferred !== "outros") meta.mensageType = inferred;
+      } else {
         return json(
           {
             ok: false,
-            error: "source_url_required",
+            error: "media_payload_required",
             hint:
-              "Envie source_url (URL temporária Meta/WhatsApp). Não use base64 — a edge baixa e grava no Storage.",
+              "Envie source_url (API oficial), media_base64 (Evolution getBase64FromMediaMessage) ou multipart com arquivo já descriptografado.",
           },
           400,
         );
       }
-      const fetched = await fetchMediaBytes(meta.sourceUrl, meta.fetchAuthorization);
-      bytes = fetched.bytes;
-      contentType = fetched.contentType;
     }
 
     if (!meta.companyId) {

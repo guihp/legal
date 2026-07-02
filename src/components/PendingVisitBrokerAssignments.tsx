@@ -70,6 +70,9 @@ export function PendingVisitBrokerAssignments() {
           ? `Visita atribuída a ${result.brokerName}`
           : 'Corretor atribuído com sucesso'
       );
+      if (result.calendarSyncWarning) {
+        toast.warning(result.calendarSyncWarning);
+      }
       setSelectedBrokerByLead((prev) => {
         const next = { ...prev };
         delete next[leadId];

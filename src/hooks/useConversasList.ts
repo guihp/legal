@@ -46,10 +46,12 @@ export function useConversasList(selectedInstance?: string | null) {
     return String(selectedInstance).trim().toLowerCase();
   }, [selectedInstance]);
 
-  const fetchConversas = useCallback(async () => {
+  const fetchConversas = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
 
       if (!profile?.company_id) {
         setConversas([]);
@@ -154,12 +156,12 @@ export function useConversasList(selectedInstance?: string | null) {
       console.error('Erro ao buscar conversas:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [profile?.company_id, profile?.role, scopedInstance, isManager, profile]);
 
   useEffect(() => {
-    void fetchConversas();
+    void fetchConversas(false);
   }, [fetchConversas]);
 
   const updateConversation = (sessionId: string) => {
@@ -172,7 +174,7 @@ export function useConversasList(selectedInstance?: string | null) {
       }
       return updated;
     });
-    void fetchConversas();
+    void fetchConversas(true);
   };
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -184,7 +186,7 @@ export function useConversasList(selectedInstance?: string | null) {
     }
     if (profile?.company_id) {
       pollingRef.current = setInterval(() => {
-        void fetchConversas();
+        void fetchConversas(true);
       }, 3000);
     }
     return () => {

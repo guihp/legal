@@ -13,15 +13,13 @@ import {
   Mic,
   Image as ImageIcon,
   File as FileIcon,
-  Plus,
   Edit2,
-  Trash2,
-  AlertCircle,
   Zap,
   Clock,
   ChevronLeft,
   ChevronRight,
   User,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -32,7 +30,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -83,7 +80,33 @@ import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
 import { useConversasUnread } from '@/hooks/useConversasUnread';
 import { useMensagensNotifications } from '@/hooks/useMensagensNotifications';
-import { normalizePhoneDigits } from '@/lib/normalizePhone';
+import {
+  formatPhoneDisplayBR,
+  normalizePhoneDigits,
+  normalizePhoneForWhatsAppSession,
+} from '@/lib/normalizePhone';
+import {
+  NewWhatsAppConversationDialog,
+  type NewWhatsAppConversationPick,
+} from '@/components/chat/NewWhatsAppConversationDialog';
+import { ManageChatTemplatesModal } from '@/components/chat/ManageChatTemplatesModal';
+import type { ChatTemplate } from '@/hooks/useChatTemplates';
+import {
+  applyOfficialApiWebhookFields,
+  officialApiMetaFromTemplate,
+  resolveOfficialApiTemplateForMessage,
+} from '@/lib/chatOfficialApiTemplate';
+import {
+  chatTemplateHasMedia,
+  templateMediaLabel,
+  webhookTipoFromTemplateMedia,
+} from '@/lib/chatTemplateMedia';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { unlockChatNotificationSound } from '@/lib/chatNotificationSound';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
@@ -93,6 +116,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { LeadViewModal } from './LeadViewModal';
 import { useChatTemplates } from '@/hooks/useChatTemplates';
+import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
+import { resolveWhatsappSendInstancia } from '@/lib/resolveWhatsappSendInstancia';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
@@ -238,7 +263,8 @@ async function sendPayload(
   mediaUrl?: string,
   mutiplos?: boolean,
   mediaUrls?: string[],
-  midias?: Array<{ url: string; tipo: string; mime_type?: string; nome?: string; caption?: string }>
+  midias?: Array<{ url: string; tipo: string; mime_type?: string; nome?: string; caption?: string }>,
+  officialApiMeta?: ReturnType<typeof resolveOfficialApiTemplateForMessage>,
 ) {
   // Normalizar instância
   const normalizedInstancia = instancia.trim().toLowerCase();
@@ -285,6 +311,8 @@ async function sendPayload(
     body.midias = midias;
     body.mutiplos = midias.length > 1 || body.mutiplos === true;
   }
+
+  applyOfficialApiWebhookFields(body, officialApiMeta);
 
   const r = await fetch("https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/enviar_mensagem", {
     method: "POST",
@@ -663,6 +691,7 @@ interface ConversasViewPremiumProps { }
 
 export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const { profile } = useUserProfile();
+  const { isOfficialApi } = useCompanyApiMode();
   const { toast } = useToast();
   const controls = useAnimation();
   const isMobile = useIsMobile();
@@ -686,14 +715,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const [viewContactLeadId, setViewContactLeadId] = useState<string | null>(null);
   const [resolvingContactInfo, setResolvingContactInfo] = useState(false);
   const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
+  const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
+  const [sessionOverride, setSessionOverride] = useState<NewWhatsAppConversationPick | null>(null);
 
   // Hook e estados de Templates de Chat
-  const { templates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useChatTemplates();
+  const { templates, loading: loadingTemplates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useChatTemplates();
   const [showTemplatesMenu, setShowTemplatesMenu] = useState(false);
   const [filteredTemplates, setFilteredTemplates] = useState<any[]>([]);
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   const [showManageTemplatesModal, setShowManageTemplatesModal] = useState(false);
-  const [isOfficialApiNew, setIsOfficialApiNew] = useState(false);
 
   // Hook para controlar visualização Mobile
   useEffect(() => {
@@ -731,6 +761,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef<boolean>(true);
   const prevConversationRef = useRef<string | null>(null);
+  const [lockedOfficialTemplate, setLockedOfficialTemplate] = useState<ChatTemplate | null>(null);
 
   const [mediaViewer, setMediaViewer] = useState<{ isOpen: boolean; images: string[]; index: number }>({
     isOpen: false,
@@ -762,8 +793,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
 
 
+  const clearLockedOfficialTemplate = useCallback(() => {
+    setLockedOfficialTemplate(null);
+    setMessageInput('');
+  }, []);
+
   // Handlers para Templates
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (lockedOfficialTemplate) return;
+
     const val = e.target.value;
     setMessageInput(val);
     
@@ -794,7 +832,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     }
   };
 
-  const selectTemplate = (template: any) => {
+  const selectTemplate = (template: ChatTemplate) => {
+    if (template.is_official_api) {
+      setLockedOfficialTemplate(template);
+      setMessageInput(template.message.trim());
+      setShowTemplatesMenu(false);
+      return;
+    }
+
+    setLockedOfficialTemplate(null);
     const lastSlashIndex = messageInput.lastIndexOf('/');
     if (lastSlashIndex >= 0) {
       const prefix = messageInput.substring(0, lastSlashIndex);
@@ -806,8 +852,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   };
 
   // Hooks de dados
-  const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
-  const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
+  const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance, registryInstanceNames } = useChatInstancesFromMessages();
+  const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(null);
 
   const conversasRef = useRef(conversas);
   conversasRef.current = conversas;
@@ -902,6 +948,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     // Se mudou de conversa, fazer scroll e resetar flag
     if (selectedConversation !== prevConversationRef.current) {
       prevConversationRef.current = selectedConversation;
+      setLockedOfficialTemplate(null);
       shouldAutoScrollRef.current = true;
       setTimeout(() => {
         endOfMessagesRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
@@ -935,6 +982,87 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const filteredConversas = conversas.filter(conversa =>
     conversa.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (conversa.leadPhone && conversa.leadPhone.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const displayConversas = useMemo(() => {
+    if (!sessionOverride?.sessionId) return filteredConversas;
+    const norm = normalizePhoneDigits(sessionOverride.sessionId);
+    const exists = filteredConversas.some(
+      (c) => normalizePhoneDigits(c.sessionId) === norm,
+    );
+    if (exists) return filteredConversas;
+    const draft = {
+      sessionId: norm,
+      instancia: selectedInstance || scopedInstance || '',
+      displayName: sessionOverride.displayName,
+      leadPhone: sessionOverride.leadPhone,
+      leadId: sessionOverride.leadId ?? null,
+      leadStage: 'AI ATIVA' as const,
+      crmStage: null,
+      hasCrmLead: Boolean(sessionOverride.leadId),
+      lastMessageDate: new Date().toISOString(),
+      messageCount: 0,
+      lastMessageContent: 'Nova conversa',
+      lastMessagePreviewKind: null,
+      lastMessageType: 'human' as const,
+    };
+    return [draft, ...filteredConversas];
+  }, [filteredConversas, sessionOverride, selectedInstance, scopedInstance]);
+
+  const handleStartNewConversation = useCallback(
+    (pick: NewWhatsAppConversationPick) => {
+      const sessionId = normalizePhoneForWhatsAppSession(pick.sessionId);
+      if (!sessionId || sessionId.length < 10) {
+        toast({
+          title: 'Telefone inválido',
+          description: 'Informe um número com DDD válido.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!selectedInstance && !scopedInstance && instances.length > 0) {
+        setSelectedInstance(instances[0].name);
+      }
+
+      const existing = conversas.find(
+        (c) => normalizePhoneDigits(c.sessionId) === normalizePhoneDigits(sessionId),
+      );
+
+      setShowNewConversationDialog(false);
+      setSelectedLead(null);
+      setLeadMessages([]);
+
+      if (existing) {
+        setSessionOverride(null);
+        setSelectedConversation(existing.sessionId);
+        void openSession(existing.sessionId);
+        markOpened(existing.sessionId, existing.leadStage ?? 'AI ATIVA');
+      } else {
+        setSessionOverride({
+          sessionId,
+          displayName: pick.displayName,
+          leadPhone: sessionId,
+          leadId: pick.leadId ?? null,
+        });
+        setSelectedConversation(sessionId);
+        void openSession(sessionId);
+        markOpened(sessionId, 'AI ATIVA');
+      }
+
+      setSearchQuery('');
+      if (isMobile) setShowSidebar(false);
+    },
+    [
+      conversas,
+      instances,
+      selectedInstance,
+      scopedInstance,
+      toast,
+      openSession,
+      markOpened,
+      isMobile,
+    ],
   );
 
   const setConversationLabel = useCallback(async (sessionId: string, status: 'ai_ativa' | 'humano' | 'humano_solicitado') => {
@@ -980,8 +1108,66 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     refetchConversas();
   }, [refetchConversas, conversas, profile?.company_id]);
 
-  // Conversa atual
-  const currentConversation = conversas.find(conv => conv.sessionId === selectedConversation);
+  // Conversa atual (lista, rascunho nova conversa ou lead legado)
+  const currentConversation = useMemo(() => {
+    const sessionKey = selectedLead
+      ? normalizePhoneDigits(String(selectedLead.phone ?? ''))
+      : normalizePhoneDigits(selectedConversation ?? '');
+    if (!sessionKey) return undefined;
+
+    const fromList = conversas.find(
+      (c) => normalizePhoneDigits(c.sessionId) === sessionKey,
+    );
+    if (fromList) return fromList;
+
+    if (
+      sessionOverride &&
+      normalizePhoneDigits(sessionOverride.sessionId) === sessionKey
+    ) {
+      return {
+        sessionId: sessionKey,
+        instancia: selectedInstance || scopedInstance || '',
+        displayName: sessionOverride.displayName,
+        leadPhone: sessionOverride.leadPhone,
+        leadId: sessionOverride.leadId ?? null,
+        leadStage: 'AI ATIVA',
+        crmStage: null,
+        hasCrmLead: Boolean(sessionOverride.leadId),
+        lastMessageDate: new Date().toISOString(),
+        messageCount: 0,
+        lastMessageContent: 'Nova conversa',
+        lastMessagePreviewKind: null,
+        lastMessageType: 'human' as const,
+      };
+    }
+
+    if (selectedLead) {
+      return {
+        sessionId: sessionKey,
+        instancia: selectedInstance || scopedInstance || '',
+        displayName: String(selectedLead.name ?? '').trim() || formatPhoneDisplayBR(sessionKey),
+        leadPhone: sessionKey,
+        leadId: selectedLead.id ?? null,
+        leadStage: 'AI ATIVA',
+        crmStage: null,
+        hasCrmLead: Boolean(selectedLead.id),
+        lastMessageDate: new Date().toISOString(),
+        messageCount: 0,
+        lastMessageContent: '',
+        lastMessagePreviewKind: null,
+        lastMessageType: 'human' as const,
+      };
+    }
+
+    return undefined;
+  }, [
+    conversas,
+    selectedConversation,
+    selectedLead,
+    sessionOverride,
+    selectedInstance,
+    scopedInstance,
+  ]);
 
   const openContactInfo = useCallback(async () => {
     if (resolvingContactInfo) return;
@@ -1101,7 +1287,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
 
   // Handlers
   const handleGenerateSummary = async (conversation: any) => {
-    if (!selectedInstance) {
+    let targetInstancia: string;
+    try {
+      targetInstancia = resolveTargetInstancia();
+    } catch {
       toast({
         title: "Selecione uma instância antes de gerar resumo",
         variant: "destructive",
@@ -1117,7 +1306,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: conversation.sessionId,
-          instancia: selectedInstance.trim().toLowerCase(),
+          instancia: targetInstancia,
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -1140,7 +1329,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   };
 
   const handleFollowUp = async (conversation: any) => {
-    if (!selectedInstance) {
+    let targetInstancia: string;
+    try {
+      targetInstancia = resolveTargetInstancia();
+    } catch {
       toast({
         title: "Selecione uma instância antes de fazer follow up",
         variant: "destructive",
@@ -1154,7 +1346,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: conversation.sessionId,
-          instancia: selectedInstance.trim().toLowerCase(),
+          instancia: targetInstancia,
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -1174,14 +1366,33 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   };
 
   const resolveTargetInstancia = useCallback(() => {
-    const raw =
-      selectedInstance ||
-      currentConversation?.instancia ||
-      scopedInstance ||
-      "default";
-    const trimmed = String(raw || "").trim();
-    return trimmed || "default";
-  }, [selectedInstance, currentConversation?.instancia, scopedInstance]);
+    return resolveWhatsappSendInstancia({
+      selectedInstance,
+      conversationInstancia: currentConversation?.instancia,
+      scopedInstance,
+      instances,
+      registryInstanceNames,
+      isOfficialApi,
+    });
+  }, [
+    selectedInstance,
+    currentConversation?.instancia,
+    scopedInstance,
+    instances,
+    registryInstanceNames,
+    isOfficialApi,
+  ]);
+
+  // Seleciona automaticamente a instância conectada (empresas sem API Oficial)
+  useEffect(() => {
+    if (isOfficialApi || selectedInstance || instances.length === 0) return;
+    const preferred =
+      instances.find((i) => i.status === 'connected')?.name ||
+      instances[0]?.name ||
+      registryInstanceNames[0] ||
+      null;
+    if (preferred) setSelectedInstance(preferred);
+  }, [isOfficialApi, selectedInstance, instances, registryInstanceNames]);
 
   const sendPreview = async () => {
     if (!composerMedia.previewData || busy) return;
@@ -1280,36 +1491,69 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     }
   };
 
-  // TEXT
+  // TEXT / template oficial (com ou sem mídia)
   const sendText = async () => {
     const val = messageInput.trim();
-    if (!val) return;
+    const tpl = lockedOfficialTemplate;
+    if (!val && !chatTemplateHasMedia(tpl)) return;
     if (!selectedConversation && !selectedLead) return;
 
-    if (disableFreeText) {
-      // Find if message matches a template marked as is_official_api
-      // It must be an exact match (or practically exact)
-      const usedTemplate = templates.find(t => t.is_official_api && typeof t.message === 'string' && val.includes(t.message.trim()));
-      
-      if (!usedTemplate) {
-        toast({
-          title: "Operação Bloqueada",
-          description: "Sessão expirada. Apenas templates aprovados na API Oficial podem ser enviados.",
-          variant: "destructive"
-        });
-        return;
-      }
+    const officialApiMeta = tpl?.is_official_api
+      ? officialApiMetaFromTemplate(tpl)
+      : resolveOfficialApiTemplateForMessage(val, templates, tpl);
+
+    if (disableFreeText && !officialApiMeta) {
+      toast({
+        title: "Operação Bloqueada",
+        description: "Sessão expirada. Apenas templates aprovados na API Oficial podem ser enviados.",
+        variant: "destructive",
+      });
+      return;
     }
 
     try {
       setBusy(true);
       const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
-      const targetInstancia = selectedInstance || currentConversation?.instancia || "default";
+      const targetInstancia = resolveTargetInstancia();
 
       if (!targetSession) throw new Error("Sessão inválida");
 
-      await sendPayload(targetSession, targetInstancia, "texto", val, undefined, undefined, profile?.company_id);
+      if (tpl && chatTemplateHasMedia(tpl) && tpl.media_url && tpl.media_type) {
+        const caption = val || String(tpl.message ?? '').trim();
+        const webhookTipo = webhookTipoFromTemplateMedia(tpl.media_type);
+        const webhookMessage = resolveWebhookMediaMessage(caption, tpl.media_url);
+        await sendPayload(
+          targetSession,
+          targetInstancia,
+          webhookTipo,
+          webhookMessage,
+          tpl.media_mime_type ?? undefined,
+          caption && caption !== webhookMessage ? caption : undefined,
+          profile?.company_id,
+          tpl.media_url,
+          undefined,
+          undefined,
+          undefined,
+          officialApiMeta,
+        );
+      } else {
+        await sendPayload(
+          targetSession,
+          targetInstancia,
+          "texto",
+          val,
+          undefined,
+          undefined,
+          profile?.company_id,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          officialApiMeta,
+        );
+      }
       setMessageInput("");
+      setLockedOfficialTemplate(null);
 
       if (selectedLead) {
         fetchLeadMessages(selectedLead);
@@ -1324,17 +1568,42 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       }
     } catch (err: any) {
       console.error('Erro ao enviar texto:', err);
-      toast({
-        title: "Erro ao enviar mensagem",
-        description: err?.message || "Erro desconhecido",
-        variant: "destructive"
-      });
+      if (err?.message === 'INSTANCE_REQUIRED') {
+        toast({
+          title: 'Selecione uma instância WhatsApp',
+          description: 'Conecte o WhatsApp em Conexões ou escolha a instância no topo do chat.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: "Erro ao enviar mensagem",
+          description: err?.message || "Erro desconhecido",
+          variant: "destructive"
+        });
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (lockedOfficialTemplate) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clearLockedOfficialTemplate();
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!busy) void sendText();
+        return;
+      }
+      if (e.key !== 'Tab') {
+        e.preventDefault();
+      }
+      return;
+    }
+
     if (showTemplatesMenu) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -1428,8 +1697,12 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           );
 
           const targetSession = conversationPhoneKey(selectedLead, selectedConversation);
-          const targetInstancia =
-            selectedInstance || currentConversation?.instancia || scopedInstance || "default";
+          let targetInstancia: string;
+          try {
+            targetInstancia = resolveTargetInstancia();
+          } catch {
+            throw new Error('INSTANCE_REQUIRED');
+          }
 
           if (targetSession) {
 
@@ -1614,8 +1887,34 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           </div>
           <div className="flex gap-3 text-[var(--cv-icon)]">
             <MessageSquare className="w-5 h-5 cursor-pointer" />
-            <MoreVertical className="w-5 h-5 cursor-pointer" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded p-0.5 hover:text-[var(--cv-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cv-accent)]"
+                  aria-label="Menu de conversas"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-[var(--cv-panel)] border-[var(--cv-border)]">
+                <DropdownMenuItem
+                  className="cursor-pointer focus:bg-[var(--cv-hover)]"
+                  onClick={() => setShowNewConversationDialog(true)}
+                >
+                  Nova conversa
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+          <NewWhatsAppConversationDialog
+            open={showNewConversationDialog}
+            onOpenChange={setShowNewConversationDialog}
+            companyId={profile?.company_id ?? null}
+            userId={profile?.id ?? null}
+            userRole={profile?.role}
+            onStart={handleStartNewConversation}
+          />
         </div>
 
         {/* SEARCH & FILTER */}
@@ -1631,7 +1930,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           </div>
         </div>
 
-        {/* INSTANCES LIST (Horizontal) */}
+        {/* INSTANCES LIST — só quando há mais de uma (envio); lista de chats é por empresa/cliente */}
+        {instances.length > 1 ? (
         <div className="py-2 px-3 border-b border-[var(--cv-border)] overflow-x-auto whitespace-nowrap custom-scrollbar">
           {instances?.map((inst: any) => (
             <button
@@ -1650,20 +1950,29 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             </button>
           ))}
         </div>
+        ) : null}
 
         {/* CHAT LIST */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {filteredConversas.length === 0 && selectedInstance ? (
+          {loadingConversas && displayConversas.length === 0 ? (
+            <div className="p-4 text-center text-[var(--cv-text-muted)] text-sm">
+              Carregando conversas…
+            </div>
+          ) : displayConversas.length === 0 ? (
             <div className="p-4 text-center text-[var(--cv-text-muted)] text-sm">
               Nenhuma conversa encontrada.
             </div>
           ) : (
-            filteredConversas.map((conv: any) => (
+            displayConversas.map((conv: any) => (
               <ContextMenu key={conv.sessionId}>
                 <ContextMenuTrigger asChild>
                   <ConversationListItem
-                    selected={selectedConversation === conv.sessionId}
+                    selected={
+                      normalizePhoneDigits(selectedConversation ?? '') ===
+                      normalizePhoneDigits(conv.sessionId)
+                    }
                     onClick={() => {
+                      setSessionOverride(null);
                       setSelectedConversation(conv.sessionId);
                       openSession(conv.sessionId);
                       setSelectedLead(null);
@@ -1788,6 +2097,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   setShowSidebar(true);
                   setSelectedConversation(null);
                   setSelectedLead(null);
+                  setSessionOverride(null);
                 }}>
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -1812,12 +2122,18 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                       title="Ver informações do contato"
                       className="text-[var(--cv-text)] font-semibold text-base truncate text-left hover:text-[var(--cv-accent)] focus-visible:outline-none focus-visible:underline disabled:opacity-60 min-w-0"
                     >
-                      {currentConversation?.displayName || selectedLead?.name || selectedLead?.phone}
+                      {currentConversation?.displayName ||
+                        sessionOverride?.displayName ||
+                        selectedLead?.name ||
+                        (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : '')}
                     </button>
                     {isApiOficialUser && <CountdownTimer date={lastHumanDate} />}
                   </div>
                   <p className="text-xs text-[var(--cv-text-muted)] truncate">
-                    {currentConversation?.leadPhone || selectedLead?.phone}
+                    {currentConversation?.leadPhone ||
+                      sessionOverride?.leadPhone ||
+                      selectedLead?.phone ||
+                      (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : '')}
                   </p>
                 </div>
               </div>
@@ -1936,10 +2252,21 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                         onClick={() => selectTemplate(t)}
                         className={`p-2 rounded-lg cursor-pointer ${i === selectedTemplateIndex ? 'bg-[var(--cv-hover-strong)]' : 'hover:bg-[var(--cv-hover)]'} transition-colors`}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <Badge variant="outline" className="text-xs bg-[var(--cv-accent)] text-white border-none shrink-0">{t.shortcut}</Badge>
-                          {t.is_official_api && <Badge variant="outline" className="text-[9px] bg-[#d8f3dc] text-[#1b4332] border-none ml-1 shrink-0 px-1 py-0 h-4">API Oficial</Badge>}
-                          <span className="text-sm text-[var(--cv-text)] truncate">{t.message}</span>
+                          {t.is_official_api ? (
+                            <Badge variant="outline" className="text-[9px] border-[var(--cv-accent)]/40 bg-[var(--cv-accent)]/15 text-[var(--cv-accent)] shrink-0 px-1 py-0 h-4">
+                              API Oficial
+                            </Badge>
+                          ) : null}
+                          {t.media_type ? (
+                            <Badge variant="outline" className="text-[9px] shrink-0 px-1 py-0 h-4 text-[var(--cv-text-muted)]">
+                              {templateMediaLabel(t.media_type)}
+                            </Badge>
+                          ) : null}
+                          <span className="text-sm text-[var(--cv-text)] truncate">
+                            {t.message?.trim() || (t.media_url ? 'Somente mídia' : '…')}
+                          </span>
                         </div>
                       </div>
                     ))
@@ -1956,8 +2283,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               onMessageInputChange={(v) => handleInputChange({ target: { value: v } } as React.ChangeEvent<HTMLTextAreaElement>)}
               onTextareaKeyDown={onTextareaKeyDown}
               onSendText={sendText}
-              placeholder={disableFreeText ? "Sessão expirada (24h). Digite '/' para templates" : "Mensagem"}
-              textareaClassName={disableFreeText ? "placeholder:text-red-400/80" : undefined}
+              placeholder={
+                lockedOfficialTemplate
+                  ? "Template API Oficial — texto bloqueado"
+                  : disableFreeText
+                    ? "Sessão expirada (24h). Digite '/' para templates"
+                    : "Mensagem"
+              }
+              textareaReadOnly={Boolean(lockedOfficialTemplate)}
+              textareaClassName={disableFreeText && !lockedOfficialTemplate ? "placeholder:text-red-400/80" : undefined}
               busy={busy || composerMedia.busy}
               recording={recording}
               recordingLevels={recordingLevels}
@@ -1967,7 +2301,53 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               imgInputRef={composerMedia.imgInputRef}
               messageTextareaRef={composerMedia.messageTextareaRef}
               onPickFile={composerMedia.onPickFile}
-              onPasteMedia={composerMedia.onPasteMedia}
+              onPasteMedia={(e) => {
+                if (lockedOfficialTemplate) {
+                  e.preventDefault();
+                  return;
+                }
+                composerMedia.onPasteMedia(e);
+              }}
+              sendWithoutText={chatTemplateHasMedia(lockedOfficialTemplate)}
+              composerNotice={
+                lockedOfficialTemplate ? (
+                  <div className="flex items-center justify-between gap-2 border-b border-[var(--cv-border)] bg-[var(--cv-accent)]/10 px-4 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {lockedOfficialTemplate.media_url &&
+                      lockedOfficialTemplate.media_type === 'imagem' ? (
+                        <img
+                          src={lockedOfficialTemplate.media_url}
+                          alt=""
+                          className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-[var(--cv-accent)]/30"
+                        />
+                      ) : null}
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 gap-1 border-[var(--cv-accent)]/40 bg-[var(--cv-accent)]/15 text-[10px] text-[var(--cv-accent)]"
+                      >
+                        <Zap className="h-3 w-3" />
+                        API Oficial
+                      </Badge>
+                      <span className="truncate text-xs text-[var(--cv-text-muted)]">
+                        <span className="font-mono text-[var(--cv-text)]">{lockedOfficialTemplate.shortcut}</span>
+                        {chatTemplateHasMedia(lockedOfficialTemplate)
+                          ? ` · ${templateMediaLabel(lockedOfficialTemplate.media_type)}`
+                          : ' — não editável'}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]"
+                      onClick={clearLockedOfficialTemplate}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Trocar
+                    </Button>
+                  </div>
+                ) : null
+              }
               leadingActions={
                 <Button
                   variant="ghost"
@@ -2070,89 +2450,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         leadId={viewContactLeadId}
       />
 
-      {/* MODAL DE GERENCIAMENTO DE TEMPLATES */}
-      {showManageTemplatesModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[var(--cv-panel)] w-full max-w-2xl rounded-xl shadow-2xl border border-[var(--cv-border)] flex flex-col max-h-[85vh]"
-          >
-            <div className="p-5 border-b border-[var(--cv-border)] flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-[var(--cv-text)]">Gerenciar Mensagens (Templates)</h2>
-              <Button variant="ghost" size="icon" onClick={() => setShowManageTemplatesModal(false)}>
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </div>
-            
-            <div className="p-5 flex-1 overflow-y-auto">
-              <div className="mb-6 p-4 bg-[var(--cv-hover)] rounded-lg">
-                <h3 className="text-sm font-medium text-[var(--cv-text)] mb-3">Adicionar Novo Template</h3>
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-3">
-                    <Input id="newShortcut" placeholder="Atalho (ex: /ola)" className="w-1/3 bg-[var(--cv-input-bg)] border-[var(--cv-border)] text-[var(--cv-input-text)]" />
-                    <Input id="newMessage" placeholder="Mensagem completa..." className="flex-1 bg-[var(--cv-input-bg)] border-[var(--cv-border)] text-[var(--cv-input-text)]" />
-                    <Button 
-                      onClick={() => {
-                        const shortcut = (document.getElementById('newShortcut') as HTMLInputElement).value;
-                        const msg = (document.getElementById('newMessage') as HTMLInputElement).value;
-                        if (shortcut && msg) {
-                          addTemplate(shortcut, msg, isOfficialApiNew);
-                          // Reset state
-                          (document.getElementById('newShortcut') as HTMLInputElement).value = '';
-                          (document.getElementById('newMessage') as HTMLInputElement).value = '';
-                          setIsOfficialApiNew(false);
-                        }
-                      }}
-                      className="bg-[var(--cv-accent)] text-white hover:bg-[var(--cv-accent-hover)]"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Adicionar
-                    </Button>
-                  </div>
-                  <div className="flex justify-between items-center mt-1">
-                    <p className="text-xs text-[var(--cv-text-muted)]"><AlertCircle className="w-3 h-3 inline mr-1"/> O atalho deve começar com '/'</p>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="isOfficialApi" checked={isOfficialApiNew} onCheckedChange={(checked) => setIsOfficialApiNew(checked as boolean)} />
-                      <label htmlFor="isOfficialApi" className="text-xs font-medium leading-none text-[#1b4332] dark:text-[#a0c49d] bg-[#d8f3dc] dark:bg-[#2d6a4f] px-2 py-0.5 rounded cursor-pointer">
-                        Validado na API Oficial
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-[var(--cv-text)] mb-2">Seus Templates ({templates.length})</h3>
-                {templates.map(t => (
-                  <div key={t.id} className="flex justify-between items-start gap-4 p-3 border border-[var(--cv-border)] rounded-lg hover:bg-[var(--cv-hover)] transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20">{t.shortcut}</Badge>
-                        {t.is_official_api && <Badge variant="outline" className="text-[10px] bg-[#d8f3dc] text-[#1b4332] border-[#74c69d] dark:bg-[#1b4332] dark:text-[#d8f3dc]">API Oficial</Badge>}
-                      </div>
-                      <p className="text-sm text-[var(--cv-text-muted)] line-clamp-2">{t.message}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => deleteTemplate(t.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-                {templates.length === 0 && (
-                  <div className="text-center p-6 text-[var(--cv-text-muted)] border border-dashed border-[var(--cv-border)] rounded-lg">
-                    Nenhum template configurado ainda.
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="p-4 border-t border-[var(--cv-border)] flex justify-end">
-              <Button variant="outline" onClick={() => setShowManageTemplatesModal(false)}>
-                Fechar
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      <ManageChatTemplatesModal
+        open={showManageTemplatesModal}
+        onOpenChange={setShowManageTemplatesModal}
+        companyId={profile?.company_id ?? null}
+        templates={templates}
+        loading={loadingTemplates}
+        onAdd={addTemplate}
+        onDelete={deleteTemplate}
+      />
     </div >
   );
 }

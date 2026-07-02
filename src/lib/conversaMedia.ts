@@ -90,7 +90,14 @@ function labelForPreviewKind(kind: ConversationPreviewKind): string {
 
 function kindFromMensageType(mensageType: string): ConversationPreviewKind | null {
   const t = mensageType.toLowerCase().trim();
-  if (['audio', 'voice', 'ptt', 'voz'].includes(t)) return 'audio';
+  if (t.endsWith('message')) {
+    const base = t.slice(0, -'message'.length);
+    if (['audio', 'voice', 'ptt', 'voz'].includes(base)) return 'audio';
+    if (['image', 'sticker', 'imagem'].includes(base)) return 'image';
+    if (base === 'video') return 'video';
+    if (['document', 'file'].includes(base)) return 'document';
+  }
+  if (['audio', 'voice', 'ptt', 'voz', 'audiomessage'].includes(t)) return 'audio';
   if (['image', 'sticker', 'imagem'].includes(t)) return 'image';
   if (t === 'video') return 'video';
   if (['document', 'file', 'pdf', 'arquivo'].includes(t)) return 'document';
@@ -340,7 +347,11 @@ export function extractMediaDocument(raw: unknown): string | null {
 
 export function isAudioMensageType(mensageType: string | null | undefined): boolean {
   const t = String(mensageType ?? '').toLowerCase().trim();
-  return ['audio', 'voice', 'ptt', 'voz'].includes(t);
+  if (t.endsWith('message')) {
+    const base = t.slice(0, -'message'.length);
+    if (['audio', 'voice', 'ptt', 'voz'].includes(base)) return true;
+  }
+  return ['audio', 'voice', 'ptt', 'voz', 'audiomessage'].includes(t);
 }
 
 export function isVideoMensageType(mensageType: string | null | undefined): boolean {

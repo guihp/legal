@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Check, Loader2, Link as LinkIcon, Copy, Clock,
   Crown, Rocket, Zap, Calendar, Users, ExternalLink, Trash2, RefreshCw,
-  Wifi, Building2, Mail, MapPin
+  Wifi, Building2, Mail, MapPin, Gift
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -47,7 +48,12 @@ interface SignupLink {
   used_at: string | null;
   created_at: string;
   is_official_api: boolean;
+  trial_days: number;
 }
+
+const DEFAULT_TRIAL_DAYS = 7;
+const MIN_TRIAL_DAYS = 1;
+const MAX_TRIAL_DAYS = 90;
 
 const PLANS: PlanInfo[] = [
   {
@@ -122,6 +128,8 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   const [isOfficialApi, setIsOfficialApi] = useState(false);
+  const [hasTrial, setHasTrial] = useState(false);
+  const [trialDaysInput, setTrialDaysInput] = useState(String(DEFAULT_TRIAL_DAYS));
   const [generating, setGenerating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [existingLinks, setExistingLinks] = useState<SignupLink[]>([]);
@@ -165,9 +173,26 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
   };
 
   const prices = getPrice();
+  const trialDays = hasTrial ? Number.parseInt(trialDaysInput, 10) : 0;
+  const isTrialDaysValid = !hasTrial || (
+    Number.isInteger(trialDays) && trialDays >= MIN_TRIAL_DAYS && trialDays <= MAX_TRIAL_DAYS
+  );
+
+  const handleTrialToggle = (checked: boolean) => {
+    setHasTrial(checked);
+    if (checked && !trialDaysInput) {
+      setTrialDaysInput(String(DEFAULT_TRIAL_DAYS));
+    }
+    setGeneratedLink(null);
+  };
+
+  const handleTrialDaysChange = (value: string) => {
+    setTrialDaysInput(value.replace(/\D/g, '').slice(0, 2));
+    setGeneratedLink(null);
+  };
 
   const handleGenerateLink = async () => {
-    if (!plan) return;
+    if (!plan || !isTrialDaysValid) return;
 
     setGenerating(true);
     try {
@@ -185,6 +210,7 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
           price_total: prices.total,
           max_users: plan.maxUsers,
           is_official_api: isOfficialApi,
+          trial_days: trialDays,
           expires_at: expiresAt.toISOString(),
           created_by: userData?.user?.id,
         } as any)
@@ -375,9 +401,46 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                 </div>
                 <Switch
                   checked={isOfficialApi}
-                  onCheckedChange={setIsOfficialApi}
+                  onCheckedChange={(checked) => { setIsOfficialApi(checked); setGeneratedLink(null); }}
                   className="group data-[state=unchecked]:border data-[state=unchecked]:border-gray-400/60 data-[state=unchecked]:bg-white data-[state=checked]:border-green-600 data-[state=checked]:bg-green-500 [&>span]:bg-gray-500 [&>span]:shadow-sm group-data-[state=checked]:[&>span]:bg-white group-data-[state=checked]:[&>span]:shadow-md"
                 />
+              </div>
+
+              {/* Teste gratuito (opcional) */}
+              <div className="bg-gray-800 rounded-lg p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Gift className="h-4 w-4 text-purple-400 shrink-0" />
+                    <div>
+                      <Label className="text-white text-sm font-medium">Teste gratuito</Label>
+                      <p className="text-gray-500 text-xs">
+                        {hasTrial
+                          ? isTrialDaysValid
+                            ? `Cliente terá ${trialDays} dia${trialDays === 1 ? '' : 's'} antes da primeira cobrança`
+                            : `Informe entre ${MIN_TRIAL_DAYS} e ${MAX_TRIAL_DAYS} dias`
+                          : 'Desativado — cobrança imediata após cadastro'}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={hasTrial}
+                    onCheckedChange={handleTrialToggle}
+                    className="group shrink-0 data-[state=unchecked]:border data-[state=unchecked]:border-gray-400/60 data-[state=unchecked]:bg-white data-[state=checked]:border-purple-600 data-[state=checked]:bg-purple-500 [&>span]:bg-gray-500 [&>span]:shadow-sm group-data-[state=checked]:[&>span]:bg-white group-data-[state=checked]:[&>span]:shadow-md"
+                  />
+                </div>
+                {hasTrial && (
+                  <div className="flex items-center gap-2 pl-6">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={trialDaysInput}
+                      onChange={(e) => handleTrialDaysChange(e.target.value)}
+                      className="w-20 bg-gray-900 border-gray-600 text-white text-center font-semibold"
+                      aria-label="Dias de teste gratuito"
+                    />
+                    <span className="text-gray-400 text-sm">dias</span>
+                  </div>
+                )}
               </div>
 
               {/* Resumo */}
@@ -410,6 +473,17 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                     <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">API Oficial</Badge>
                   </div>
                 )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Teste gratuito</span>
+                  <span className={`font-medium flex items-center gap-1 ${hasTrial ? 'text-purple-400' : 'text-gray-400'}`}>
+                    <Gift className="h-3 w-3" />
+                    {!hasTrial
+                      ? 'Desativado'
+                      : isTrialDaysValid
+                        ? `${trialDays} dia${trialDays === 1 ? '' : 's'}`
+                        : '—'}
+                  </span>
+                </div>
                 <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
                   <span className="text-gray-400">Expiração do link</span>
                   <span className="text-amber-400 font-medium flex items-center gap-1">
@@ -422,7 +496,7 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
               {!generatedLink ? (
                 <Button
                   onClick={handleGenerateLink}
-                  disabled={generating}
+                  disabled={generating || !isTrialDaysValid}
                   className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-5 text-base"
                 >
                   {generating ? (
@@ -510,6 +584,15 @@ export function AdminCompanyCreate({ onBack, onSuccess }: AdminCompanyCreateProp
                           <span className="text-white text-xs font-medium">{formatCurrency(link.price_monthly)}/mês</span>
                           {link.is_official_api && (
                             <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">API Oficial</Badge>
+                          )}
+                          {(link.trial_days ?? 0) > 0 ? (
+                            <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/30 text-[10px]">
+                              {link.trial_days}d trial
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-gray-500/15 text-gray-400 border-gray-500/30 text-[10px]">
+                              Sem trial
+                            </Badge>
                           )}
                           {getStatusBadge(isActive ? 'pending' : link.status)}
                         </div>

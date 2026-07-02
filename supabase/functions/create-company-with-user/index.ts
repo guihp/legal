@@ -337,6 +337,7 @@ serve(async (req) => {
       // No fluxo público, forçar dados de plano/limites vindos do link gerado pelo admin.
       plan = linkData.plan || plan
       max_users = Number(linkData.max_users || max_users)
+      trial_days = Number(linkData.trial_days ?? 0)
     }
 
     // Limpar telefone (apenas números)

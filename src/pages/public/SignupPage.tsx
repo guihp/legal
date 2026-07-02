@@ -26,6 +26,7 @@ interface SignupLinkData {
   status: string;
   expires_at: string;
   is_official_api: boolean;
+  trial_days?: number;
 }
 
 const PLAN_META: Record<string, { name: string; badge: string; color: string; icon: React.ReactNode }> = {
@@ -377,7 +378,7 @@ export default function SignupPage() {
           cnpj: cnpj.trim() || null,
           address: fullAddress || null,
           plan: linkData.plan,
-          trial_days: 7,
+          trial_days: linkData.trial_days ?? 0,
           max_users: linkData.max_users,
           is_official_api: linkData.is_official_api || false,
           signup_token: token,
@@ -751,7 +752,11 @@ export default function SignupPage() {
               )}
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] pt-1">
                 <CalendarDays className="h-3 w-3" />
-                <span>Primeira cobrança após 7 dias de teste gratuito</span>
+                <span>
+                  {(linkData.trial_days ?? 0) === 0
+                    ? 'Cobrança imediata após confirmação do cadastro'
+                    : `Primeira cobrança após ${linkData.trial_days} dias de teste gratuito`}
+                </span>
               </div>
             </div>
 

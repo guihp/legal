@@ -77,7 +77,9 @@ export function useCompanyFeatures() {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(error.message || 'Não foi possível salvar a configuração da feature');
+    }
     // atualizar local
     setFeatures((prev) => {
       const idx = prev.findIndex(

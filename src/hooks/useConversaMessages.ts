@@ -242,10 +242,12 @@ export function useConversaMessages() {
   }, [normalizeId]);
 
   const fetchConversation = useCallback(
-    async (sessionPhone: string) => {
+    async (sessionPhone: string, silent = false) => {
       try {
-        setLoading(true);
-        setError(null);
+        if (!silent) {
+          setLoading(true);
+          setError(null);
+        }
 
         const companyId = profile?.company_id;
         if (!companyId) {
@@ -287,7 +289,7 @@ export function useConversaMessages() {
         console.error('[useConversaMessages]', msg);
         setError(msg);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     // applyRealtimeDiff added below — eslint will warn; we use ref pattern in openSession
@@ -301,7 +303,7 @@ export function useConversaMessages() {
       const now = Date.now();
       if (now - lastRefetchAtRef.current < refetchThrottleMs) return;
       lastRefetchAtRef.current = now;
-      void fetchConversation(sessionId);
+      void fetchConversation(sessionId, true);
     },
     [fetchConversation],
   );
@@ -314,7 +316,7 @@ export function useConversaMessages() {
         /* empty */
       }
       debounceRef.current = setTimeout(() => {
-        void fetchConversation(sessionId);
+        void fetchConversation(sessionId, true);
         debounceRef.current = null;
       }, delay) as ReturnType<typeof setTimeout>;
     },
@@ -449,7 +451,7 @@ export function useConversaMessages() {
         const sid = payload?.session_id;
         if (!sid) return;
         if (currentSessionRef.current === sid || normalizePhoneDigits(sid) === currentSessionRef.current) {
-          void fetchConversation(currentSessionRef.current!);
+          void fetchConversation(currentSessionRef.current!, true);
         }
       })
       .subscribe();
@@ -478,7 +480,7 @@ export function useConversaMessages() {
     if (sid && hydratedRef.current) {
       pollingRef.current = setInterval(() => {
         const currentSid = currentSessionRef.current;
-        if (currentSid) void fetchConversation(currentSid);
+        if (currentSid) void fetchConversation(currentSid, true);
       }, 3000);
     }
 
@@ -492,7 +494,7 @@ export function useConversaMessages() {
 
   const refetch = useCallback(() => {
     const sid = currentSessionRef.current;
-    if (sid) void fetchConversation(sid);
+    if (sid) void fetchConversation(sid, hydratedRef.current);
   }, [fetchConversation]);
 
   const setCompanyId = useCallback((companyId: string | null) => {

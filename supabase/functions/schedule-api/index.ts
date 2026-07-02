@@ -5,6 +5,10 @@ import {
   persistQueueIndex,
   pickFreeBrokerForSlot,
 } from "../_shared/visitScheduling.ts";
+import {
+  cancelPendingVisitReminders,
+  scheduleVisitReminders,
+} from "../_shared/visitReminders.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +20,18 @@ const SLOT_MIN = 60;
 const FERIADOS = ["2026-05-01","2026-12-25","2026-01-01"];
 
 function env(n: string, f = "") { return Deno.env.get(n) ?? f; }
+
+function isGoogleCalendarNotFound(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("not found") || m.includes("404");
+}
+
+function googleCalendarErrorMessage(message: string): string {
+  if (isGoogleCalendarNotFound(message)) {
+    return "Evento da visita não encontrado no Google Calendar (pode ter sido removido ou estar em outro calendário).";
+  }
+  return message || "Erro ao sincronizar com o Google Calendar";
+}
 function ok(data: any, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
@@ -426,6 +442,8 @@ serve(async (req) => {
       const sessionId = String(body?.session_id || "");
       const nomeCliente = String(body?.nome_cliente || "");
       const emailCliente = String(body?.email_cliente || "");
+      const telefoneBody = String(body?.telefone || "").trim();
+      const instancia = String(body?.instancia || "").trim();
 
       if (!rawDT) return ok({ success: false, error: "data_e_hora obrigatório" }, 400);
       const dt = parseDT(rawDT);
@@ -575,6 +593,48 @@ serve(async (req) => {
         await service.from("leads").update(updateFields).eq("id", sessionId).eq("company_id", companyId);
       }
 
+      let visitReminders: { scheduled: string[]; skipped: string[] } | null = null;
+      if (sessionId) {
+        try {
+          let telefone = telefoneBody;
+          if (!telefone) {
+            const { data: leadPhoneRow } = await service
+              .from("leads")
+              .select("phone")
+              .eq("id", sessionId)
+              .eq("company_id", companyId)
+              .maybeSingle();
+            telefone = String(leadPhoneRow?.phone || "").trim();
+          }
+
+          const { data: companyRow } = await service
+            .from("companies")
+            .select("whatsapp_ai_phone")
+            .eq("id", companyId)
+            .maybeSingle();
+
+          visitReminders = await scheduleVisitReminders(service, {
+            companyId,
+            leadId: sessionId,
+            eventId: eventId || null,
+            visitAt: new Date(startDT),
+            nomeCliente: nomeCliente || null,
+            emailCliente: emailCliente || null,
+            telefone: telefone || null,
+            instancia: instancia || null,
+            idImovel: idImovel || null,
+            propertyData,
+            brokerId: assignBrokerLater ? null : (brokerIdFromCalendar || null),
+            brokerName: assignBrokerLater ? null : (brokerNameFromCalendar || null),
+            whatsappAiPhone: companyRow?.whatsapp_ai_phone
+              ? String(companyRow.whatsapp_ai_phone)
+              : null,
+          });
+        } catch (reminderErr) {
+          console.error("visit_reminder_schedule_failed", reminderErr);
+        }
+      }
+
       const respText = assignBrokerLater
         ? `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar a visita para ${dataPt} às ${horaPt}!\n\nNossa equipe vai definir o corretor responsável e entrar em contato com você em instantes.`
         : `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar!\n\nCorretor Responsável: ${brokerNameFromCalendar || "da imobiliária"}\n\nO corretor responsável vai entrar em contato com você em instantes.\n\nCaso venha ser o nome da empresa, fale que o corretor responsavel vai entrar em contato. Nunca envente um nome`;
@@ -587,6 +647,7 @@ serve(async (req) => {
         calendar_id: calendarId,
         visit_assignment_mode: visitScheduling.mode,
         broker_pending_assignment: assignBrokerLater,
+        visit_reminders: visitReminders,
       });
     }
 
@@ -656,6 +717,7 @@ serve(async (req) => {
       const destCalendarId = String(scheduleRow.calendar_id);
       let eventId = String(lead.event_id);
       let calendarId = String(lead.calenda_id);
+      let calendarSyncWarning: string | null = null;
 
       if (destCalendarId !== calendarId) {
         try {
@@ -666,10 +728,17 @@ serve(async (req) => {
           eventId = String(moved?.id || eventId);
           calendarId = destCalendarId;
         } catch (moveErr: any) {
-          return ok({
-            success: false,
-            error: moveErr?.message || "Não foi possível mover a visita para o calendário do corretor",
-          }, 500);
+          const rawMsg = String(moveErr?.message || "");
+          if (isGoogleCalendarNotFound(rawMsg)) {
+            calendarId = destCalendarId;
+            calendarSyncWarning =
+              "Corretor atribuído no CRM, mas o evento não foi encontrado no Google Calendar para mover ao calendário do corretor.";
+          } else {
+            return ok({
+              success: false,
+              error: `Não foi possível mover a visita para o calendário do corretor: ${googleCalendarErrorMessage(rawMsg)}`,
+            }, 400);
+          }
         }
       }
 
@@ -699,6 +768,7 @@ serve(async (req) => {
         broker_name: brokerName,
         calendar_id: calendarId,
         event_id: eventId,
+        calendar_sync_warning: calendarSyncWarning,
       });
     }
 
@@ -709,6 +779,8 @@ serve(async (req) => {
 
       const { data: lead } = await service.from("leads").select("id, calenda_id, event_id, company_id").eq("id", sessionId).eq("company_id", companyId).maybeSingle();
       if (!lead || !lead.event_id || !lead.calenda_id) return ok({ success: false, error: "Lead sem agendamento vinculado" }, 400);
+
+      await cancelPendingVisitReminders(service, sessionId, lead.event_id);
 
       const calApiUrl = `${env("SUPABASE_URL")}/functions/v1/google-calendar-api`;
       const cancelRes = await fetch(calApiUrl, {

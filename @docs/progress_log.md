@@ -1,5 +1,44 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-02 — Chat WhatsApp: instância, lista, áudio e conexões
+
+- **`enviar_mensagem`:** `resolveWhatsappSendInstancia` — empresas sem API Oficial usam instância real (`company_whatsapp_instances`), não `default`.
+- **Lista de conversas:** removido filtro por aba de instância; polling silencioso (sem piscar item selecionado).
+- **`mensagem-media-ingest`:** sniff MIME, rejeita mídia criptografada, normaliza `audioMessage` → `audio`, aceita `media_base64`, atualiza `plataforma`/`mensage_type` no retry.
+- **`ChatAudioPlayer`:** detecta áudio inválido; tenta Blob com MIME explícito quando Storage serve `octet-stream`.
+- **Conexões:** fallback em `company_whatsapp_instances` quando webhook `whatsapp-instances` falha (404 n8n); lista vazia após excluir instância sem alerta vermelho.
+- **Testar IA:** tela em desenvolvimento (placeholder).
+
+## 2026-06-29 — Simulador WhatsApp para testar IA
+
+- Novo menu **Testar IA** (`/ai-test`) no sidebar, abaixo de Configuração para IA.
+- View com simulador WhatsApp (IA sempre ativa no simulador; conversa inicia vazia, sem mensagem automática da IA).
+- Toggle **Ativar assistente IA** movido para **Configuração para IA** (primeiro card; `company_features.ai_assistant_enabled`).
+- Envio de mensagens de teste via webhook n8n `teste-ia` (override: `VITE_AI_TEST_WEBHOOK_URL`).
+
+## 2026-06-29 — Admin: teste gratuito configurável no link de cadastro
+
+- Migration `20260629120000_signup_links_trial_days.sql`: coluna `trial_days` em `signup_links` (padrão 7).
+- Painel **Gerar Link de Cadastro**: toggle para habilitar teste gratuito (desligado por padrão); campo de dias (1–90) só aparece quando ativo.
+- `SignupPage` e `create-company-with-user`: respeitam `trial_days` do link (edge força valor do link no fluxo público).
+
+## 2026-06-03 — Lembretes de visita (1 dia e 3 horas) via n8n
+
+- **Regra:** ao `book_visit` na `schedule-api`, agenda jobs na tabela `visit_reminder_jobs`.
+  - **1 dia antes:** só se faltarem **mais de 24h** e a visita **não for no mesmo dia** → webhook `lembrete-1-dia`.
+  - **3 horas antes:** sempre que o horário ainda não passou → webhook `lembrete-3-horas`.
+  - **Mesmo dia:** pula lembrete de 1 dia; mantém só o de 3h.
+- **Payload n8n:** lead (`nome`, `email`, `telefone`, `instancia`), imóvel, data/hora da visita, corretor, `company_id`, `whatsapp_ai_phone`.
+- **Cancelamento:** `cancel_visit` cancela jobs pendentes do lead.
+- **Dispatch:** edge `visit-reminder-dispatch` (cron a cada ~5 min) dispara webhooks pendentes.
+- **Próximo:** configurar Cron no Supabase Dashboard chamando `visit-reminder-dispatch` (opcional secret `VISIT_REMINDER_CRON_SECRET`).
+
+## 2026-06-03 — Fix: “Not Found” ao atribuir corretor da visita
+
+- **Causa:** ao confirmar corretor, `assign_visit_broker` tentava mover o evento no Google Calendar; API retornava 404 com mensagem genérica `Not Found` (evento inexistente ou calendário de plantão ≠ calendário do corretor).
+- **Correção:** `schedule-api` — em 404 do move, atribui corretor no CRM mesmo assim e devolve `calendar_sync_warning`; demais erros com mensagem em PT. Front: `assignVisitBroker` humaniza “Not Found”; toast de aviso se sync do calendário falhar.
+- **Deploy:** `schedule-api` v29 em produção (`bfcssdogttmqeujgmxdf`).
+
 ## 2026-06-01 — Chat: composer unificado WhatsApp + Instagram
 
 - **Motivo:** mudanças no WhatsApp (colar imagem, preview, anexo, áudio OGG) exigiam duplicar código no Instagram.

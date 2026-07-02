@@ -66,6 +66,12 @@ import { Progress } from "@/components/ui/progress";
 // MUDE PARA `true` SE QUISER REATIVAR O VISUAL ORIGINAL.
 const ENABLE_DECORATIVE_FX = false;
 
+const MODALIDADE_OPTIONS = [
+  { value: 'For Sale', label: 'Venda' },
+  { value: 'Rent', label: 'Aluguel' },
+  { value: 'Sale/Rent', label: 'Venda/Aluguel' },
+] as const;
+
 // Lazy chunk dos efeitos decorativos. Só baixa se ENABLE_DECORATIVE_FX=true.
 const PropertyListDecorations = lazy(() => import('./PropertyListDecorations'));
 
@@ -391,6 +397,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editArea, setEditArea] = useState<string>("");
   const [editQuartos, setEditQuartos] = useState<string>("");
   const [editBanheiros, setEditBanheiros] = useState<string>("");
+  const [editModalidade, setEditModalidade] = useState<string>("");
   const [editDescricao, setEditDescricao] = useState<string>("");
   const [editImages, setEditImages] = useState<File[]>([]);
   const [editPreviews, setEditPreviews] = useState<string[]>([]);
@@ -526,11 +533,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setEditQuartos(String(property.bedrooms || 0));
     setEditBanheiros(String(property.bathrooms || 0));
     setEditDescricao(property.description || "");
+    const vivaRealProperty = property as any;
+    setEditModalidade(String(vivaRealProperty.modalidade || ''));
     
     // Carregar imagens existentes do imóvel
-    // Os dados vêm como property_images (array de objetos {image_url: string})
-    // ou como imagens (array de strings) do VivaReal original
-    const vivaRealProperty = property as any;
     let existingUrls: string[] = [];
     
     if (property.property_images && Array.isArray(property.property_images) && property.property_images.length > 0) {
@@ -766,6 +772,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         quartos: editQuartos === "" ? null : Number(editQuartos),
         banheiros: editBanheiros === "" ? null : Number(editBanheiros),
         descricao: editDescricao,
+        modalidade: editModalidade || null,
         imagens: imageUrls,
         imagens_legendas: imageUrls.length > 0 ? imageCaptions : [],
         // Features (amenidades) — null quando vazio para não inflar o registro com [].
@@ -790,6 +797,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       setEditExistingImages([]);
       setEditExistingCaptions([]);
       setEditGoogleDriveLink('');
+      setEditModalidade('');
       setEditFeatures([]);
       setEditImageLightboxIndex(null);
       refetchImoveisList();
@@ -2200,6 +2208,21 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <div>
                 <label className="text-sm text-gray-300">Banheiros</label>
                 <Input value={editBanheiros} onChange={(e) => setEditBanheiros(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+              </div>
+              <div>
+                <label className="text-sm text-gray-300">Modalidade</label>
+                <Select value={editModalidade} onValueChange={setEditModalidade}>
+                  <SelectTrigger className="mt-1 bg-gray-800 border-gray-700 text-white">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                    {MODALIDADE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-800">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>

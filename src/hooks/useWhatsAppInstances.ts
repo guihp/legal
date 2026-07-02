@@ -4,6 +4,8 @@ import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
 import { useCompanySettings } from './useCompanySettings';
 import { useCompanyApiMode } from './useCompanyApiMode';
+import { formatBrazilianMobileInput } from '@/lib/normalizePhone';
+import { syncCompanyPhoneFromWhatsApp } from '@/lib/syncCompanyPhoneFromWhatsApp';
 
 export interface WhatsAppInstance {
   id: string;
@@ -110,6 +112,54 @@ function getUserFriendlyErrorMessage(error: any, fallback: string) {
   return error?.message || fallback;
 }
 
+function buildListFromWebhookPayload(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload?.success && Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.instances)) return payload.instances;
+  if (Array.isArray(payload?.response)) return payload.response;
+  if (payload?.instance && typeof payload.instance === 'object') return [payload.instance];
+  if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return [payload.data];
+  return [];
+}
+
+function instanceFromRegistryRow(row: any, ext?: any): WhatsAppInstance {
+  if (ext) {
+    return {
+      ...ext,
+      user_id: row.user_id || ext.user_id || null,
+      api_key: row.api_key || ext.api_key || null,
+      webhook_url: row.webhook_url || ext.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
+    };
+  }
+
+  return {
+    id: String(row.id || row.instance_name),
+    name: String(row.instance_name || ''),
+    status: String(row.status || 'disconnected') as WhatsAppInstance['status'],
+    profile_name: null,
+    profile_pic_url: null,
+    message_count: 0,
+    contact_count: 0,
+    chat_count: 0,
+    last_seen: row.updated_at || row.created_at || new Date().toISOString(),
+    phone_number: row.phone_number || null,
+    api_key: row.api_key || null,
+    webhook_url: row.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
+    created_at: row.created_at || new Date().toISOString(),
+    updated_at: row.updated_at || new Date().toISOString(),
+    connectionStatus: null,
+    ownerJid: null,
+    profileName: null,
+    profilePicUrl: null,
+    token: row.api_key || null,
+    _count: { Message: 0, Contact: 0, Chat: 0 },
+    user_id: row.user_id || null,
+    user_profile: null,
+  };
+}
+
 export function useWhatsAppInstances() {
   const { profile, isManager } = useUserProfile();
   const { settings } = useCompanySettings();
@@ -118,6 +168,7 @@ export function useWhatsAppInstances() {
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   const loadLocalRegistry = async () => {
     if (!profile?.company_id) return [];
@@ -250,6 +301,7 @@ export function useWhatsAppInstances() {
       console.log('🚀 Carregando instâncias via endpoint externo...');
       setLoading(true);
       setError(null);
+      setSyncWarning(null);
 
       if (!profile) return;
 
@@ -259,66 +311,40 @@ export function useWhatsAppInstances() {
         return;
       }
 
-      // Carregar registros locais da empresa para garantir isolamento entre clientes
       const registry = await loadLocalRegistry();
-      const registryByName = new Map(
-        registry.map((r: any) => [String(r.instance_name || '').trim().toLowerCase(), r])
-      );
 
-      // Buscar instâncias do endpoint externo (escopo da empresa)
-      console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
+      let externalInstances: any[] = [];
+      let webhookUnavailable = false;
 
-      const buildListFromResponse = (payload: any): any[] => {
-        if (Array.isArray(payload)) return payload;
-        if (payload?.success && Array.isArray(payload?.data)) return payload.data;
-        if (Array.isArray(payload?.data)) return payload.data;
-        if (Array.isArray(payload?.items)) return payload.items;
-        if (Array.isArray(payload?.instances)) return payload.instances;
-        if (Array.isArray(payload?.response)) return payload.response;
-        if (payload?.instance && typeof payload.instance === 'object') return [payload.instance];
-        if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return [payload.data];
-        return [];
-      };
-
-      const scopedUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
-      scopedUrl.searchParams.append('company_id', profile.company_id);
-      scopedUrl.searchParams.append('company_name', settings?.display_name || '');
-
-      const response = await fetch(scopedUrl.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        mode: 'cors',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro no endpoint: ${response.status}`);
-      }
-
-      const responseData = await parseWebhookResponse(response);
-      console.log('✅ Resposta recebida do webhook:', responseData);
-
-      let externalInstances: any[] = buildListFromResponse(responseData);
-
-      // Fallback: quando o filtro da empresa não retorna, tenta sem filtros
-      // e filtra localmente pelas instâncias vinculadas aos usuários da empresa.
-      if (externalInstances.length === 0) {
-        console.warn('⚠️ Lista vazia com filtro da empresa. Tentando fallback sem filtros...');
-        const rawUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
-        const rawResp = await fetch(rawUrl.toString(), {
+      const fetchWebhookInstances = async (url: URL): Promise<any[]> => {
+        const response = await fetch(url.toString(), {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            Accept: 'application/json',
           },
           mode: 'cors',
         });
+        if (!response.ok) {
+          console.warn(`⚠️ whatsapp-instances HTTP ${response.status}`);
+          return [];
+        }
+        const responseData = await parseWebhookResponse(response);
+        return buildListFromWebhookPayload(responseData);
+      };
 
-        if (rawResp.ok) {
-          const rawPayload = await parseWebhookResponse(rawResp);
-          const rawInstances = buildListFromResponse(rawPayload);
+      try {
+        console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
+        const scopedUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+        scopedUrl.searchParams.append('company_id', profile.company_id);
+        scopedUrl.searchParams.append('company_name', settings?.display_name || '');
+
+        externalInstances = await fetchWebhookInstances(scopedUrl);
+
+        if (externalInstances.length === 0) {
+          console.warn('⚠️ Lista vazia com filtro da empresa. Tentando fallback sem filtros...');
+          const rawUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
+          externalInstances = await fetchWebhookInstances(rawUrl);
 
           const { data: companyUsers } = await supabase
             .from('user_profiles')
@@ -329,13 +355,13 @@ export function useWhatsAppInstances() {
           const allowedNamesFromUsers = new Set(
             (companyUsers || [])
               .map((u: any) => String(u?.chat_instance || '').trim().toLowerCase())
-              .filter(Boolean)
+              .filter(Boolean),
           );
 
           const allowedNamesFromRegistry = new Set(
             (registry || [])
               .map((r: any) => String(r?.instance_name || '').trim().toLowerCase())
-              .filter(Boolean)
+              .filter(Boolean),
           );
 
           const allowedNames = new Set([
@@ -343,14 +369,20 @@ export function useWhatsAppInstances() {
             ...Array.from(allowedNamesFromRegistry),
           ]);
 
-          externalInstances = rawInstances.filter((inst: any) =>
-            allowedNames.has(String(inst?.name || '').trim().toLowerCase())
+          externalInstances = externalInstances.filter((inst: any) =>
+            allowedNames.has(String(inst?.name || '').trim().toLowerCase()),
           );
         }
+
+        if (externalInstances.length === 0) {
+          webhookUnavailable = true;
+        }
+      } catch (webhookErr) {
+        webhookUnavailable = true;
+        console.warn('⚠️ Falha ao consultar whatsapp-instances:', webhookErr);
+        externalInstances = [];
       }
 
-      // Segurança: mesmo quando o endpoint retorna dados "escopados", ainda filtramos
-      // pelo vínculo local/usuário para evitar reaparecimento de instâncias removidas localmente.
       const { data: companyUsersForFilter } = await supabase
         .from('user_profiles')
         .select('chat_instance')
@@ -360,13 +392,13 @@ export function useWhatsAppInstances() {
       const allowedNamesFromUsers = new Set(
         (companyUsersForFilter || [])
           .map((u: any) => String(u?.chat_instance || '').trim().toLowerCase())
-          .filter(Boolean)
+          .filter(Boolean),
       );
 
       const allowedNamesFromRegistry = new Set(
         (registry || [])
           .map((r: any) => String(r?.instance_name || '').trim().toLowerCase())
-          .filter(Boolean)
+          .filter(Boolean),
       );
 
       const strictAllowedNames = new Set([
@@ -376,10 +408,9 @@ export function useWhatsAppInstances() {
 
       if (strictAllowedNames.size > 0) {
         externalInstances = externalInstances.filter((inst: any) =>
-          strictAllowedNames.has(String(inst?.name || inst?.instanceName || '').trim().toLowerCase())
+          strictAllowedNames.has(String(inst?.name || inst?.instanceName || '').trim().toLowerCase()),
         );
-      } else {
-        // Sem vínculos ativos no sistema: não exibir instâncias externas órfãs.
+      } else if (registry.length === 0) {
         externalInstances = [];
       }
 
@@ -445,9 +476,11 @@ export function useWhatsAppInstances() {
           contact_count: externalData._count?.Contact || 0,
           chat_count: externalData._count?.Chat || 0,
           last_seen: externalData.updatedAt,
-          phone_number: externalData.ownerJid ? 
-            formatPhoneNumber(externalData.ownerJid.replace('@s.whatsapp.net', '')) : 
-            null,
+          phone_number: externalData.ownerJid
+            ? formatBrazilianMobileInput(externalData.ownerJid.replace('@s.whatsapp.net', ''))
+            : externalData.phoneNumber
+              ? formatBrazilianMobileInput(String(externalData.phoneNumber))
+              : null,
           api_key: externalData.token,
           webhook_url: `${WHATSAPP_API_BASE}/${externalData.name}`,
           created_at: externalData.createdAt || new Date().toISOString(),
@@ -475,42 +508,22 @@ export function useWhatsAppInstances() {
         ? registry.map((row: any) => {
             const key = String(row.instance_name || '').trim().toLowerCase();
             const ext = externalByName.get(key);
-            if (ext) {
-              return {
-                ...ext,
-                user_id: row.user_id || ext.user_id || null,
-                api_key: row.api_key || ext.api_key || null,
-                webhook_url: row.webhook_url || ext.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
-              };
-            }
-
-            // Fallback offline: mantém visível mesmo sem retorno da Evolution
-            return {
-              id: String(row.id || row.instance_name),
-              name: String(row.instance_name || ''),
-              status: (String(row.status || 'disconnected') as 'connected' | 'connecting' | 'disconnected'),
-              profile_name: null,
-              profile_pic_url: null,
-              message_count: 0,
-              contact_count: 0,
-              chat_count: 0,
-              last_seen: row.updated_at || row.created_at || new Date().toISOString(),
-              phone_number: row.phone_number || null,
-              api_key: row.api_key || null,
-              webhook_url: row.webhook_url || FIXED_INSTANCE_WEBHOOK_URL,
-              created_at: row.created_at || new Date().toISOString(),
-              updated_at: row.updated_at || new Date().toISOString(),
-              connectionStatus: null,
-              ownerJid: null,
-              profileName: null,
-              profilePicUrl: null,
-              token: row.api_key || null,
-              _count: { Message: 0, Contact: 0, Chat: 0 },
-              user_id: row.user_id || null,
-              user_profile: null,
-            } as WhatsAppInstance;
+            return instanceFromRegistryRow(row, ext);
           })
         : instancesData;
+
+      if (isolatedInstances.length === 0) {
+        setInstances([]);
+        setError(null);
+        setSyncWarning(null);
+        return;
+      }
+
+      if (webhookUnavailable) {
+        setSyncWarning(
+          'Sincronização com o servidor WhatsApp indisponível. Exibindo conexões salvas no sistema.',
+        );
+      }
 
       // Persistir/atualizar cache local com API key e metadados recebidos
       for (const inst of isolatedInstances) {
@@ -536,6 +549,17 @@ export function useWhatsAppInstances() {
         totalInstances: isolatedInstances.length
       });
 
+      const connectedInst = isolatedInstances.find((i) => i.status === 'connected');
+      if (connectedInst) {
+        const rawPhone =
+          connectedInst.ownerJid?.replace('@s.whatsapp.net', '') ||
+          connectedInst.phone_number ||
+          '';
+        if (rawPhone) {
+          void syncCompanyPhoneFromWhatsApp(rawPhone);
+        }
+      }
+
       // Sincronizar mapeamentos após carregar (apenas para gestores)
       if (isManager) {
         setTimeout(() => syncInstanceMappings(), 1000);
@@ -543,7 +567,23 @@ export function useWhatsAppInstances() {
 
     } catch (error: any) {
       console.error('Erro ao carregar instâncias:', error);
-      setError(getUserFriendlyErrorMessage(error, 'Não foi possível carregar as conexões no momento. Tente novamente em instantes.'));
+      try {
+        const registry = await loadLocalRegistry();
+        if (registry.length > 0 && profile?.company_id) {
+          const offline = registry.map((row: any) => instanceFromRegistryRow(row));
+          setInstances(offline);
+          setError(null);
+          setSyncWarning(
+            'Sincronização com o servidor WhatsApp indisponível. Exibindo conexões salvas no sistema.',
+          );
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      setInstances([]);
+      setError(null);
+      setSyncWarning(null);
     } finally {
       setLoading(false);
     }
@@ -787,7 +827,11 @@ export function useWhatsAppInstances() {
   };
 
   // Atualizar status da instância no estado e no registro local
-  const updateInstanceStatus = async (instanceId: string, status: WhatsAppInstance['status']) => {
+  const updateInstanceStatus = async (
+    instanceId: string,
+    status: WhatsAppInstance['status'],
+    connectedPhone?: string | null,
+  ) => {
     try {
       const currentInstance = instances.find((inst) => inst.id === instanceId);
       setInstances(prev => 
@@ -810,6 +854,17 @@ export function useWhatsAppInstances() {
             status_updated_at: new Date().toISOString(),
           },
         });
+      }
+
+      if (status === 'connected') {
+        const rawPhone =
+          connectedPhone ||
+          currentInstance?.ownerJid?.replace('@s.whatsapp.net', '') ||
+          currentInstance?.phone_number ||
+          '';
+        if (rawPhone) {
+          void syncCompanyPhoneFromWhatsApp(rawPhone);
+        }
       }
       
       try { 
@@ -1276,6 +1331,7 @@ export function useWhatsAppInstances() {
     chats,
     loading,
     error,
+    syncWarning,
     // Funções principais via endpoints
     createInstance,
     updateInstanceStatus,

@@ -38,6 +38,8 @@ export function ChatAudioPlayer({
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [current, setCurrent] = useState(0);
+  const [loadError, setLoadError] = useState(false);
+  const [resolvedSrc, setResolvedSrc] = useState(src);
 
   const progress = duration > 0 ? Math.min(1, current / duration) : 0;
   const onSentBubble = bubbleTone === "out";
@@ -74,8 +76,14 @@ export function ChatAudioPlayer({
       setCurrent(0);
     };
     const onTime = () => setCurrent(el.currentTime);
-    const onMeta = () => setDuration(el.duration || 0);
-    const onErr = () => onError?.();
+    const onMeta = () => {
+      setDuration(el.duration || 0);
+      if (el.duration > 0) setLoadError(false);
+    };
+    const onErr = () => {
+      setLoadError(true);
+      onError?.();
+    };
 
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
@@ -94,13 +102,69 @@ export function ChatAudioPlayer({
       el.removeEventListener("durationchange", onMeta);
       el.removeEventListener("error", onErr);
     };
-  }, [src, onError]);
+  }, [resolvedSrc, onError]);
 
   useEffect(() => {
     setPlaying(false);
     setCurrent(0);
     setDuration(0);
+    setLoadError(false);
+    setResolvedSrc(src);
   }, [src]);
+
+  /** Storage às vezes serve áudio como octet-stream — recarrega como Blob com MIME explícito. */
+  useEffect(() => {
+    if (!src || !/^https?:\/\//i.test(src)) return;
+    let cancelled = false;
+    const lower = src.toLowerCase();
+    const needsBlob =
+      lower.includes("/chat-media/") &&
+      (lower.includes("/audio/") || /\.(?:ogg|opus|mp3|m4a|wav|webm)(?:\?|#|$)/i.test(lower));
+
+    if (!needsBlob) return;
+
+    void (async () => {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) throw new Error("fetch_failed");
+        const buf = await res.arrayBuffer();
+        if (cancelled) return;
+        const header = new Uint8Array(buf.slice(0, 4));
+        const isOgg = header[0] === 0x4f && header[1] === 0x67 && header[2] === 0x67 && header[3] === 0x73;
+        const isMp3 =
+          (header[0] === 0x49 && header[1] === 0x44 && header[2] === 0x33) ||
+          (header[0] === 0xff && (header[1] & 0xe0) === 0xe0);
+        const isMp4 = buf.byteLength >= 12 && String.fromCharCode(...new Uint8Array(buf.slice(4, 8))) === "ftyp";
+        if (!isOgg && !isMp3 && !isMp4) {
+          if (!cancelled) setLoadError(true);
+          return;
+        }
+        const mime = isOgg ? "audio/ogg" : isMp3 ? "audio/mpeg" : "audio/mp4";
+        const blobUrl = URL.createObjectURL(new Blob([buf], { type: mime }));
+        if (!cancelled) setResolvedSrc(blobUrl);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  useEffect(() => {
+    return () => {
+      if (resolvedSrc.startsWith("blob:") && resolvedSrc !== src) {
+        URL.revokeObjectURL(resolvedSrc);
+      }
+    };
+  }, [resolvedSrc, src]);
+
+  useEffect(() => {
+    setPlaying(false);
+    setCurrent(0);
+    setDuration(0);
+  }, [resolvedSrc]);
 
   const displayTime = useMemo(() => {
     if (playing || current > 0) return formatAudioTime(current);
@@ -114,7 +178,18 @@ export function ChatAudioPlayer({
         className,
       )}
     >
-      <button
+      {loadError ? (
+        <div className="flex flex-col gap-1 px-2 py-1.5 min-w-[200px]">
+          <span className="text-[13px] leading-snug text-[color:var(--cv-bubble-in-text)]/90">
+            Áudio indisponível
+          </span>
+          <span className="text-[11px] leading-snug text-[color:var(--cv-bubble-in-meta)]">
+            Arquivo inválido ou ainda criptografado. Reenvie pelo WhatsApp.
+          </span>
+        </div>
+      ) : (
+        <>
+          <button
         type="button"
         onClick={togglePlay}
         aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
@@ -128,9 +203,9 @@ export function ChatAudioPlayer({
         ) : (
           <Play className="w-[15px] h-[15px] fill-current ml-0.5" />
         )}
-      </button>
+          </button>
 
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5 pt-0.5">
+          <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5 pt-0.5">
         <div
           ref={trackRef}
           role="slider"
@@ -172,10 +247,12 @@ export function ChatAudioPlayer({
           )}
         >
           {displayTime}
-        </span>
-      </div>
+            </span>
+          </div>
 
-      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+          <audio ref={audioRef} src={resolvedSrc} preload="metadata" className="hidden" />
+        </>
+      )}
     </div>
   );
 }

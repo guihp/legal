@@ -72,12 +72,31 @@ No HTTP Request:
 - **Body Content Type:** `Form-Data`
 - Parâmetro binário:
   - **Parameter Type:** `n8n Binary File`
-  - **Name:** `file`
+  - **Name:** `file` (não use `mensagem_row_id` — esse campo é só o id numérico da linha, em texto)
   - **Input Data Field Name:** `data` (nome da aba Binary do nó anterior, ex. `baixar o arquivo`)
 - Parâmetros texto (Form Data → Text):
   - `company_id`, `phone`, `mensagem_id` (obrigatórios)
   - `text` = legenda (opcional)
-  - `mensage_type`, `type` (`lead`), `plataforma` (`WhatsApp`)
+  - `mensage_type` = `audio` | `image` | `video` (ou `audioMessage` — a edge normaliza)
+  - `mimetype` = ex. `audio/ogg` (opcional; vem do Evolution)
+  - `type` (`lead`), `plataforma` (`WhatsApp`)
+
+**Evolution API (Baileys):** o download bruto do WhatsApp vem **criptografado**. Antes do HTTP Request, chame `POST /chat/getBase64FromMediaMessage` na Evolution e envie o base64 **já descriptografado**:
+
+```json
+{
+  "company_id": "uuid",
+  "phone": "5511...",
+  "mensagem_id": "wamid...",
+  "media_base64": "<base64 do getBase64FromMediaMessage>",
+  "mimetype": "audio/ogg; codecs=opus",
+  "mensage_type": "audio",
+  "type": "lead",
+  "plataforma": "WhatsApp"
+}
+```
+
+Se enviar binário criptografado, a edge responde `media_appears_encrypted_or_invalid`.
 
 **Recomendado — JSON + `source_url` (1 nó HTTP; sem Supabase e sem “baixar arquivo”):**
 ```json

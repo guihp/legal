@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { toast } from 'sonner';
+import { normalizePhoneForStorage } from '@/lib/normalizePhone';
 
 export interface OwnCompanyData {
   id: string;
@@ -32,6 +33,7 @@ export interface OwnCompanyData {
   ai_visit_broker_mode: string | null;
   ai_visit_priority_criterion: string | null;
   ai_visit_broker_priorities: Record<string, number> | null;
+  ai_assistant_enabled: boolean;
   logo_url: string | null;
   plan: string;
   max_users: number;
@@ -103,6 +105,7 @@ export function useOwnCompany() {
     ai_visit_broker_mode?: string | null;
     ai_visit_priority_criterion?: string | null;
     ai_visit_broker_priorities?: Record<string, number> | null;
+    ai_assistant_enabled?: boolean;
   }): Promise<boolean> => {
     if (!isManager) {
       toast.error('Sem permissão para editar dados da empresa');
@@ -118,7 +121,10 @@ export function useOwnCompany() {
         p_contact_name: data.contact_name !== undefined ? data.contact_name || null : null,
         p_email: data.email !== undefined ? data.email || null : null,
         p_cnpj: data.cnpj !== undefined ? data.cnpj || null : null,
-        p_phone: data.phone !== undefined ? data.phone || null : null,
+        p_phone:
+          data.phone !== undefined
+            ? (data.phone ? normalizePhoneForStorage(data.phone) : null)
+            : null,
         p_address: data.address !== undefined ? data.address || null : null,
         p_address_number: data.address_number !== undefined ? data.address_number || null : null,
         p_address_complement: data.address_complement !== undefined ? data.address_complement || null : null,
@@ -155,6 +161,8 @@ export function useOwnCompany() {
           data.ai_visit_broker_priorities !== undefined
             ? data.ai_visit_broker_priorities
             : null,
+        p_ai_assistant_enabled:
+          data.ai_assistant_enabled !== undefined ? data.ai_assistant_enabled : null,
       });
 
       if (rpcError) throw rpcError;
@@ -176,6 +184,14 @@ export function useOwnCompany() {
   // Carregar ao montar
   useEffect(() => {
     loadCompany();
+  }, [loadCompany]);
+
+  useEffect(() => {
+    const onCompanyUpdated = () => {
+      void loadCompany();
+    };
+    window.addEventListener('own-company-updated', onCompanyUpdated);
+    return () => window.removeEventListener('own-company-updated', onCompanyUpdated);
   }, [loadCompany]);
 
   // Calcular dias restantes

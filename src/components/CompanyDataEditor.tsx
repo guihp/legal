@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
+import { formatBrazilianMobileInput, normalizePhoneForStorage } from '@/lib/normalizePhone';
 
 export function CompanyDataEditor() {
   const { company, loading, updating, isManager, updateCompany, daysRemaining } = useOwnCompany();
@@ -33,7 +34,7 @@ export function CompanyDataEditor() {
         contactName: company.contact_name || '',
         email: company.email || '',
         cnpj: company.cnpj || '',
-        phone: company.phone || '',
+        phone: formatBrazilianMobileInput(company.phone || ''),
         address: company.address || '',
         addressNumber: company.address_number || '',
         addressComplement: company.address_complement || '',
@@ -53,7 +54,7 @@ export function CompanyDataEditor() {
       formData.contactName !== (company.contact_name || '') ||
       formData.email !== (company.email || '') ||
       formData.cnpj !== (company.cnpj || '') ||
-      formData.phone !== (company.phone || '') ||
+      normalizePhoneForStorage(formData.phone) !== normalizePhoneForStorage(company.phone || '') ||
       formData.address !== (company.address || '') ||
       formData.addressNumber !== (company.address_number || '') ||
       formData.addressComplement !== (company.address_complement || '') ||
@@ -70,7 +71,7 @@ export function CompanyDataEditor() {
       contact_name: formData.contactName,
       email: formData.email,
       cnpj: formData.cnpj,
-      phone: formData.phone,
+      phone: normalizePhoneForStorage(formData.phone) || null,
       address: formData.address,
       address_number: formData.addressNumber,
       address_complement: formData.addressComplement,
@@ -247,11 +248,15 @@ export function CompanyDataEditor() {
             <div className="space-y-2">
               <Label className="text-gray-300">Telefone</Label>
               <Input
+                type="tel"
+                inputMode="numeric"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: formatBrazilianMobileInput(e.target.value) })
+                }
                 disabled={!isManager}
                 className="bg-gray-900/50 border-gray-600 text-white"
-                placeholder="(00) 00000-0000"
+                placeholder="(00) 9 0000-0000"
               />
             </div>
             <div className="space-y-2 md:col-span-2">

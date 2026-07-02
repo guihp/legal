@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { useCompanySettings } from './useCompanySettings';
+import { useCompanyApiMode } from './useCompanyApiMode';
 
 export interface ChatInstanceRow {
   name: string;
@@ -17,7 +18,9 @@ const WHATSAPP_API_BASE = import.meta.env.VITE_WHATSAPP_API_BASE || 'https://n8n
 export function useChatInstancesFromMessages() {
   const { profile, isManager, loading: profileLoading } = useUserProfile();
   const { settings } = useCompanySettings();
+  const { isOfficialApi } = useCompanyApiMode();
   const [instances, setInstances] = useState<ChatInstanceRow[]>([]);
+  const [registryInstanceNames, setRegistryInstanceNames] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +35,7 @@ export function useChatInstancesFromMessages() {
     try {
       setLoading(true);
       setError(null);
+      setRegistryInstanceNames([]);
 
       // Evitar mostrar todas as instâncias enquanto o perfil/escopo não está pronto
       if (profileLoading || !profile) {
@@ -47,13 +51,31 @@ export function useChatInstancesFromMessages() {
         return;
       }
 
-      // Otimização: Se for API Oficial, NÃO buscar instâncias via webhook
-      if (profile?.email === 'jastelo@iafeoficial.com') {
-        console.log('⚡ API Oficial detectada: pulando busca de instâncias via webhook');
-        setInstances([]); // Ou retornar instâncias mockadas se necessário no futuro
+      const loadRegistryNames = async (): Promise<string[]> => {
+        if (!profile.company_id) return [];
+        const { data } = await supabase
+          .from('company_whatsapp_instances' as any)
+          .select('instance_name, status')
+          .eq('company_id', profile.company_id)
+          .eq('is_active', true);
+        const rows = Array.isArray(data) ? data : [];
+        const names = rows
+          .map((r: any) => String(r.instance_name || '').trim())
+          .filter(Boolean);
+        setRegistryInstanceNames(names);
+        return names;
+      };
+
+      // API Oficial: não depende de instância Evolution no chat
+      if (isOfficialApi) {
+        console.log('⚡ API Oficial: pulando busca de instâncias Evolution');
+        setInstances([]);
+        await loadRegistryNames();
         setLoading(false);
         return;
       }
+
+      const registryNames = await loadRegistryNames();
 
       // Buscar instâncias do webhook N8N (mesmo padrão usado em ConnectionsView)
       console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
@@ -101,13 +123,22 @@ export function useChatInstancesFromMessages() {
       };
 
       // Mapear para o formato esperado
-      const mappedInstances: ChatInstanceRow[] = filteredInstances.map((externalData: any) => ({
+      let mappedInstances: ChatInstanceRow[] = filteredInstances.map((externalData: any) => ({
         name: externalData.name,
         conversationCount: externalData._count?.Chat || externalData._count?.Message || 0,
         status: statusMap[externalData.connectionStatus] || 'disconnected',
         profile_name: externalData.profileName,
         profile_pic_url: externalData.profilePicUrl,
       }));
+
+      // Fallback: instâncias cadastradas em Conexões (company_whatsapp_instances)
+      if (mappedInstances.length === 0 && registryNames.length > 0) {
+        mappedInstances = registryNames.map((name) => ({
+          name,
+          conversationCount: 0,
+          status: 'connected' as const,
+        }));
+      }
 
       // Ordenar por nome
       mappedInstances.sort((a, b) => a.name.localeCompare(b.name));
@@ -116,7 +147,34 @@ export function useChatInstancesFromMessages() {
     } catch (e: any) {
       console.error('❌ Erro ao carregar instâncias do webhook:', e);
       setError(e.message || 'Erro ao carregar instâncias');
-      setInstances([]);
+
+      // Mesmo com falha no webhook, usa registro local de conexões
+      if (profile?.company_id) {
+        const { data } = await supabase
+          .from('company_whatsapp_instances' as any)
+          .select('instance_name, status')
+          .eq('company_id', profile.company_id)
+          .eq('is_active', true);
+        const rows = Array.isArray(data) ? data : [];
+        const names = rows
+          .map((r: any) => String(r.instance_name || '').trim())
+          .filter(Boolean);
+        setRegistryInstanceNames(names);
+        if (names.length > 0) {
+          setInstances(
+            names.map((name) => ({
+              name,
+              conversationCount: 0,
+              status: 'connected' as const,
+            })),
+          );
+          setError(null);
+        } else {
+          setInstances([]);
+        }
+      } else {
+        setInstances([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -136,9 +194,9 @@ export function useChatInstancesFromMessages() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedInstance, isManager, profileLoading]);
+  }, [scopedInstance, isManager, profileLoading, isOfficialApi]);
 
-  return { instances, loading, error, refresh, scopedInstance };
+  return { instances, loading, error, refresh, scopedInstance, registryInstanceNames };
 }
 
 

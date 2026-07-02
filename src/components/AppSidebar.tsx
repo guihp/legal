@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound, Sun, Moon } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound, Sun, Moon, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -178,6 +178,13 @@ const secondaryItems = [
     permissionKey: "menu_configurations",
   },
   {
+    title: "Testar IA",
+    url: "#",
+    icon: Smartphone,
+    view: "ai-test" as const,
+    permissionKey: "menu_configurations",
+  },
+  {
     title: "API Leads n8n",
     url: "#",
     icon: KeyRound,
@@ -205,6 +212,7 @@ interface AppSidebarProps {
       | 'conversas'
       | 'configurations'
       | 'ai-configuration'
+      | 'ai-test'
       | 'profile'
       | 'marketing'
       | 'marketing-site'

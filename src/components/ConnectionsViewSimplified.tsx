@@ -55,6 +55,7 @@ import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 import { OfficialApiConnectionsView } from "./OfficialApiConnectionsView";
 import { CompanyInstagramConnectionsSection } from "./CompanyInstagramConnectionsSection";
+import { syncCompanyPhoneFromWhatsApp } from '@/lib/syncCompanyPhoneFromWhatsApp';
 
 const QR_TIMEOUT_SECONDS = 180;
 
@@ -111,6 +112,7 @@ export function ConnectionsViewSimplified() {
     instances,
     loading,
     error,
+    syncWarning,
     createInstance,
     requestConnection,  // Nova função integrada
     updateInstanceStatus,
@@ -573,6 +575,16 @@ export function ConnectionsViewSimplified() {
           if (isOnline) {
             console.log('✅ Instância conectada com sucesso via endpoint:', selectedInstance.name);
 
+            const connectedPhone =
+              updatedInstance?.ownerJid?.replace('@s.whatsapp.net', '') ||
+              updatedInstance?.ownerJid ||
+              selectedInstance.phone_number ||
+              '';
+
+            if (connectedPhone) {
+              await syncCompanyPhoneFromWhatsApp(connectedPhone);
+            }
+
             // Fechar modal QR e mostrar sucesso
             setShowQrModal(false);
             setQrCode(null);
@@ -586,7 +598,7 @@ export function ConnectionsViewSimplified() {
             setShowSuccessModal(true);
 
             // Atualizar status local
-            await updateInstanceStatus(selectedInstance.id, 'connected');
+            await updateInstanceStatus(selectedInstance.id, 'connected', connectedPhone);
 
             // Atualizar lista de instâncias
             await refreshInstances();
@@ -1108,6 +1120,13 @@ export function ConnectionsViewSimplified() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {syncWarning && !error && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="text-amber-100">{syncWarning}</AlertDescription>
         </Alert>
       )}
 

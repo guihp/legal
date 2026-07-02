@@ -58,6 +58,10 @@ export type Database = {
           created_at: string | null
           id: string
           is_official_api: boolean | null
+          media_mime_type: string | null
+          media_name: string | null
+          media_type: string | null
+          media_url: string | null
           message: string
           shortcut: string
         }
@@ -66,6 +70,10 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_official_api?: boolean | null
+          media_mime_type?: string | null
+          media_name?: string | null
+          media_type?: string | null
+          media_url?: string | null
           message: string
           shortcut: string
         }
@@ -74,6 +82,10 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_official_api?: boolean | null
+          media_mime_type?: string | null
+          media_name?: string | null
+          media_type?: string | null
+          media_url?: string | null
           message?: string
           shortcut?: string
         }
@@ -180,6 +192,7 @@ export type Database = {
           ai_visit_policy: string | null
           ai_rules: string | null
           ai_additional_info: string | null
+          ai_assistant_enabled: boolean
           ai_visit_broker_mode: string
           ai_visit_priority_criterion: string
           ai_visit_broker_priorities: Json
@@ -230,6 +243,7 @@ export type Database = {
           ai_visit_policy?: string | null
           ai_rules?: string | null
           ai_additional_info?: string | null
+          ai_assistant_enabled?: boolean
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -277,6 +291,7 @@ export type Database = {
           ai_visit_policy?: string | null
           ai_rules?: string | null
           ai_additional_info?: string | null
+          ai_assistant_enabled?: boolean
           grace_period_days?: number | null
           id?: string
           id_instagram?: string | null
@@ -1968,6 +1983,7 @@ export type Database = {
           ai_target_audience: string
           ai_rules: string
           ai_additional_info: string
+          ai_assistant_enabled: boolean
           ai_visit_broker_mode: string
           ai_visit_priority_criterion: string
           ai_visit_broker_priorities: Json
@@ -2135,6 +2151,7 @@ export type Database = {
           p_ai_target_audience?: string
           p_ai_rules?: string
           p_ai_additional_info?: string
+          p_ai_assistant_enabled?: boolean
           p_ai_visit_broker_mode?: string
           p_ai_visit_priority_criterion?: string
           p_ai_visit_broker_priorities?: Json
