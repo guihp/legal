@@ -54,8 +54,8 @@ export function IPhone17ProMaxFrame({ children, className = '' }: IPhone17ProMax
               <div className="absolute right-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#1a1a1c] ring-1 ring-white/5" />
             </div>
 
-            {/* Tela */}
-            <div className="relative flex min-h-[min(780px,calc(100dvh-10rem))] flex-col bg-black md:min-h-[min(820px,calc(100dvh-9rem))]">
+            {/* Tela — altura fixa; o scroll fica na área de mensagens do simulador */}
+            <div className="relative flex h-[min(780px,calc(100dvh-10rem))] max-h-[min(780px,calc(100dvh-10rem))] flex-col overflow-hidden bg-black md:h-[min(820px,calc(100dvh-9rem))] md:max-h-[min(820px,calc(100dvh-9rem))]">
               {children}
             </div>
 

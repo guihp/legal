@@ -1,15 +1,210 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Bot, ChevronLeft, SendHorizontal, User } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ChatImageGrid } from '@/components/ChatImageGrid';
 import { IPhone17ProMaxFrame, IOSStatusBar } from '@/components/ai-test/IPhone17ProMaxFrame';
+import { cn } from '@/lib/utils';
 
 export type SimulatorMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  messageType?: 'text' | 'image';
+  mediaUrl?: string;
+  sentAt?: string;
   pending?: boolean;
 };
+
+function formatMessageTime(sentAt?: string): string {
+  if (!sentAt) {
+    return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  const d = new Date(sentAt);
+  if (Number.isNaN(d.getTime())) {
+    return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function isImageOnlyMessage(message: SimulatorMessage): boolean {
+  return message.messageType === 'image' && Boolean(message.mediaUrl) && !message.content?.trim();
+}
+
+type SimulatorMessageBlock =
+  | { kind: 'single'; message: SimulatorMessage }
+  | { kind: 'image_album'; messages: SimulatorMessage[] };
+
+/** Agrupa imagens consecutivas (sem legenda) do mesmo autor quando há mais de 2. */
+function groupSimulatorMessages(messages: SimulatorMessage[]): SimulatorMessageBlock[] {
+  const blocks: SimulatorMessageBlock[] = [];
+  let index = 0;
+
+  while (index < messages.length) {
+    const current = messages[index];
+
+    if (isImageOnlyMessage(current)) {
+      const role = current.role;
+      const group: SimulatorMessage[] = [];
+
+      while (index < messages.length) {
+        const item = messages[index];
+        if (item.role !== role || !isImageOnlyMessage(item)) break;
+        group.push(item);
+        index += 1;
+      }
+
+      if (group.length > 2) {
+        blocks.push({ kind: 'image_album', messages: group });
+      } else {
+        for (const message of group) {
+          blocks.push({ kind: 'single', message });
+        }
+      }
+      continue;
+    }
+
+    blocks.push({ kind: 'single', message: current });
+    index += 1;
+  }
+
+  return blocks;
+}
+
+function WhatsAppImageAlbumBubble({
+  role,
+  messages,
+  pending,
+}: {
+  role: 'user' | 'assistant';
+  messages: SimulatorMessage[];
+  pending?: boolean;
+}) {
+  const isUser = role === 'user';
+  const urls = messages.map((m) => m.mediaUrl).filter(Boolean) as string[];
+  const lastMessage = messages[messages.length - 1];
+  const time = formatMessageTime(lastMessage?.sentAt);
+
+  return (
+    <div
+      className={cn(
+        'relative w-fit max-w-[min(100%,300px)] overflow-hidden shadow-sm',
+        isUser
+          ? 'rounded-lg rounded-tr-none bg-[#005c4b]'
+          : 'rounded-lg rounded-tl-none bg-[#202c33]',
+        pending && 'opacity-70',
+      )}
+    >
+      <div className="relative p-[3px]">
+        <ChatImageGrid images={urls} className="rounded-[5px]" />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-[3px] bottom-[3px] h-10 rounded-b-[5px] bg-gradient-to-t from-black/55 via-black/20 to-transparent"
+        />
+        <span className="absolute bottom-2 right-2.5 text-[11px] font-medium leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+          {time}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WhatsAppImageBubble({
+  role,
+  mediaUrl,
+  caption,
+  sentAt,
+  pending,
+}: {
+  role: 'user' | 'assistant';
+  mediaUrl: string;
+  caption?: string;
+  sentAt?: string;
+  pending?: boolean;
+}) {
+  const isUser = role === 'user';
+  const time = formatMessageTime(sentAt);
+  const hasCaption = Boolean(caption?.trim());
+
+  return (
+    <div
+      className={cn(
+        'relative w-fit max-w-[min(100%,300px)] overflow-hidden shadow-sm',
+        isUser
+          ? 'rounded-lg rounded-tr-none bg-[#005c4b]'
+          : 'rounded-lg rounded-tl-none bg-[#202c33]',
+        pending && 'opacity-70',
+      )}
+    >
+      <div className="relative p-[3px]">
+        <img
+          src={mediaUrl}
+          alt={caption || 'Imagem'}
+          className="block max-h-[min(320px,50vh)] w-auto min-w-[160px] max-w-[294px] rounded-[5px] object-cover"
+          loading="lazy"
+        />
+        {!hasCaption ? (
+          <>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-[3px] bottom-[3px] h-10 rounded-b-[5px] bg-gradient-to-t from-black/55 via-black/20 to-transparent"
+            />
+            <span className="absolute bottom-2 right-2.5 text-[11px] font-medium leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+              {time}
+            </span>
+          </>
+        ) : null}
+      </div>
+      {hasCaption ? (
+        <div className="px-2 pb-1.5 pt-0.5">
+          <p className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.35] text-[#e9edef]">
+            {caption}
+          </p>
+          <div className="mt-1 flex justify-end">
+            <span className="text-[11px] leading-none text-[#ffffff99]">{time}</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WhatsAppTextBubble({
+  role,
+  content,
+  sentAt,
+  pending,
+}: {
+  role: 'user' | 'assistant';
+  content: string;
+  sentAt?: string;
+  pending?: boolean;
+}) {
+  const isUser = role === 'user';
+  const time = formatMessageTime(sentAt);
+
+  return (
+    <div
+      className={cn(
+        'relative max-w-[82%] rounded-lg px-2.5 py-1.5 text-[14px] leading-[1.35] shadow-sm md:px-3 md:py-2 md:text-[15px]',
+        isUser
+          ? 'rounded-tr-none bg-[#005c4b] text-[#e9edef]'
+          : 'rounded-tl-none bg-[#202c33] text-[#e9edef]',
+        pending && 'opacity-70',
+      )}
+    >
+      <span className="whitespace-pre-wrap break-words pr-12">{content}</span>
+      <span
+        className={cn(
+          'absolute bottom-1.5 right-2 text-[11px] leading-none',
+          isUser ? 'text-[#ffffff99]' : 'text-[#8696a0]',
+        )}
+      >
+        {time}
+      </span>
+    </div>
+  );
+}
 
 type PhoneWhatsAppSimulatorProps = {
   companyName: string;
@@ -32,10 +227,13 @@ export function PhoneWhatsAppSimulator({
   onInputChange,
   onSend,
 }: PhoneWhatsAppSimulatorProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const messageBlocks = useMemo(() => groupSimulatorMessages(messages), [messages]);
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages.length, loading]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -47,6 +245,7 @@ export function PhoneWhatsAppSimulator({
 
   return (
     <IPhone17ProMaxFrame>
+      <div className="flex h-full min-h-0 flex-col">
       <IOSStatusBar />
 
       {/* WhatsApp header */}
@@ -65,6 +264,7 @@ export function PhoneWhatsAppSimulator({
 
       {/* Chat */}
       <div
+        ref={chatScrollRef}
         className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 md:px-4"
         style={{
           backgroundColor: '#0b141a',
@@ -90,34 +290,71 @@ export function PhoneWhatsAppSimulator({
             </div>
           )}
 
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex items-end gap-1.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              {message.role === 'assistant' && (
-                <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25d366]/15 text-[#25d366]">
-                  <Bot className="h-3 w-3" />
+          {messageBlocks.map((block) => {
+            if (block.kind === 'image_album') {
+              const role = block.messages[0]?.role ?? 'assistant';
+              const key = block.messages.map((m) => m.id).join('-');
+              return (
+                <div
+                  key={key}
+                  className={`flex items-end gap-1.5 ${role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {role === 'assistant' && (
+                    <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25d366]/15 text-[#25d366]">
+                      <Bot className="h-3 w-3" />
+                    </div>
+                  )}
+                  <WhatsAppImageAlbumBubble
+                    role={role}
+                    messages={block.messages}
+                    pending={block.messages.some((m) => m.pending)}
+                  />
+                  {role === 'user' && (
+                    <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2a3942] text-[#8696a0]">
+                      <User className="h-3 w-3" />
+                    </div>
+                  )}
                 </div>
-              )}
+              );
+            }
 
+            const message = block.message;
+            return (
               <div
-                className={`relative max-w-[82%] rounded-lg px-2.5 py-1.5 text-[14px] leading-[1.35] shadow-sm md:px-3 md:py-2 md:text-[15px] ${
-                  message.role === 'user'
-                    ? 'rounded-tr-none bg-[#005c4b] text-[#e9edef]'
-                    : 'rounded-tl-none bg-[#202c33] text-[#e9edef]'
-                } ${message.pending ? 'opacity-70' : ''}`}
+                key={message.id}
+                className={`flex items-end gap-1.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {message.content}
-              </div>
+                {message.role === 'assistant' && (
+                  <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25d366]/15 text-[#25d366]">
+                    <Bot className="h-3 w-3" />
+                  </div>
+                )}
 
-              {message.role === 'user' && (
-                <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2a3942] text-[#8696a0]">
-                  <User className="h-3 w-3" />
-                </div>
-              )}
-            </div>
-          ))}
+                {message.messageType === 'image' && message.mediaUrl ? (
+                  <WhatsAppImageBubble
+                    role={message.role}
+                    mediaUrl={message.mediaUrl}
+                    caption={message.content}
+                    sentAt={message.sentAt}
+                    pending={message.pending}
+                  />
+                ) : (
+                  <WhatsAppTextBubble
+                    role={message.role}
+                    content={message.content}
+                    sentAt={message.sentAt}
+                    pending={message.pending}
+                  />
+                )}
+
+                {message.role === 'user' && (
+                  <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2a3942] text-[#8696a0]">
+                    <User className="h-3 w-3" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {loading && (
             <div className="flex items-end gap-1.5">
@@ -134,7 +371,6 @@ export function PhoneWhatsAppSimulator({
             </div>
           )}
 
-          <div ref={scrollRef} />
         </div>
       </div>
 
@@ -157,6 +393,7 @@ export function PhoneWhatsAppSimulator({
         >
           <SendHorizontal className="h-4 w-4 md:h-5 md:w-5" />
         </Button>
+      </div>
       </div>
     </IPhone17ProMaxFrame>
   );

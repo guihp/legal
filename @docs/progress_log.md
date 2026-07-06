@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-06 — Simulador Testar IA: sessão UUID + banco isolado + ingest n8n
+
+- Tabela `ai_test_messages` (separada de `mensagens`) com RLS gestor+ e realtime.
+- Edge `ai-test-api`: `ingest_text` e `ingest_image` para o n8n gravar respostas da IA.
+- `session_id` UUID aleatório por conversa; **Limpar conversa** apaga o histórico no banco e gera novo UUID.
+- Front: realtime na tela de teste; suporte a imagens no simulador WhatsApp.
+
 ## 2026-07-02 — Config IA: API Oficial sem exigir Conexões WhatsApp
 
 - **`company_ai_activation_blockers`:** empresas com `APIOficial = true` não precisam de instância Evolution conectada para ativar a IA.
