@@ -62,6 +62,7 @@ import {
   toWebhookMidiasPayload,
 } from '@/lib/sendChatMediaItems';
 import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
+import { formatConversationListTime } from '@/lib/formatConversationListTime';
 
 /* ---------- utils ---------- */
 
@@ -1012,7 +1013,7 @@ export function ConversasViewInstagram() {
                     leadStage={conv.leadStage}
                     crmStage={conv.crmStage}
                     hasCrmLead={conv.hasCrmLead}
-                    timeLabel={conv.lastMessageDate ? formatHour(conv.lastMessageDate) : undefined}
+                    timeLabel={conv.lastMessageDate ? formatConversationListTime(conv.lastMessageDate) : undefined}
                     previewKind={conv.lastMessagePreviewKind}
                     previewText={conv.lastMessageContent}
                     avatar={

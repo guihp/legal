@@ -18,13 +18,11 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  User,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
@@ -50,6 +48,7 @@ import {
 } from '@/lib/conversaMedia';
 import { processTextWithBold } from '@/lib/formatChatMessageText';
 import { ConversationListItem } from '@/components/chat/ConversationListItem';
+import { ChatContactAvatar } from '@/components/chat/ChatContactAvatar';
 import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
 import { useConversasList } from '@/hooks/useConversasList';
@@ -118,6 +117,7 @@ import { LeadViewModal } from './LeadViewModal';
 import { useChatTemplates } from '@/hooks/useChatTemplates';
 import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
 import { resolveWhatsappSendInstancia } from '@/lib/resolveWhatsappSendInstancia';
+import { formatConversationListTime, conversationDayKey, formatChatDaySeparator } from '@/lib/formatConversationListTime';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
@@ -189,8 +189,8 @@ const list = {
 };
 
 const bubble = {
-  hidden: { opacity: 0, y: 8, filter: 'blur(2px)' },
-  visible: { opacity: 1, y: 0, filter: 'blur(0)', transition: { duration: 0.18 } },
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.18 } },
   highlight: { boxShadow: '0 0 0 2px rgba(125,211,252,.25)' }
 };
 
@@ -448,15 +448,6 @@ function previewFromLast(last_media: any, last_message: any): { kind: Conversati
   const preview = resolveConversationListPreview({ text: txt, media: last_media });
   const text = preview.text.length > 80 ? `${preview.text.slice(0, 80)}…` : preview.text;
   return { kind: preview.kind, text };
-}
-
-/** Avatar padrão quando não há foto do contato (silhueta estilo WhatsApp). */
-function ChatContactAvatarFallback() {
-  return (
-    <AvatarFallback className="bg-[var(--cv-panel-muted)] text-[var(--cv-text-muted)]">
-      <User className="h-6 w-6" strokeWidth={1.5} aria-hidden />
-    </AvatarFallback>
-  );
 }
 
 // Renderer da mensagem (prioridade: URLs de imagem > base64 > texto)
@@ -865,8 +856,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   );
   const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages, setMyInstance } = useConversaMessages();
 
-  // Determinar restrição de API Oficial (24 horas)
-  const isApiOficialUser = profile?.email?.toLowerCase().includes('jastelo') || profile?.email?.toLowerCase().includes('iafeoficial.com') || profile?.email?.toLowerCase().includes('iafeofocial.com');
+  // Janela 24h / badge Expirado — só API Oficial (companies.APIOficial)
   const activeMessages = selectedLead ? leadMessages : messages;
   const messagesForChatSearch = useMemo(
     () => (selectedLead ? leadMessages : messages) as Array<{ id: string; message?: { content?: unknown } }>,
@@ -881,11 +871,22 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       }),
     [messages],
   );
+
+  const displayChatItemsWithDays = useMemo(() => {
+    let prevDay = '';
+    return displayChatItems.map((item) => {
+      const raw = item.kind === 'image_album' ? item.data : item.row.data;
+      const dayKey = conversationDayKey(String(raw || ''));
+      const dayLabel = dayKey && dayKey !== prevDay ? formatChatDaySeparator(String(raw || '')) : null;
+      if (dayKey) prevDay = dayKey;
+      return { item, dayLabel };
+    });
+  }, [displayChatItems]);
   const lastHumanMessage = activeMessages.slice().reverse().find((m: any) => m.message?.type === 'human');
     
   const lastHumanDate = lastHumanMessage ? new Date(lastHumanMessage.data) : null;
   const isPast24Hours = lastHumanDate ? (Date.now() - lastHumanDate.getTime()) > 24 * 60 * 60 * 1000 : false;
-  const disableFreeText = Boolean(isApiOficialUser && isPast24Hours);
+  const disableFreeText = Boolean(isOfficialApi && isPast24Hours);
 
 
 
@@ -1000,6 +1001,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       leadStage: 'AI ATIVA' as const,
       crmStage: null,
       hasCrmLead: Boolean(sessionOverride.leadId),
+      profilePicUrlWhatsapp: null,
       lastMessageDate: new Date().toISOString(),
       messageCount: 0,
       lastMessageContent: 'Nova conversa',
@@ -1133,6 +1135,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         leadStage: 'AI ATIVA',
         crmStage: null,
         hasCrmLead: Boolean(sessionOverride.leadId),
+        profilePicUrlWhatsapp: null,
         lastMessageDate: new Date().toISOString(),
         messageCount: 0,
         lastMessageContent: 'Nova conversa',
@@ -1151,6 +1154,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         leadStage: 'AI ATIVA',
         crmStage: null,
         hasCrmLead: Boolean(selectedLead.id),
+        profilePicUrlWhatsapp: null,
         lastMessageDate: new Date().toISOString(),
         messageCount: 0,
         lastMessageContent: '',
@@ -1983,13 +1987,14 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                     leadStage={conv.leadStage}
                     crmStage={conv.crmStage}
                     hasCrmLead={conv.hasCrmLead}
-                    timeLabel={conv.lastMessageDate ? formatHour(conv.lastMessageDate) : undefined}
+                    timeLabel={conv.lastMessageDate ? formatConversationListTime(conv.lastMessageDate) : undefined}
                     previewKind={conv.lastMessagePreviewKind}
                     previewText={conv.lastMessageContent}
                     avatar={
-                      <Avatar className="h-full w-full">
-                        <ChatContactAvatarFallback />
-                      </Avatar>
+                      <ChatContactAvatar
+                        displayName={conv.displayName}
+                        profilePicUrl={conv.profilePicUrlWhatsapp}
+                      />
                     }
                   />
                 </ContextMenuTrigger>
@@ -2109,9 +2114,16 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   title="Ver informações do contato"
                   aria-label="Ver informações do contato"
                 >
-                  <Avatar className="h-full w-full">
-                    <ChatContactAvatarFallback />
-                  </Avatar>
+                  <ChatContactAvatar
+                    displayName={
+                      currentConversation?.displayName ||
+                      sessionOverride?.displayName ||
+                      selectedLead?.name ||
+                      undefined
+                    }
+                    profilePicUrl={currentConversation?.profilePicUrlWhatsapp}
+                    iconClassName="h-5 w-5"
+                  />
                 </button>
                 <div className="flex flex-col overflow-hidden min-w-0">
                   <div className="flex items-center overflow-hidden gap-2">
@@ -2127,7 +2139,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                         selectedLead?.name ||
                         (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : '')}
                     </button>
-                    {isApiOficialUser && <CountdownTimer date={lastHumanDate} />}
+                    {isOfficialApi && <CountdownTimer date={lastHumanDate} />}
                   </div>
                   <p className="text-xs text-[var(--cv-text-muted)] truncate">
                     {currentConversation?.leadPhone ||
@@ -2181,7 +2193,15 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 })}
 
                 {/* CONVERSATION MESSAGES (álbuns de imagem agrupados estilo WhatsApp) */}
-                {!selectedLead && displayChatItems.map((item) => {
+                {!selectedLead && displayChatItemsWithDays.map(({ item, dayLabel }) => {
+                  const daySep = dayLabel ? (
+                    <div className="flex justify-center py-3">
+                      <span className="rounded-full bg-[var(--cv-panel)] px-3.5 py-1.5 text-[12px] font-semibold capitalize tracking-wide text-[var(--cv-text)] shadow-md ring-1 ring-[var(--cv-border)]">
+                        {dayLabel}
+                      </span>
+                    </div>
+                  ) : null;
+
                   if (item.kind === 'image_album') {
                     const isMe = item.isAI;
                     const isHit = item.rows.some((r) => chatSearchHighlightId === String(r.id));
@@ -2196,17 +2216,19 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                       data: item.data,
                     };
                     return (
-                      <motion.div
-                        key={item.id}
-                        data-chat-message-id={item.rows[0].id}
-                        variants={bubble}
-                        layout
-                        initial="hidden"
-                        animate="visible"
-                        className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
-                      >
-                        <MessageBubble row={albumRow} onOpenMedia={openMediaViewer} />
-                      </motion.div>
+                      <React.Fragment key={item.id}>
+                        {daySep}
+                        <motion.div
+                          data-chat-message-id={item.rows[0].id}
+                          variants={bubble}
+                          layout
+                          initial="hidden"
+                          animate="visible"
+                          className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
+                        >
+                          <MessageBubble row={albumRow} onOpenMedia={openMediaViewer} />
+                        </motion.div>
+                      </React.Fragment>
                     );
                   }
 
@@ -2215,17 +2237,19 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   const isMe = msgType === 'ai' || msgType === 'assistant';
                   const isHit = chatSearchHighlightId === String(row.id);
                   return (
-                    <motion.div
-                      key={row.id}
-                      data-chat-message-id={row.id}
-                      variants={bubble}
-                      layout
-                      initial="hidden"
-                      animate="visible"
-                      className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
-                    >
-                      <MessageBubble row={row} onOpenMedia={openMediaViewer} />
-                    </motion.div>
+                    <React.Fragment key={row.id}>
+                      {daySep}
+                      <motion.div
+                        data-chat-message-id={row.id}
+                        variants={bubble}
+                        layout
+                        initial="hidden"
+                        animate="visible"
+                        className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isHit ? 'rounded-lg ring-2 ring-yellow-400/70 ring-offset-2 ring-offset-[var(--cv-chat)]' : ''}`}
+                      >
+                        <MessageBubble row={row} onOpenMedia={openMediaViewer} />
+                      </motion.div>
+                    </React.Fragment>
                   );
                 })}
                 <div ref={endOfMessagesRef} />

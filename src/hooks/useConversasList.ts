@@ -25,6 +25,8 @@ export interface Conversa {
   leadStage?: string | null;
   crmStage?: string | null;
   hasCrmLead?: boolean;
+  /** URL da foto de perfil WhatsApp do lead (pode expirar). */
+  profilePicUrlWhatsapp?: string | null;
   lastMessageDate: string;
   messageCount: number;
   lastMessageContent: string;
@@ -93,6 +95,10 @@ export function useConversasList(selectedInstance?: string | null) {
           r.lead_stage != null && String(r.lead_stage).trim() !== ''
             ? String(r.lead_stage).trim()
             : null;
+        const profilePic =
+          r.lead_profile_pic_url_whatsapp != null
+            ? String(r.lead_profile_pic_url_whatsapp).trim()
+            : '';
 
         return {
           sessionId: phoneNorm,
@@ -103,6 +109,7 @@ export function useConversasList(selectedInstance?: string | null) {
           leadStage: null,
           crmStage,
           hasCrmLead: Boolean(leadId),
+          profilePicUrlWhatsapp: profilePic || null,
           lastMessageDate: String(r.last_message_at ?? new Date().toISOString()),
           messageCount: 1,
           lastMessageContent: lastContent || '…',

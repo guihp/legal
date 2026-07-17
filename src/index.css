@@ -115,15 +115,18 @@
   --cv-empty: #0b141a;
 }
 
-/* Papel de parede suave no chat (estilo WhatsApp) — claro e escuro */
-.conversas-chat-shell,
-.conversas-chat-area {
+/* Fundo do chat: uma camada só no shell (evita wallpaper duplo / cor “piscando” ao scroll) */
+.conversas-chat-shell {
   position: relative;
   background-color: var(--cv-chat);
 }
 
-.conversas-chat-shell::before,
-.conversas-chat-area::before {
+.conversas-chat-area {
+  position: relative;
+  background-color: transparent;
+}
+
+.conversas-chat-shell::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -135,21 +138,16 @@
   pointer-events: none;
 }
 
-/* Padrão claro: multiply natural no bege */
-[data-theme="light"] .conversas-chat-shell::before,
-[data-theme="light"] .conversas-chat-area::before {
+[data-theme="light"] .conversas-chat-shell::before {
   filter: none;
 }
 
-/* Padrão escuro: escurece o tile para contrastar com #0b141a */
-[data-theme="dark"] .conversas-chat-shell::before,
-[data-theme="dark"] .conversas-chat-area::before {
+[data-theme="dark"] .conversas-chat-shell::before {
   filter: brightness(0.38) contrast(1.08);
   opacity: var(--cv-chat-wallpaper-opacity, 0.42);
 }
 
-.conversas-chat-shell > *,
-.conversas-chat-area > * {
+.conversas-chat-shell > * {
   position: relative;
   z-index: 1;
 }
@@ -234,6 +232,10 @@
   font-weight: 500;
   color: var(--cv-text-muted);
   margin-top: 0.125rem;
+  flex-shrink: 0;
+  max-width: 7.5rem;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .conversas-list-item__head {
