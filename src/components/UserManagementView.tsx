@@ -804,6 +804,7 @@ export function UserManagementView() {
                 onChange={(e) => setEditForm(prev => prev ? { ...prev, email: e.target.value } : prev)}
                 className="bg-gray-800/50 border-gray-600 text-white"
               />
+              <p className="text-xs text-gray-500 mt-1">Este email recebe alertas de visitas agendadas.</p>
             </div>
             <div>
               <Label className="text-gray-300">Telefone</Label>
@@ -886,6 +887,7 @@ export function UserManagementView() {
                 className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
                 required
               />
+              <p className="text-xs text-gray-500 mt-1">Este email recebe alertas de visitas agendadas.</p>
             </div>
 
             {/* Senha temporária (padrão configurável) */}

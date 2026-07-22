@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendVisitBookedAlertToBroker } from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1603,6 +1604,46 @@ serve(async (req) => {
         method: "POST",
         body: JSON.stringify(eventBody),
       });
+
+      // Alerta email ao corretor do calendário (CRM Agenda) — best-effort
+      try {
+        const brokers = await listEligibleBrokers(service, profile.company_id);
+        const matched = brokers.find((b) => b.calendar_id === calendarId);
+        if (matched?.broker_id) {
+          const { data: brokerProfile } = await service
+            .from("user_profiles")
+            .select("email, full_name")
+            .eq("id", matched.broker_id)
+            .maybeSingle();
+
+          const startRaw = created?.start?.dateTime
+            || created?.start?.date
+            || eventBody?.start?.dateTime
+            || eventBody?.start?.date
+            || "";
+          const attendees = Array.isArray(eventBody?.attendees) ? eventBody.attendees : [];
+          const firstAttendee = attendees[0] || null;
+          const clientName = String(firstAttendee?.displayName || firstAttendee?.email || "").trim();
+
+          await sendVisitBookedAlertToBroker({
+            brokerEmail: String(brokerProfile?.email || ""),
+            brokerName: String(brokerProfile?.full_name || matched.broker_name || ""),
+            clientName: clientName || null,
+            clientPhone: null,
+            visitAt: startRaw,
+            propertyLabel: String(created?.summary || eventBody?.summary || "").trim() || null,
+            propertyAddress: String(created?.location || eventBody?.location || "").trim() || null,
+          });
+        } else {
+          console.log("visit_booked_email_skip", {
+            reason: "no_broker_for_calendar",
+            calendar_id: calendarId,
+          });
+        }
+      } catch (emailErr) {
+        console.error("visit_booked_email_broker_failed", emailErr);
+      }
+
       return new Response(JSON.stringify({ success: true, event: created }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

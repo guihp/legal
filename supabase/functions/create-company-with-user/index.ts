@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { sendWelcomeEmailWithResend } from '../_shared/email.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,62 +61,6 @@ async function callAsaas(path: string, payload: Record<string, any>) {
     throw new Error(msg)
   }
   return json
-}
-
-async function sendWelcomeEmailWithResend(params: {
-  to: string
-  companyName: string
-  loginEmail: string
-  temporaryPassword: string
-}) {
-  const enabled = String(Deno.env.get('RESEND_ENABLED') || 'false').toLowerCase() === 'true'
-  if (!enabled) return { sent: false, reason: 'RESEND_ENABLED=false' }
-
-  const apiKey = Deno.env.get('RESEND_API_KEY')
-  const from = Deno.env.get('RESEND_FROM_EMAIL') || 'onboarding@iafeimobi.com.br'
-  const appUrl = Deno.env.get('PUBLIC_APP_URL') || 'https://app.iafeimobi.com.br'
-  const apiBase = (Deno.env.get('RESEND_API_BASE_URL') || 'https://api.resend.com').replace(/\/$/, '')
-
-  if (!apiKey) {
-    throw new Error('RESEND_API_KEY não configurada')
-  }
-
-  const subject = 'Bem-vindo(a) ao IAFÉ IMOBI - Credenciais de acesso'
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
-      <h2 style="margin-bottom: 8px;">Cadastro concluído com sucesso</h2>
-      <p>Olá, <strong>${params.companyName}</strong>!</p>
-      <p>Sua conta foi criada e já está pronta para uso.</p>
-      <p><strong>Email de acesso:</strong> ${params.loginEmail}</p>
-      <p><strong>Senha temporária:</strong> ${params.temporaryPassword}</p>
-      <p>Acesse a plataforma em: <a href="${appUrl}">${appUrl}</a></p>
-      <p style="margin-top: 18px; font-size: 12px; color: #6b7280;">
-        Por segurança, altere sua senha no primeiro acesso.
-      </p>
-    </div>
-  `
-
-  const res = await fetch(`${apiBase}/emails`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      from,
-      to: [params.to],
-      subject,
-      html,
-    }),
-  })
-
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const msg = json?.message || json?.error || `Erro ao enviar email (${res.status})`
-    throw new Error(msg)
-  }
-
-  return { sent: true, id: json?.id || null }
 }
 
 function slugifyCompanySite(input: string): string {

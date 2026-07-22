@@ -9,6 +9,7 @@ import {
   cancelPendingVisitReminders,
   scheduleVisitReminders,
 } from "../_shared/visitReminders.ts";
+import { sendVisitBookedAlertToBroker } from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -635,6 +636,44 @@ serve(async (req) => {
         }
       }
 
+      // Alerta email ao corretor (somente quando já há corretor atribuído)
+      if (!assignBrokerLater && brokerIdFromCalendar) {
+        try {
+          let telefoneAlert = telefoneBody;
+          if (!telefoneAlert && sessionId) {
+            const { data: leadPhoneRow } = await service
+              .from("leads")
+              .select("phone")
+              .eq("id", sessionId)
+              .eq("company_id", companyId)
+              .maybeSingle();
+            telefoneAlert = String(leadPhoneRow?.phone || "").trim();
+          }
+
+          const { data: brokerProfile } = await service
+            .from("user_profiles")
+            .select("email, full_name")
+            .eq("id", brokerIdFromCalendar)
+            .maybeSingle();
+
+          const propertyAddress = propertyData?.endereco
+            ? `${propertyData.endereco} ${propertyData.numero || ""}, ${propertyData.bairro || ""}, ${propertyData.cidade || ""}`.trim()
+            : "";
+
+          await sendVisitBookedAlertToBroker({
+            brokerEmail: String(brokerProfile?.email || ""),
+            brokerName: String(brokerProfile?.full_name || brokerNameFromCalendar || ""),
+            clientName: nomeCliente || null,
+            clientPhone: telefoneAlert || null,
+            visitAt: new Date(startDT),
+            propertyLabel: idImovel || propertyData?.listing_id || null,
+            propertyAddress: propertyAddress || null,
+          });
+        } catch (emailErr) {
+          console.error("visit_booked_email_broker_failed", emailErr);
+        }
+      }
+
       const respText = assignBrokerLater
         ? `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar a visita para ${dataPt} às ${horaPt}!\n\nNossa equipe vai definir o corretor responsável e entrar em contato com você em instantes.`
         : `Perfeito ${nomeCliente || "[nome]"}, acabei de agendar!\n\nCorretor Responsável: ${brokerNameFromCalendar || "da imobiliária"}\n\nO corretor responsável vai entrar em contato com você em instantes.\n\nCaso venha ser o nome da empresa, fale que o corretor responsavel vai entrar em contato. Nunca envente um nome`;
@@ -664,7 +703,7 @@ serve(async (req) => {
 
       const { data: lead, error: leadError } = await service
         .from("leads")
-        .select("id, event_id, calenda_id, notes, stage, id_corretor_responsavel")
+        .select("id, event_id, calenda_id, notes, stage, id_corretor_responsavel, name, phone, imovel_interesse")
         .eq("id", leadId)
         .eq("company_id", companyId)
         .maybeSingle();
@@ -760,6 +799,36 @@ serve(async (req) => {
         .eq("company_id", companyId);
 
       if (updateError) return ok({ success: false, error: updateError.message }, 500);
+
+      // Alerta email ao corretor atribuído (best-effort)
+      try {
+        let visitAt: Date | null = null;
+        try {
+          const evt = await gFetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+          );
+          const startRaw = evt?.start?.dateTime || evt?.start?.date;
+          if (startRaw) visitAt = new Date(startRaw);
+        } catch (evtErr) {
+          console.warn("assign_visit_broker_event_fetch_failed", evtErr);
+        }
+
+        if (visitAt && !Number.isNaN(visitAt.getTime())) {
+          await sendVisitBookedAlertToBroker({
+            brokerEmail: String(brokerProfile?.email || ""),
+            brokerName,
+            clientName: String(lead.name || "").trim() || null,
+            clientPhone: String(lead.phone || "").trim() || null,
+            visitAt,
+            propertyLabel: String(lead.imovel_interesse || "").trim() || null,
+            propertyAddress: null,
+          });
+        } else {
+          console.log("visit_booked_email_skip", { reason: "no_visit_at", lead_id: leadId });
+        }
+      } catch (emailErr) {
+        console.error("visit_booked_email_broker_failed", emailErr);
+      }
 
       return ok({
         success: true,
