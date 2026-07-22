@@ -1,16 +1,14 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, TrendingUp, Eye, Globe, Users, MapPin, ListChecks } from "lucide-react";
+import { Building2, TrendingUp, Eye, Users, MapPin } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
-import { useClients } from "@/hooks/useClients";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { subscribeImoveisChanges } from "@/lib/realtime/imoveisRealtimeBus";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
-import { LayoutPreview } from "@/components/LayoutPreview";
 import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
 import { DashboardCharts } from "@/components/DashboardCharts";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, LabelList } from 'recharts';
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 interface DashboardContentProps {
   properties: PropertyWithImages[];
@@ -18,14 +16,24 @@ interface DashboardContentProps {
   onNavigateToAgenda?: () => void;
 }
 
-export function DashboardContent({ properties, loading, onNavigateToAgenda }: DashboardContentProps) {
-  const { clients, loading: clientsLoading } = useClients();
+export function DashboardContent({ properties: _properties, loading: _loading, onNavigateToAgenda }: DashboardContentProps) {
+  const { profile } = useUserProfile();
+  const companyId = profile?.company_id ?? null;
+  const isCorretor = profile?.role === 'corretor';
+
   // KPIs
   const [totalProperties, setTotalProperties] = useState(0);
   const [availableProperties, setAvailableProperties] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
   const [vgvCurrent, setVgvCurrent] = useState(0);
-  const [previousData, setPreviousData] = useState({
+  // MoM baselines = NEW items in rolling last 30d vs prior 30d (not calendar month / not stock)
+  const [momCurrent, setMomCurrent] = useState({
+    properties: 0,
+    available: 0,
+    clients: 0,
+    vgv: 0,
+  });
+  const [momPrevious, setMomPrevious] = useState({
     properties: 0,
     available: 0,
     clients: 0,
@@ -35,16 +43,24 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   // Lista de propriedades recentes (para o card lateral)
   const [imoveis, setImoveis] = useState<any[]>([]);
   const [loadingImoveis, setLoadingImoveis] = useState(true);
-  const [typeEntries, setTypeEntries] = useState<[string, number][]>([]);
-  const [stageEntries, setStageEntries] = useState<[string, number][]>([]);
+
+  const applyLeadsScope = <T extends { eq: (col: string, val: string) => T }>(query: T): T => {
+    let q = query.eq('company_id', companyId!);
+    if (isCorretor && profile?.id) {
+      q = q.eq('id_corretor_responsavel', profile.id);
+    }
+    return q;
+  };
 
   // Buscar últimas propriedades recentes
   const fetchImoveis = async () => {
+    if (!companyId) return;
     try {
       setLoadingImoveis(true);
       const { data, error } = await supabase
         .from('imoveisvivareal')
         .select('*')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -57,127 +73,138 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     }
   };
 
-  // Buscar distribuição por tipo (sem limitar a 5 itens)
-  const fetchTypeDistribution = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('imoveisvivareal')
-        .select('tipo_imovel');
-      if (error) throw error;
-      const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
-        const key = normalizeTypeLabel(row?.tipo_imovel || '');
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-      setTypeEntries(entries);
-    } catch (err) {
-      console.error('Erro ao carregar distribuição por tipo:', err);
-      setTypeEntries([]);
-    }
-  };
-
-  // Buscar distribuição por status (stage) dos leads
-  const fetchLeadStages = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('stage');
-      if (error) throw error;
-      const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
-        const key = (row?.stage || 'Não informado') as string;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-      setStageEntries(entries);
-    } catch (err) {
-      console.error('Erro ao carregar distribuição por stage:', err);
-      setStageEntries([]);
-    }
-  };
-
-  // Carregar KPIs do cabeçalho (totais e variação vs mês anterior)
+  // Carregar KPIs (estoque atual + MoM = novos últimos 30d vs 30d anteriores)
   const fetchKpis = async () => {
+    if (!companyId) return;
     try {
       setLoadingKpis(true);
       const now = new Date();
-      const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const firstDayNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const last30Start = new Date(now);
+      last30Start.setDate(last30Start.getDate() - 30);
+      const prev30Start = new Date(now);
+      prev30Start.setDate(prev30Start.getDate() - 60);
 
-      const firstDayThisMonthISO = firstDayThisMonth.toISOString();
-      const firstDayNextMonthISO = firstDayNextMonth.toISOString();
+      const nowISO = now.toISOString();
+      const last30StartISO = last30Start.toISOString();
+      const prev30StartISO = prev30Start.toISOString();
 
-      // Totais atuais
+      // Totais atuais (estoque da empresa)
       const totalResPromise = supabase
         .from('imoveisvivareal')
-        .select('id', { count: 'exact', head: true }) as unknown as Promise<{ count: number | null }>;
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId) as unknown as Promise<{ count: number | null }>;
       const dispResPromise = supabase
         .from('imoveisvivareal')
         .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
         .eq('disponibilidade', 'disponivel') as unknown as Promise<{ count: number | null }>;
-      const leadsResPromise = supabase
-        .from('leads')
-        .select('id', { count: 'exact', head: true }) as unknown as Promise<{ count: number | null }>;
+      const leadsResPromise = applyLeadsScope(
+        supabase.from('leads').select('id', { count: 'exact', head: true })
+      ) as unknown as Promise<{ count: number | null }>;
 
-      // Totais até o final do mês anterior (baseline para % de variação)
-      const prevTotalsPropsPromise = supabase
+      // Novos nos últimos 30 dias [now-30d, now)
+      const newPropsThisPromise = supabase
         .from('imoveisvivareal')
         .select('id', { count: 'exact', head: true })
-        .lt('created_at', firstDayThisMonthISO) as unknown as Promise<{ count: number | null }>;
-      const prevTotalsAvailPromise = supabase
+        .eq('company_id', companyId)
+        .gte('created_at', last30StartISO)
+        .lt('created_at', nowISO) as unknown as Promise<{ count: number | null }>;
+      const newAvailThisPromise = supabase
         .from('imoveisvivareal')
         .select('id', { count: 'exact', head: true })
-        .lt('created_at', firstDayThisMonthISO)
-        .eq('disponibilidade', 'disponivel') as unknown as Promise<{ count: number | null }>;
-      const prevTotalsLeadsPromise = supabase
-        .from('leads')
-        .select('id', { count: 'exact', head: true })
-        .lt('created_at', firstDayThisMonthISO) as unknown as Promise<{ count: number | null }>;
+        .eq('company_id', companyId)
+        .eq('disponibilidade', 'disponivel')
+        .gte('created_at', last30StartISO)
+        .lt('created_at', nowISO) as unknown as Promise<{ count: number | null }>;
+      const newLeadsThisPromise = applyLeadsScope(
+        supabase.from('leads').select('id', { count: 'exact', head: true })
+      )
+        .gte('created_at', last30StartISO)
+        .lt('created_at', nowISO) as unknown as Promise<{ count: number | null }>;
 
-      // Executar todas as consultas básicas primeiro
-      const [totalRes, dispRes, leadsRes, prevPropsRes, prevAvailRes, prevLeadsRes] = await Promise.all([
+      // Novos nos 30 dias anteriores [now-60d, now-30d)
+      const newPropsPrevPromise = supabase
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .gte('created_at', prev30StartISO)
+        .lt('created_at', last30StartISO) as unknown as Promise<{ count: number | null }>;
+      const newAvailPrevPromise = supabase
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('disponibilidade', 'disponivel')
+        .gte('created_at', prev30StartISO)
+        .lt('created_at', last30StartISO) as unknown as Promise<{ count: number | null }>;
+      const newLeadsPrevPromise = applyLeadsScope(
+        supabase.from('leads').select('id', { count: 'exact', head: true })
+      )
+        .gte('created_at', prev30StartISO)
+        .lt('created_at', last30StartISO) as unknown as Promise<{ count: number | null }>;
+
+      const [
+        totalRes, dispRes, leadsRes,
+        newPropsThis, newAvailThis, newLeadsThis,
+        newPropsPrev, newAvailPrev, newLeadsPrev,
+      ] = await Promise.all([
         totalResPromise,
         dispResPromise,
         leadsResPromise,
-        prevTotalsPropsPromise,
-        prevTotalsAvailPromise,
-        prevTotalsLeadsPromise,
+        newPropsThisPromise,
+        newAvailThisPromise,
+        newLeadsThisPromise,
+        newPropsPrevPromise,
+        newAvailPrevPromise,
+        newLeadsPrevPromise,
       ]);
 
-      // Buscar VGV real da tabela imoveisvivareal
+      // VGV estoque atual + VGV dos novos em cada janela de 30d (soma de preco)
       const vgvNowPromise = supabase
         .from('imoveisvivareal')
         .select('preco')
+        .eq('company_id', companyId)
         .not('preco', 'is', null);
-      
-      const vgvPrevPromise = supabase
+
+      const vgvNewThisPromise = supabase
         .from('imoveisvivareal')
         .select('preco')
-        .lt('created_at', firstDayThisMonthISO)
+        .eq('company_id', companyId)
+        .gte('created_at', last30StartISO)
+        .lt('created_at', nowISO)
         .not('preco', 'is', null);
-      
-      const [vgvNowRes, vgvPrevRes] = await Promise.all([vgvNowPromise, vgvPrevPromise]);
 
-      const totalProps = (totalRes.count || 0);
-      const availProps = (dispRes.count || 0);
-      const leadsTotal = (leadsRes.count || 0);
-      
-      // Calcular VGV atual (soma de todos os preços)
-      const vgvNow = vgvNowRes.data?.reduce((sum, item) => sum + (Number(item.preco) || 0), 0) || 0;
-      
-      // Calcular VGV anterior (soma dos preços até o mês passado)
-      const vgvPrev = vgvPrevRes.data?.reduce((sum, item) => sum + (Number(item.preco) || 0), 0) || 0;
+      const vgvNewPrevPromise = supabase
+        .from('imoveisvivareal')
+        .select('preco')
+        .eq('company_id', companyId)
+        .gte('created_at', prev30StartISO)
+        .lt('created_at', last30StartISO)
+        .not('preco', 'is', null);
 
-      setTotalProperties(totalProps);
-      setAvailableProperties(availProps);
-      setTotalLeads(leadsTotal);
-      setVgvCurrent(vgvNow);
-      setPreviousData({
-        properties: (prevPropsRes.count || 0),
-        available: (prevAvailRes.count || 0),
-        clients: (prevLeadsRes.count || 0),
-        vgv: vgvPrev,
+      const [vgvNowRes, vgvNewThisRes, vgvNewPrevRes] = await Promise.all([
+        vgvNowPromise,
+        vgvNewThisPromise,
+        vgvNewPrevPromise,
+      ]);
+
+      const sumPreco = (rows: { preco: number | null }[] | null | undefined) =>
+        rows?.reduce((sum, item) => sum + (Number(item.preco) || 0), 0) || 0;
+
+      setTotalProperties(totalRes.count || 0);
+      setAvailableProperties(dispRes.count || 0);
+      setTotalLeads(leadsRes.count || 0);
+      setVgvCurrent(sumPreco(vgvNowRes.data));
+      setMomCurrent({
+        properties: newPropsThis.count || 0,
+        available: newAvailThis.count || 0,
+        clients: newLeadsThis.count || 0,
+        vgv: sumPreco(vgvNewThisRes.data),
+      });
+      setMomPrevious({
+        properties: newPropsPrev.count || 0,
+        available: newAvailPrev.count || 0,
+        clients: newLeadsPrev.count || 0,
+        vgv: sumPreco(vgvNewPrevRes.data),
       });
     } catch (error) {
       console.error('💥 Erro ao carregar KPIs:', error);
@@ -187,29 +214,29 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   };
 
   useEffect(() => {
+    if (!companyId) return;
+
     fetchImoveis();
-    fetchTypeDistribution();
     fetchKpis();
-    fetchLeadStages();
+
     // Realtime — imoveisvivareal vem do bus compartilhado (1 channel pra app inteira).
     // leads + contracts continuam em channel próprio (poucos consumers).
     const unsubscribeImoveis = subscribeImoveisChanges(() => {
       fetchImoveis();
       fetchKpis();
-      fetchTypeDistribution();
     });
     const channel = supabase
       .channel(`dashboard_kpis_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); fetchLeadStages(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => { fetchKpis(); })
       .subscribe();
     return () => {
       unsubscribeImoveis();
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [companyId, profile?.role, profile?.id]);
 
-  if (loadingImoveis || loadingKpis) {
+  if (!companyId || loadingImoveis || loadingKpis) {
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -218,18 +245,6 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       </div>
     );
   }
-
-  // Dados reais dos clientes por origem (mantido)
-  const clientsBySource = clients.reduce((acc, client) => {
-    acc[client.source] = (acc[client.source] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  const clientsPieData = Object.entries(clientsBySource).map(([name, value]) => ({ name, value }));
-  const stagesPieData = stageEntries.map(([name, value]) => ({ name, value }));
-  const PIE_COLORS = [
-    '#60a5fa', '#34d399', '#f59e0b', '#a78bfa', '#f472b6',
-    '#22d3ee', '#f43f5e', '#10b981', '#eab308', '#3b82f6'
-  ];
 
   // Função para calcular percentual de mudança
   const calculatePercentageChange = (current: number, previous: number): { change: string, type: "positive" | "negative" | "neutral" } => {
@@ -249,11 +264,11 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     return { change: "0%", type: "neutral" };
   };
 
-  // Calcular mudanças percentuais
-  const propertiesChange = calculatePercentageChange(totalProperties, previousData.properties);
-  const availableChange = calculatePercentageChange(availableProperties, previousData.available);
-  const clientsChange = calculatePercentageChange(totalLeads, previousData.clients);
-  const vgvChange = calculatePercentageChange(vgvCurrent, previousData.vgv);
+  // MoM: novos últimos 30d vs 30d anteriores (rolling)
+  const propertiesChange = calculatePercentageChange(momCurrent.properties, momPrevious.properties);
+  const availableChange = calculatePercentageChange(momCurrent.available, momPrevious.available);
+  const clientsChange = calculatePercentageChange(momCurrent.clients, momPrevious.clients);
+  const vgvChange = calculatePercentageChange(momCurrent.vgv, momPrevious.vgv);
 
   const formatCurrencyCompact = (value: number): string => {
     if (value >= 1_000_000_000) return `R$ ${(value / 1_000_000_000).toFixed(1)}B`;
@@ -293,44 +308,6 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     },
   ];
 
-  // Normalização de tipos e ícones
-  function normalizeTypeLabel(labelRaw: string): string {
-    const l = (labelRaw || '').toLowerCase();
-    if (l.includes('apart') || l.includes('condo') || l.includes('condom')) return 'Apartamento/Condomínio';
-    if (l.includes('cobertura')) return 'Cobertura';
-    if (l.includes('duplex') || l.includes('triplex') || l.includes('flat') || l.includes('studio') || l.includes('kit') || l.includes('loft')) return 'Studio/Loft';
-    if (l.includes('home') || l.includes('casa') || l.includes('sobrado')) return 'Casa';
-    if (l.includes('landlot') || l.includes('land') || l.includes('terreno') || l.includes('lote')) return 'Terreno/Lote';
-    if (l.includes('agric') || l.includes('rural') || l.includes('chácara') || l.includes('chacara') || l.includes('sítio') || l.includes('sitio') || l.includes('fazenda')) return 'Rural/Agrícola';
-    if (l.includes('comerc') || l.includes('loja') || l.includes('sala') || l.includes('office')) return 'Comercial/Office';
-    if (l.includes('industrial') || l.includes('galp')) return 'Industrial/Galpão';
-    if (l.includes('hotel') || l.includes('pousada')) return 'Hotel/Pousada';
-    if (l.includes('garagem') || l.includes('garage') || l.includes('vaga')) return 'Garagem/Vaga';
-    if (l.includes('prédio') || l.includes('predio') || l.includes('edifício') || l.includes('edificio') || l.includes('building') || l.includes('tbuilding')) return 'Prédio/Edifício';
-    if (!l.trim().length) return 'Não informado';
-    return 'Outros';
-  }
-
-  const getTypeIconForNormalized = (normalized: string): string => {
-    switch (normalized) {
-      case 'Apartamento/Condomínio': return '🏢';
-      case 'Cobertura': return '🌇';
-      case 'Studio/Loft': return '🏙️';
-      case 'Casa': return '🏠';
-      case 'Terreno/Lote': return '🏞️';
-      case 'Rural/Agrícola': return '🌾';
-      case 'Comercial/Office': return '🏪';
-      case 'Industrial/Galpão': return '🏭';
-      case 'Hotel/Pousada': return '🏨';
-      case 'Garagem/Vaga': return '🚗';
-      case 'Prédio/Edifício': return '🏢';
-      case 'Não informado': return '❔';
-      default: return '🏷️';
-    }
-  };
-
-  // typeEntries agora vem de fetchTypeDistribution (sem limite de 5)
-
   return (
     <div className="space-y-6">
       <div>
@@ -353,7 +330,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
                 stat.changeType === "positive" ? "text-green-400" : 
                 stat.changeType === "negative" ? "text-red-400" : "text-gray-400"
               }`}>
-                {stat.change} em relação ao mês anterior
+                {stat.change} vs. 30 dias anteriores
               </p>
             </CardContent>
           </Card>

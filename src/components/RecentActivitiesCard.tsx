@@ -119,11 +119,15 @@ export function RecentActivitiesCard() {
 
   const loadUsers = async () => {
     if (!canSeeAll) return;
-    // Reutiliza view user_profiles
-    const { data, error } = await supabase
+    // Reutiliza view user_profiles — gestor fica restrito à própria empresa
+    let usersQuery = supabase
       .from('user_profiles')
       .select('id, full_name, role')
       .order('full_name', { ascending: true });
+    if (profile?.role !== 'admin' && profile?.company_id) {
+      usersQuery = usersQuery.eq('company_id', profile.company_id);
+    }
+    const { data, error } = await usersQuery;
     if (!error && Array.isArray(data)) {
       const grouped: Record<Role, UserOption[]> = { admin: [], gestor: [], corretor: [] };
       for (const u of data as any[]) {
@@ -146,6 +150,27 @@ export function RecentActivitiesCard() {
         return;
       }
 
+      // audit_logs não tem coluna company_id — escopo via atores da empresa (gestor)
+      let companyActorIds: string[] | null = null;
+      if (profile?.role !== 'admin' && profile?.company_id) {
+        const { data: companyUsers, error: companyUsersError } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('company_id', profile.company_id);
+        if (companyUsersError) {
+          console.error('Erro ao carregar usuários da empresa:', companyUsersError);
+          setLogs([]);
+          setLoading(false);
+          return;
+        }
+        companyActorIds = (companyUsers || []).map((u) => u.id);
+        if (companyActorIds.length === 0) {
+          setLogs([]);
+          setLoading(false);
+          return;
+        }
+      }
+
       // Primeiro, buscar os logs
       let query = supabase
         .from('audit_logs')
@@ -156,6 +181,8 @@ export function RecentActivitiesCard() {
       // Filtro por usuário quando selecionado
       if (userFilter !== 'all') {
         query = query.eq('actor_id', userFilter);
+      } else if (companyActorIds) {
+        query = query.in('actor_id', companyActorIds);
       }
       
       const { data: logsData, error: logsError } = await query;
@@ -214,12 +241,12 @@ export function RecentActivitiesCard() {
   useEffect(() => {
     loadUsers();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSeeAll]);
+  }, [canSeeAll, profile?.company_id, profile?.role]);
 
   useEffect(() => {
     loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, userFilter]);
+  }, [page, userFilter, profile?.company_id, profile?.role]);
 
   // Realtime
   useEffect(() => {

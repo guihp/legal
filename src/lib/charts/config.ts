@@ -26,6 +26,27 @@ export const tooltipSlotProps = {
 	},
 } as const;
 
+/** Constrain MUI ChartsTooltip so long series labels wrap instead of stretching the dashboard. */
+export const chartsTooltipSx = {
+	'& .MuiChartsTooltip-paper': {
+		maxWidth: 280,
+		backgroundColor: chartPalette.background,
+		border: `1px solid ${chartPalette.grid}`,
+		borderRadius: '12px',
+		boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.25)',
+		color: chartPalette.textPrimary,
+	},
+	'& .MuiChartsTooltip-table': {
+		maxWidth: 280,
+	},
+	'& .MuiChartsTooltip-table caption, & .MuiChartsTooltip-labelCell': {
+		whiteSpace: 'normal',
+		wordBreak: 'break-word',
+		overflowWrap: 'anywhere',
+		maxWidth: 220,
+	},
+} as const;
+
 // Tooltip personalizado para VGV
 export const vgvTooltipSlotProps = {
 	popper: {

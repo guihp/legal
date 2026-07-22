@@ -26,30 +26,7 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
     } catch (error) {
       console.error("❌ Erro ao buscar próximos compromissos:", error);
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      
-      // Usar dados mock em caso de erro
-      setEvents([
-        {
-          id: '1',
-          date: new Date(Date.now() + 2 * 60 * 60 * 1000), // Em 2 horas
-          client: "João Silva",
-          property: "Apartamento Centro",
-          address: "Rua das Flores, 123",
-          type: "Visita",
-          status: "Confirmado",
-          corretor: "Isis"
-        },
-        {
-          id: '2',
-          date: new Date(Date.now() + 24 * 60 * 60 * 1000), // Amanhã
-          client: "Maria Santos",
-          property: "Casa Jardim América", 
-          address: "Av. Principal, 456",
-          type: "Avaliação",
-          status: "Aguardando confirmação",
-          corretor: "Arthur"
-        }
-      ]);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -141,7 +118,7 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
         ) : error ? (
           <div className="text-center py-6">
             <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
-            <p className="text-red-400 text-sm mb-2">Erro ao carregar compromissos</p>
+            <p className="text-red-400 text-sm mb-2">Falha ao carregar</p>
             <Button
               variant="outline"
               size="sm"
@@ -154,7 +131,7 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
         ) : events.length === 0 ? (
           <div className="text-center py-8">
             <Calendar className="h-12 w-12 text-gray-500 mx-auto mb-3 opacity-50" />
-            <p className="text-gray-400 text-sm mb-2">Nenhum compromisso próximo</p>
+            <p className="text-gray-400 text-sm mb-2">Nenhum compromisso</p>
             <p className="text-gray-500 text-xs">Que tal agendar uma nova visita?</p>
           </div>
         ) : (

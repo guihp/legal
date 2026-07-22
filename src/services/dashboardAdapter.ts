@@ -15,15 +15,13 @@ import {
   getLastMonths,
   getCurrentMonth,
   getCurrentYear,
-  type ChartPoint,
-  type TimeBucket,
-  type BrokerStats,
-  type HeatmapData,
-  type AvailabilityStats,
+  type MetricsScope,
   type TimeGranularity,
   type DateRange
 } from './metrics';
 import { monthLabel } from '@/lib/charts/formatters';
+
+export type DashboardScope = MetricsScope;
 
 // Função para preencher períodos faltantes com dados zero
 function fillMissingPeriods(
@@ -47,11 +45,12 @@ function fillMissingPeriods(
       case 'month':
         periodKey = `${current.getFullYear()}-${(current.getMonth() + 1).toString().padStart(2, '0')}`;
         break;
-      case 'week':
+      case 'week': {
         const startOfWeek = new Date(current);
         startOfWeek.setDate(current.getDate() - current.getDay());
         periodKey = `${startOfWeek.getFullYear()}-W${startOfWeek.getMonth() + 1}-${startOfWeek.getDate()}`;
         break;
+      }
       case 'day':
         periodKey = current.toISOString().split('T')[0];
         break;
@@ -69,7 +68,6 @@ function fillMissingPeriods(
       });
     }
     
-    // Avançar para o próximo período
     switch (granularity) {
       case 'year':
         current.setFullYear(current.getFullYear() + 1);
@@ -93,23 +91,20 @@ function fillMissingPeriods(
 export type VgvPeriod = 'anual' | 'mensal' | 'semanal' | 'diario';
 export type TimeRange = 'total' | 'year' | 'month' | 'week' | 'day';
 
-// Mapeamento de períodos VGV para configurações do novo serviço
 function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGranularity } {
   const now = new Date();
   const currentYear = now.getFullYear();
   
   switch (period) {
     case 'anual': {
-      // 7 anos antes + ano atual + 2 anos posteriores (total de 10 anos)
-      // Exemplo: 2025 atual -> 2018 a 2027 (7 antes + atual + 2 depois = 10 anos)
       const fromYear = currentYear - 7;
       const toYear = currentYear + 2;
       
       const fromDate = new Date();
-      fromDate.setFullYear(fromYear, 0, 1); // 1º de janeiro do ano inicial
+      fromDate.setFullYear(fromYear, 0, 1);
       
       const toDate = new Date();
-      toDate.setFullYear(toYear, 11, 31); // 31 de dezembro do ano final
+      toDate.setFullYear(toYear, 11, 31);
       
       return {
         from: fromDate,
@@ -119,7 +114,6 @@ function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGran
     }
     
     case 'mensal': {
-      // Últimos 12 meses
       return {
         ...getLastMonths(12),
         granularity: 'month'
@@ -127,7 +121,6 @@ function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGran
     }
     
     case 'semanal': {
-      // Últimas 12 semanas
       const twelveWeeksAgo = new Date();
       twelveWeeksAgo.setDate(now.getDate() - (12 * 7));
       return {
@@ -138,7 +131,6 @@ function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGran
     }
     
     case 'diario': {
-      // Últimos 30 dias
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(now.getDate() - 30);
       return {
@@ -150,12 +142,11 @@ function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGran
   }
 }
 
-// Mapeamento de TimeRange para configurações do novo serviço
 function getTimeRangeConfig(timeRange: TimeRange): DateRange & { granularity: TimeGranularity } {
   switch (timeRange) {
     case 'total':
       return {
-        ...getLastMonths(24), // 2 anos
+        ...getLastMonths(24),
         granularity: 'month'
       };
     
@@ -172,7 +163,6 @@ function getTimeRangeConfig(timeRange: TimeRange): DateRange & { granularity: Ti
       };
     
     case 'week': {
-      // Últimas 12 semanas
       const twelveWeeksAgo = new Date();
       twelveWeeksAgo.setDate(new Date().getDate() - (12 * 7));
       return {
@@ -183,7 +173,6 @@ function getTimeRangeConfig(timeRange: TimeRange): DateRange & { granularity: Ti
     }
     
     case 'day': {
-      // Últimos 30 dias
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(new Date().getDate() - 30);
       return {
@@ -198,24 +187,18 @@ function getTimeRangeConfig(timeRange: TimeRange): DateRange & { granularity: Ti
 /**
  * Adapter para VGV - busca dados reais da tabela imoveisvivareal
  */
-export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: string; vgv: number; qtd: number }[]> {
+export async function fetchVgvByPeriod(
+  period: VgvPeriod,
+  scope: DashboardScope
+): Promise<{ month: string; vgv: number; qtd: number }[]> {
   try {
     const config = getVgvDateRange(period);
-    
-    console.log(`🎯 [fetchVgvByPeriod] Período: ${period}`);
-    console.log(`🎯 [fetchVgvByPeriod] Config:`, { 
-      from: config.from.toISOString(), 
-      to: config.to.toISOString(), 
-      granularity: config.granularity 
-    });
-    
-    // Importar supabase client
     const { supabase } = await import('../integrations/supabase/client');
     
-    // Buscar dados reais da tabela imoveisvivareal
     const { data, error } = await supabase
       .from('imoveisvivareal')
       .select('preco, created_at')
+      .eq('company_id', scope.companyId)
       .gte('created_at', config.from.toISOString())
       .lte('created_at', config.to.toISOString())
       .not('preco', 'is', null);
@@ -225,12 +208,6 @@ export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: stri
       return [];
     }
     
-    console.log(`🎯 [fetchVgvByPeriod] Dados retornados: ${data?.length || 0} registros`);
-    if (data && data.length > 0) {
-      console.log(`🎯 [fetchVgvByPeriod] Primeiro registro:`, data[0]);
-    }
-    
-    // Agrupar por período baseado na granularidade
     const grouped = new Map<string, { vgv: number; qtd: number }>();
     
     data?.forEach(item => {
@@ -242,11 +219,10 @@ export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: stri
       } else if (config.granularity === 'month') {
         key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
       } else if (config.granularity === 'week') {
-        // Calcular semana do ano usando ISO week
         const startOfWeek = new Date(date);
         startOfWeek.setDate(date.getDate() - date.getDay());
         key = `${startOfWeek.getFullYear()}-W${startOfWeek.getMonth() + 1}-${startOfWeek.getDate()}`;
-      } else { // day
+      } else {
         key = date.toISOString().split('T')[0];
       }
       
@@ -259,30 +235,13 @@ export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: stri
       current.qtd += 1;
     });
     
-    // Converter para formato esperado pelo gráfico
-    const result = Array.from(grouped.entries()).map(([period, data]) => ({
-      month: period,
-      vgv: data.vgv,
-      qtd: data.qtd
+    const result = Array.from(grouped.entries()).map(([periodKey, periodData]) => ({
+      month: periodKey,
+      vgv: periodData.vgv,
+      qtd: periodData.qtd
     })).sort((a, b) => a.month.localeCompare(b.month));
     
-    console.log(`🎯 [fetchVgvByPeriod] Resultado final:`, result);
-    
-    // Preencher períodos faltantes para melhor visualização do gráfico
-    if (result.length > 0) {
-      const filledResult = fillMissingPeriods(result, config.from, config.to, config.granularity);
-      console.log(`🎯 [fetchVgvByPeriod] Resultado preenchido:`, filledResult);
-      return filledResult;
-    }
-    
-    // Se não há dados, criar pelo menos alguns pontos vazios para o gráfico não ficar completamente vazio
-    if (result.length === 0) {
-      const emptyResult = fillMissingPeriods([], config.from, config.to, config.granularity);
-      console.log(`🎯 [fetchVgvByPeriod] Resultado vazio preenchido:`, emptyResult);
-      return emptyResult;
-    }
-    
-    return result;
+    return fillMissingPeriods(result, config.from, config.to, config.granularity);
     
   } catch (error) {
     console.error('Erro ao buscar VGV:', error);
@@ -290,51 +249,39 @@ export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: stri
   }
 }
 
-/**
- * Adapter para leads por canal (já compatível)
- */
-export async function fetchLeadsPorCanalTop8(): Promise<{ name: string; value: number }[]> {
+export async function fetchLeadsPorCanalTop8(scope: DashboardScope): Promise<{ name: string; value: number }[]> {
   try {
-    const data = await getLeadsByChannel(getLastMonths(12));
-    return data;
+    return await getLeadsByChannel(getLastMonths(12), scope);
   } catch (error) {
     console.error('Erro ao buscar leads por canal:', error);
     return [];
   }
 }
 
-/**
- * Adapter para distribuição por tipo (já compatível)
- */
-export async function fetchDistribuicaoPorTipo(): Promise<{ name: string; value: number }[]> {
+export async function fetchDistribuicaoPorTipo(scope: DashboardScope): Promise<{ name: string; value: number }[]> {
   try {
-    const data = await getPropertyTypeDist(getLastMonths(12));
-    return data;
+    return await getPropertyTypeDist(getLastMonths(12), scope);
   } catch (error) {
     console.error('Erro ao buscar distribuição por tipo:', error);
     return [];
   }
 }
 
-/**
- * Adapter para funil de leads (já compatível)
- */
-export async function fetchFunilLeads(): Promise<{ name: string; value: number }[]> {
+export async function fetchFunilLeads(scope: DashboardScope): Promise<{ name: string; value: number }[]> {
   try {
-    const data = await getLeadsFunnel(getLastMonths(12));
-    return data;
+    return await getLeadsFunnel(getLastMonths(12), scope);
   } catch (error) {
     console.error('Erro ao buscar funil de leads:', error);
     return [];
   }
 }
 
-/**
- * Adapter para leads por corretor
- */
-export async function fetchLeadsPorCorretor(): Promise<{ name: string; value: number }[]> {
+export async function fetchLeadsPorCorretor(scope: DashboardScope): Promise<{ name: string; value: number }[]> {
   try {
-    const data = await getLeadsByBroker(getLastMonths(12));
+    // Conta apenas leads com agendamento realizado (Visita Agendada+ / event_id)
+    const data = await getLeadsByBroker(getLastMonths(12), scope, {
+      onlyWithRealizedAppointments: true,
+    });
     return data.map(broker => ({
       name: broker.name,
       value: broker.totalLeads
@@ -345,12 +292,11 @@ export async function fetchLeadsPorCorretor(): Promise<{ name: string; value: nu
   }
 }
 
-/**
- * Adapter para leads sem corretor
- */
-export async function fetchLeadsSemCorretor(): Promise<number> {
+export async function fetchLeadsSemCorretor(scope: DashboardScope): Promise<number> {
   try {
-    const data = await getLeadsByBroker(getLastMonths(12));
+    const data = await getLeadsByBroker(getLastMonths(12), scope, {
+      onlyWithRealizedAppointments: true,
+    });
     const unassigned = data.find(broker => broker.id === 'unassigned');
     return unassigned?.totalLeads || 0;
   } catch (error) {
@@ -359,61 +305,49 @@ export async function fetchLeadsSemCorretor(): Promise<number> {
   }
 }
 
-/**
- * Adapter para leads por tempo
- */
-export async function fetchLeadsPorTempo(timeRange: TimeRange): Promise<{ month: string; count: number }[]> {
+export async function fetchLeadsPorTempo(
+  timeRange: TimeRange,
+  scope: DashboardScope
+): Promise<{ month: string; count: number }[]> {
   try {
-    console.log('🕐 [fetchLeadsPorTempo] Iniciando busca para timeRange:', timeRange);
     const config = getTimeRangeConfig(timeRange);
-    console.log('🕐 [fetchLeadsPorTempo] Configuração:', config);
+    const data = await getLeadsByPeriod(config, scope);
     
-    const data = await getLeadsByPeriod(config);
-    console.log('🕐 [fetchLeadsPorTempo] Dados recebidos:', data);
-    
-    const result = data.map(item => ({
+    return data.map(item => ({
       month: config.granularity === 'month' ? monthLabel(item.period) : item.period,
       count: item.value
     }));
-    
-    console.log('🕐 [fetchLeadsPorTempo] Resultado formatado:', result);
-    return result;
   } catch (error) {
     console.error('🕐 [fetchLeadsPorTempo] ERRO ao buscar leads por tempo:', error);
     return [];
   }
 }
 
-/**
- * Adapter para heatmap de conversas
- */
-export async function fetchHeatmapConversasPorCorretor(brokerId?: string): Promise<number[][]> {
+export async function fetchHeatmapConversasPorCorretor(
+  scope: DashboardScope,
+  brokerId?: string
+): Promise<number[][]> {
   try {
-    const data = await getConvoHeatmap(getLastMonths(1), brokerId);
+    const data = await getConvoHeatmap(getLastMonths(1), scope, brokerId);
     return data.grid;
   } catch (error) {
     console.error('Erro ao buscar heatmap de conversas:', error);
-    // Retorna matriz vazia 7x24
     return Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   }
 }
 
-/**
- * Adapter para corretores com conversas
- */
-export async function fetchCorretoresComConversas(): Promise<{ id: string; name: string }[]> {
+export async function fetchCorretoresComConversas(
+  scope: DashboardScope
+): Promise<{ id: string; name: string }[]> {
   try {
-    return await getAvailableBrokers();
+    return await getAvailableBrokers(scope);
   } catch (error) {
     console.error('Erro ao buscar corretores com conversas:', error);
     return [];
   }
 }
 
-/**
- * Adapter para taxa de ocupação
- */
-export async function fetchTaxaOcupacao(): Promise<{
+export async function fetchTaxaOcupacao(scope: DashboardScope): Promise<{
   ocupacao: number;
   total: number;
   disponiveis: number;
@@ -422,7 +356,7 @@ export async function fetchTaxaOcupacao(): Promise<{
   breakdown?: { status: string; total: number; percent: number }[]
 }> {
   try {
-    const data = await getAvailabilityRate();
+    const data = await getAvailabilityRate(scope);
     
     return {
       ocupacao: data.occupancyRate,
@@ -449,14 +383,14 @@ export async function fetchTaxaOcupacao(): Promise<{
   }
 }
 
-/**
- * Adapter para imóveis mais procurados
- */
-export async function fetchImoveisMaisProcurados(): Promise<{ id: string; name: string; value: number }[]> {
+export async function fetchImoveisMaisProcurados(
+  scope: DashboardScope
+): Promise<{ id: string; name: string; value: number }[]> {
   try {
-    const data = await getMostSearchedProperties(getLastMonths(12));
+    const data = await getMostSearchedProperties(getLastMonths(12), scope);
+    // name is already a short label (tipo · bairro/área); id mirrors it for legend keys
     return data.map(item => ({
-      id: item.name.replace('Imóvel ', ''), // Remove prefixo "Imóvel "
+      id: item.name,
       name: item.name,
       value: item.value
     }));
@@ -466,13 +400,10 @@ export async function fetchImoveisMaisProcurados(): Promise<{ id: string; name: 
   }
 }
 
-/**
- * Adapter para leads por corretor e estágio (função legada mantida para compatibilidade)
- */
-export async function fetchLeadsCorretorEstagio(): Promise<Map<string, Record<string, number>>> {
+export async function fetchLeadsCorretorEstagio(
+  _scope?: DashboardScope
+): Promise<Map<string, Record<string, number>>> {
   try {
-    // Esta função era usada para dados mais detalhados de estágios por corretor
-    // Por simplicidade, retorna Map vazio - pode ser implementada futuramente se necessário
     return new Map();
   } catch (error) {
     console.error('Erro ao buscar leads por corretor e estágio:', error);
@@ -480,9 +411,6 @@ export async function fetchLeadsCorretorEstagio(): Promise<Map<string, Record<st
   }
 }
 
-/**
- * Função helper para gerar fallback de dados temporais vazios
- */
 export function generateTemporalFallback(months: number = 6): { month: string; count: number }[] {
   const fallback = [];
   for (let i = months - 1; i >= 0; i--) {
@@ -497,7 +425,6 @@ export function generateTemporalFallback(months: number = 6): { month: string; c
   return fallback;
 }
 
-// Função legada mantida para compatibilidade - apenas placeholder
-export async function fetchHeatmapConversas(): Promise<number[][]> {
-  return fetchHeatmapConversasPorCorretor();
+export async function fetchHeatmapConversas(scope: DashboardScope): Promise<number[][]> {
+  return fetchHeatmapConversasPorCorretor(scope);
 }

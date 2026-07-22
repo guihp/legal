@@ -1,5 +1,28 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-22 — Dashboard: tooltip curto em Imóveis mais Procurados
+
+- Tooltip/legenda do gráfico “Imóveis mais Procurados” não dumpam mais a ficha técnica completa de `imovel_interesse`.
+- Helper `formatImovelInteresseLabel`: extrai Tipo · Bairro/Cidade/Área (max ~72 chars).
+- ChartsTooltip `trigger="item"` + `chartsTooltipSx` (max-width 280, wrap).
+
+## 2026-07-22 — Dashboard: agendamentos no gráfico de corretores + MoM rolling 30d
+
+- **Corretores por Agendamentos:** `getLeadsByBroker` conta só leads com agendamento realizado (stage Visita Agendada / Em Negociação / Documentação / Contrato / Fechamento, ou `event_id` no calendário). Série vermelha “Não atribuídos” usa o mesmo filtro.
+- **KPI MoM:** % passa de mês civil (MTD vs mês cheio) para janela rolling 30d vs 30d anteriores (leads, imóveis, disponíveis, VGV). Subtítulo: “vs. 30 dias anteriores”.
+- Diagnóstico Jastelo: −32,5% era 54 novos no mês atual vs 80 no mês anterior; rolling 30d = 76 vs 61 → **+24,6%**.
+
+## 2026-07-22 — Alerta email Resend ao corretor (visita agendada)
+
+- Helper compartilhado `supabase/functions/_shared/email.ts`: `sendEmail`, `sendWelcomeEmailWithResend`, `sendVisitBookedAlertToBroker` (envs `RESEND_*`; no-op se off / sem email).
+- `create-company-with-user` refatorado para usar o helper no welcome email.
+- `schedule-api`: alerta após `book_visit` (só com corretor atribuído) e após `assign_visit_broker`.
+- `google-calendar-api` `create_event` (Agenda CRM): alerta quando o calendário resolve corretor via plantão.
+- UX: hint em UserManagement (criar/editar) — “Este email recebe alertas de visitas agendadas.”
+- Evento documentado: `visit.booked.email_broker` em `docs/events.md`.
+- **Ops:** garantir secrets no Dashboard — `RESEND_ENABLED=true`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (domínio verificado), opcional `RESEND_API_BASE_URL` / `PUBLIC_APP_URL`.
+- **Deploy:** `schedule-api`, `google-calendar-api`, `create-company-with-user`.
+
 ## 2026-07-06 — Simulador Testar IA: sessão UUID + banco isolado + ingest n8n
 
 - Tabela `ai_test_messages` (separada de `mensagens`) com RLS gestor+ e realtime.

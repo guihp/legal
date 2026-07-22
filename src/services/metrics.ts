@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { formatImovelInteresseLabel } from "@/lib/charts/propertyLabel";
 
 // Types
 export interface ChartPoint {
@@ -41,6 +42,31 @@ export type TimeGranularity = 'day' | 'week' | 'month' | 'year';
 export interface DateRange {
   from: Date;
   to: Date;
+}
+
+/** Escopo multi-empresa para métricas do dashboard */
+export interface MetricsScope {
+  companyId: string;
+  userId?: string;
+  role?: string;
+}
+
+const EMPTY_AVAILABILITY: AvailabilityStats = {
+  total: 0,
+  available: 0,
+  unavailable: 0,
+  reform: 0,
+  occupancyRate: 0,
+  breakdown: []
+};
+
+const EMPTY_HEATMAP: HeatmapData = {
+  grid: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+  maxValue: 0
+};
+
+function isCorretorScope(scope: MetricsScope): boolean {
+  return scope.role === 'corretor' && Boolean(scope.userId);
 }
 
 // Channel normalization mapping
@@ -91,56 +117,73 @@ const STAGE_ORDER: Record<string, number> = {
 };
 
 /**
+ * Stages that mean the lead has a booked/realized visit appointment.
+ * Product Kanban: "Visita Agendada" + stages after the visit (excl. Visita Cancelada).
+ * Also treat any lead with calendar event_id as having an appointment.
+ */
+const REALIZED_APPOINTMENT_STAGES = new Set([
+  'visita agendada',
+  'em negociacao',
+  'documentacao',
+  'contrato',
+  'fechamento',
+]);
+
+function normalizeLeadStage(stage: string | null | undefined): string {
+  return (stage || '')
+    .trim()
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function hasRealizedAppointment(lead: {
+  stage?: string | null;
+  event_id?: string | null;
+}): boolean {
+  if (lead.event_id) return true;
+  return REALIZED_APPOINTMENT_STAGES.has(normalizeLeadStage(lead.stage));
+}
+
+/**
+ * Query base de leads no escopo da empresa (e do corretor quando aplicável).
+ */
+function leadsScopedQuery(select: string, options: DateRange, scope: MetricsScope) {
+  let query = supabase
+    .from('leads')
+    .select(select)
+    .eq('company_id', scope.companyId)
+    .gte('created_at', options.from.toISOString())
+    .lte('created_at', options.to.toISOString());
+
+  if (isCorretorScope(scope)) {
+    query = query.eq('id_corretor_responsavel', scope.userId!);
+  }
+
+  return query;
+}
+
+/**
  * Busca leads agrupados por canal de origem
  */
-export async function getLeadsByChannel(options: DateRange): Promise<ChartPoint[]> {
+export async function getLeadsByChannel(options: DateRange, scope: MetricsScope): Promise<ChartPoint[]> {
   try {
-    console.log('📊 [getLeadsByChannel] Executando RPC admin para bypass RLS...');
-    const { data, error } = await supabase
-      .rpc('admin_get_leads_by_period', {
-        start_date: options.from.toISOString(),
-        end_date: options.to.toISOString()
-      });
+    const { data, error } = await leadsScopedQuery('source', options, scope);
 
-    if (error) {
-      console.error('📊 [getLeadsByChannel] RPC admin falhou, usando fallback:', error);
-      // Fallback: query direta normal
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('leads')
-        .select('source')
-        .gte('created_at', options.from.toISOString())
-        .lte('created_at', options.to.toISOString());
-      
-      if (fallbackError) throw fallbackError;
-      
-      console.log('📊 [getLeadsByChannel] Fallback SUCCESS:', fallbackData?.length, 'leads');
-      // Processar dados de fallback
-      const sourceCounts = (fallbackData || []).reduce((acc, lead) => {
-        const normalizedSource = CHANNEL_MAPPING[lead.source?.toLowerCase()] || lead.source || 'Não informado';
-        acc[normalizedSource] = (acc[normalizedSource] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
+    if (error) throw error;
 
-      return Object.entries(sourceCounts)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8);
-    }
-
-    console.log('📊 [getLeadsByChannel] RPC SUCCESS:', data?.length, 'leads');
-
-    // Agrupar e contar por source
     const sourceCounts = (data || []).reduce((acc, lead) => {
       const normalizedSource = CHANNEL_MAPPING[lead.source?.toLowerCase()] || lead.source || 'Não informado';
       acc[normalizedSource] = (acc[normalizedSource] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-    // Converter para array e ordenar por valor
     return Object.entries(sourceCounts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 8); // Top 8 canais
+      .slice(0, 8);
       
   } catch (error) {
     console.error('Erro ao buscar leads por canal:', error);
@@ -152,27 +195,24 @@ export async function getLeadsByChannel(options: DateRange): Promise<ChartPoint[
  * Processa dados de leads por período
  */
 function processLeadsData(data: { created_at: string }[], granularity: TimeGranularity): TimeBucket[] {
-  console.log('📊 [processLeadsData] Processing', data?.length, 'records with granularity:', granularity);
-  
-  // Processar dados localmente com agrupamento temporal
   const buckets = new Map<string, number>();
   
-  (data || []).forEach((lead, index) => {
+  (data || []).forEach((lead) => {
     const date = new Date(lead.created_at);
     let periodKey: string;
     
     switch (granularity) {
       case 'day':
-        periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        periodKey = date.toISOString().split('T')[0];
         break;
-      case 'week':
+      case 'week': {
         const startOfWeek = new Date(date);
-        // Usar segunda-feira como início da semana
         const dayOfWeek = date.getDay();
         const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
         startOfWeek.setDate(date.getDate() + diff);
         periodKey = startOfWeek.toISOString().split('T')[0];
         break;
+      }
       case 'month':
         periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         break;
@@ -181,103 +221,35 @@ function processLeadsData(data: { created_at: string }[], granularity: TimeGranu
         break;
     }
     
-    // Log apenas os primeiros 3 leads para debug
-    if (index < 3) {
-      console.log(`📊 [processLeadsData] Lead ${index}: ${lead.created_at} → ${periodKey}`);
-    }
-    
     buckets.set(periodKey, (buckets.get(periodKey) || 0) + 1);
   });
 
-  // Converter para array ordenado
-  const result = Array.from(buckets.entries())
+  return Array.from(buckets.entries())
     .map(([period, value]) => ({ period, value }))
     .sort((a, b) => a.period.localeCompare(b.period));
-  
-  console.log('📊 [processLeadsData] Final result:', result);
-  return result;
 }
 
 /**
- * Busca leads agrupados por período temporal
+ * Busca leads agrupados por período temporal (query direta, sem RPC admin)
  */
-export async function getLeadsByPeriod(options: DateRange & { granularity: TimeGranularity }): Promise<TimeBucket[]> {
+export async function getLeadsByPeriod(
+  options: DateRange & { granularity: TimeGranularity },
+  scope: MetricsScope
+): Promise<TimeBucket[]> {
   try {
-    console.log('📊 [getLeadsByPeriod] Query params:', {
-      from: options.from.toISOString(),
-      to: options.to.toISOString(),
-      granularity: options.granularity
-    });
+    const { data, error } = await leadsScopedQuery('created_at', options, scope)
+      .order('created_at', { ascending: true });
 
-    // Debug: verificar autenticação
-    const { data: authUser, error: authError } = await supabase.auth.getUser();
-    console.log('🔐 [getLeadsByPeriod] Auth user:', authUser?.user?.id, authError);
-
-    // SOLUÇÃO: Query com SQL direto para bypass RLS completo
-    console.log('🔧 [getLeadsByPeriod] Executando SQL direto para bypass RLS...');
-    const { data, error } = await supabase
-      .rpc('admin_get_leads_by_period', {
-        start_date: options.from.toISOString(),
-        end_date: options.to.toISOString()
-      });
-    
     if (error) {
-      console.error('📊 [getLeadsByPeriod] RPC admin query failed:', error);
-      // Fallback: tentar query direta normal
-      console.log('🔧 [getLeadsByPeriod] Tentando query direta normal...');
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('leads')
-        .select('created_at')
-        .gte('created_at', options.from.toISOString())
-        .lte('created_at', options.to.toISOString())
-        .order('created_at', { ascending: true });
-      
-      if (fallbackError) {
-        console.error('📊 [getLeadsByPeriod] Fallback query também falhou:', fallbackError);
-        // Usar dados de exemplo como último recurso
-        console.log('🎯 [getLeadsByPeriod] USANDO DADOS DE EXEMPLO como último recurso');
-        const exampleData = [
-          { created_at: '2025-03-15T10:00:00Z' },
-          { created_at: '2025-04-10T14:30:00Z' },
-          { created_at: '2025-04-25T09:15:00Z' },
-          { created_at: '2025-05-05T16:45:00Z' },
-          { created_at: '2025-05-20T11:20:00Z' },
-          { created_at: '2025-06-12T08:30:00Z' },
-          { created_at: '2025-06-28T15:15:00Z' },
-          { created_at: '2025-07-08T12:45:00Z' },
-          { created_at: '2025-07-22T17:30:00Z' },
-          { created_at: '2025-08-03T09:00:00Z' },
-          { created_at: '2025-08-18T14:15:00Z' },
-          { created_at: '2025-08-25T11:45:00Z' }
-        ];
-        console.log('📊 [getLeadsByPeriod] Using example data:', exampleData.length, 'records');
-        return processLeadsData(exampleData, options.granularity);
-      }
-      
-      console.log('📊 [getLeadsByPeriod] Fallback query SUCCESS:', fallbackData?.length, 'records');
-      
-      if (fallbackData && fallbackData.length > 0) {
-        console.log('🎉 [getLeadsByPeriod] DADOS REAIS via fallback!', fallbackData.length, 'leads');
-        return processLeadsData(fallbackData, options.granularity);
-      }
-      
-      console.log('📊 [getLeadsByPeriod] Nenhum lead no período (fallback)');
+      console.error('📊 [getLeadsByPeriod] Query falhou:', error);
       return [];
     }
-    
-    console.log('📊 [getLeadsByPeriod] RPC admin query SUCCESS:', data?.length, 'records');
-    
-    // Se retornou dados via RPC, processar normalmente
-    if (data && data.length > 0) {
-      console.log('🎉 [getLeadsByPeriod] DADOS REAIS via RPC ADMIN!', data.length, 'leads');
-      // Converter dados RPC para formato esperado (usando lead_id em vez de id)
-      const formattedData = data.map(lead => ({ created_at: lead.created_at }));
-      return processLeadsData(formattedData, options.granularity);
+
+    if (!data || data.length === 0) {
+      return [];
     }
-    
-    // Se não há dados no período, isso é válido
-    console.log('📊 [getLeadsByPeriod] Nenhum lead encontrado no período via RPC');
-    return [];
+
+    return processLeadsData(data, options.granularity);
       
   } catch (error) {
     console.error('📊 [getLeadsByPeriod] Erro ao buscar leads por período:', error);
@@ -288,24 +260,18 @@ export async function getLeadsByPeriod(options: DateRange & { granularity: TimeG
 /**
  * Busca funil de estágios dos leads
  */
-export async function getLeadsFunnel(options: DateRange): Promise<ChartPoint[]> {
+export async function getLeadsFunnel(options: DateRange, scope: MetricsScope): Promise<ChartPoint[]> {
   try {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('stage')
-      .gte('created_at', options.from.toISOString())
-      .lte('created_at', options.to.toISOString());
+    const { data, error } = await leadsScopedQuery('stage', options, scope);
 
     if (error) throw error;
 
-    // Agrupar por estágio
     const stageCounts = (data || []).reduce((acc, lead) => {
       const stage = lead.stage || 'Não informado';
       acc[stage] = (acc[stage] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-    // Ordenar conforme fluxo do funil
     return Object.entries(stageCounts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => {
@@ -322,33 +288,43 @@ export async function getLeadsFunnel(options: DateRange): Promise<ChartPoint[]> 
 }
 
 /**
- * Busca leads agrupados por corretor responsável
+ * Busca leads agrupados por corretor responsável.
+ * By default counts only leads with agendamento realizado
+ * (stage Visita Agendada+ or linked calendar event_id).
  */
-export async function getLeadsByBroker(options: DateRange): Promise<BrokerStats[]> {
+export async function getLeadsByBroker(
+  options: DateRange,
+  scope: MetricsScope,
+  opts: { onlyWithRealizedAppointments?: boolean } = { onlyWithRealizedAppointments: true }
+): Promise<BrokerStats[]> {
   try {
-    const { data, error } = await supabase
-      .from('leads')
-      .select(`
+    const { data, error } = await leadsScopedQuery(
+      `
         id,
         id_corretor_responsavel,
         created_at,
+        stage,
+        event_id,
         user_profiles!leads_id_corretor_responsavel_fkey (
           id,
           full_name,
           email,
           role
         )
-      `)
-      .gte('created_at', options.from.toISOString())
-      .lte('created_at', options.to.toISOString());
+      `,
+      options,
+      scope
+    );
 
     if (error) throw error;
 
-    // Processar dados e agrupar por corretor
     const brokerStats = new Map<string, BrokerStats>();
     let unassignedCount = 0;
+    const onlyAppointments = opts.onlyWithRealizedAppointments !== false;
 
-    (data || []).forEach(lead => {
+    (data || []).forEach((lead: any) => {
+      if (onlyAppointments && !hasRealizedAppointment(lead)) return;
+
       if (!lead.id_corretor_responsavel) {
         unassignedCount++;
         return;
@@ -377,8 +353,7 @@ export async function getLeadsByBroker(options: DateRange): Promise<BrokerStats[
     const result = Array.from(brokerStats.values())
       .sort((a, b) => b.totalLeads - a.totalLeads);
 
-    // Adicionar estatística de leads não atribuídos se houver
-    if (unassignedCount > 0) {
+    if (unassignedCount > 0 && !isCorretorScope(scope)) {
       result.unshift({
         id: 'unassigned',
         name: 'Sem corretor',
@@ -398,17 +373,17 @@ export async function getLeadsByBroker(options: DateRange): Promise<BrokerStats[
 /**
  * Busca distribuição de imóveis por tipo
  */
-export async function getPropertyTypeDist(options: DateRange): Promise<ChartPoint[]> {
+export async function getPropertyTypeDist(options: DateRange, scope: MetricsScope): Promise<ChartPoint[]> {
   try {
     const { data, error } = await supabase
       .from('imoveisvivareal')
       .select('tipo_imovel')
+      .eq('company_id', scope.companyId)
       .gte('created_at', options.from.toISOString())
       .lte('created_at', options.to.toISOString());
 
     if (error) throw error;
 
-    // Agrupar e normalizar tipos
     const typeCounts = (data || []).reduce((acc, property) => {
       const normalizedType = normalizePropertyType(property.tipo_imovel);
       acc[normalizedType] = (acc[normalizedType] || 0) + 1;
@@ -426,55 +401,20 @@ export async function getPropertyTypeDist(options: DateRange): Promise<ChartPoin
 }
 
 /**
- * Busca taxa de disponibilidade dos imóveis
+ * Busca taxa de disponibilidade dos imóveis (sem simulação 70/20/10)
  */
-export async function getAvailabilityRate(): Promise<AvailabilityStats> {
+export async function getAvailabilityRate(scope: MetricsScope): Promise<AvailabilityStats> {
   try {
-    // Primeiro, verificar se a coluna disponibilidade existe
-    const { data, error } = await supabase
-      .from('imoveisvivareal')
-      .select('disponibilidade')
-      .limit(1);
-
-    // Se a coluna não existir, retornar dados simulados
-    if (error && error.code === '42703') {
-      console.warn('Coluna disponibilidade não encontrada, usando dados simulados');
-      
-      const { data: totalData, error: totalError } = await supabase
-        .from('imoveisvivareal')
-        .select('id', { count: 'exact', head: true });
-
-      if (totalError) throw totalError;
-
-      const total = totalData || 0;
-      const available = Math.floor(total * 0.7);
-      const unavailable = Math.floor(total * 0.2);
-      const reform = total - available - unavailable;
-
-      return {
-        total,
-        available,
-        unavailable,
-        reform,
-        occupancyRate: total > 0 ? ((total - available) / total) * 100 : 0,
-        breakdown: [
-          { status: 'Disponível', count: available, percentage: total > 0 ? (available / total) * 100 : 0 },
-          { status: 'Indisponível', count: unavailable, percentage: total > 0 ? (unavailable / total) * 100 : 0 },
-          { status: 'Em reforma', count: reform, percentage: total > 0 ? (reform / total) * 100 : 0 }
-        ]
-      };
-    }
-
-    if (error) throw error;
-
-    // Buscar dados reais
     const { data: fullData, error: fullError } = await supabase
       .from('imoveisvivareal')
-      .select('disponibilidade');
+      .select('disponibilidade')
+      .eq('company_id', scope.companyId);
 
-    if (fullError) throw fullError;
+    if (fullError) {
+      console.error('Erro ao buscar disponibilidade:', fullError);
+      return EMPTY_AVAILABILITY;
+    }
 
-    // Agrupar por disponibilidade
     const statusCounts = (fullData || []).reduce((acc, property) => {
       const status = property.disponibilidade || 'disponivel';
       acc[status] = (acc[status] || 0) + 1;
@@ -505,215 +445,110 @@ export async function getAvailabilityRate(): Promise<AvailabilityStats> {
       
   } catch (error) {
     console.error('Erro ao buscar taxa de disponibilidade:', error);
-    return {
-      total: 0,
-      available: 0,
-      unavailable: 0,
-      reform: 0,
-      occupancyRate: 0,
-      breakdown: []
-    };
+    return EMPTY_AVAILABILITY;
   }
 }
 
 /**
  * Busca dados para heatmap de conversas dos corretores
  */
-export async function getConvoHeatmap(options: DateRange, brokerId?: string): Promise<HeatmapData> {
+export async function getConvoHeatmap(
+  options: DateRange,
+  scope: MetricsScope,
+  brokerId?: string
+): Promise<HeatmapData> {
   try {
-    console.log('🚀 Iniciando busca de heatmap de conversas...', { options, brokerId });
-
-    // Fallback: tabela consolidada crm_whatsapp_messages
-    console.log('📞 Buscando dados de conversas em crm_whatsapp_messages');
-    return await getHeatmapFromCrmWhatsappMessages(options, brokerId);
-    
+    return await getHeatmapFromMensagens(options, scope, brokerId);
   } catch (error) {
     console.error('❌ Erro ao buscar dados de heatmap:', error);
-    return {
-      grid: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
-      maxValue: 0
-    };
+    return EMPTY_HEATMAP;
   }
 }
 
-async function getHeatmapFromWhatsAppMessages(options: DateRange, brokerId?: string): Promise<HeatmapData> {
+async function getHeatmapFromMensagens(
+  options: DateRange,
+  scope: MetricsScope,
+  brokerFilter?: string
+): Promise<HeatmapData> {
   try {
+    let instanceFilter: string | null = null;
+    const effectiveBrokerId =
+      brokerFilter || (isCorretorScope(scope) ? scope.userId : undefined);
+
+    if (effectiveBrokerId) {
+      const { data: userData, error: userError } = await supabase
+        .from('user_profiles')
+        .select('full_name, chat_instance, company_id')
+        .eq('id', effectiveBrokerId)
+        .eq('company_id', scope.companyId)
+        .single();
+
+      if (userError || !userData?.chat_instance) {
+        return EMPTY_HEATMAP;
+      }
+
+      instanceFilter = userData.chat_instance;
+    }
+
     let query = supabase
-      .from('whatsapp_messages')
-      .select(`
-        timestamp,
-        from_me,
-        whatsapp_instances!inner (
-          user_id,
-          user_profiles!inner (
-            id,
-            role
-          )
-        )
-      `)
-      .eq('from_me', true)
-      .gte('timestamp', options.from.toISOString())
-      .lte('timestamp', options.to.toISOString());
+      .from('mensagens')
+      .select('created_at, instancia')
+      .eq('company_id', scope.companyId)
+      .gte('created_at', options.from.toISOString())
+      .lte('created_at', options.to.toISOString());
+
+    if (instanceFilter) {
+      query = query.eq('instancia', instanceFilter);
+    }
 
     const { data, error } = await query;
 
     if (error) throw error;
 
-    // Filtrar apenas corretores
-    const filteredData = (data || []).filter(msg => {
-      const profile = msg.whatsapp_instances?.user_profiles;
-      if (!profile || profile.role !== 'corretor') return false;
-      
-      if (brokerId && profile.id !== brokerId) return false;
-      
-      return true;
-    });
-
-    return processHeatmapData(filteredData.map(msg => ({ timestamp: msg.timestamp })));
-    
+    return processHeatmapData((data || []).map(msg => ({ timestamp: msg.created_at })));
   } catch (error) {
-    console.error('Erro ao buscar dados do WhatsApp:', error);
-    throw error;
-  }
-}
-
-async function getHeatmapFromCrmWhatsappMessages(options: DateRange, brokerFilter?: string): Promise<HeatmapData> {
-  try {
-    console.log('🔍 Buscando dados do heatmap em crm_whatsapp_messages...', { 
-      from: options.from.toISOString(), 
-      to: options.to.toISOString(),
-      brokerFilter 
-    });
-
-    // Mapeamento de instâncias para usuários baseado em chat_instance
-    let instanceFilter = null;
-    if (brokerFilter) {
-      // Buscar a instância do usuário selecionado
-      const { data: userData, error: userError } = await supabase
-        .from('user_profiles')
-        .select('full_name, chat_instance')
-        .eq('id', brokerFilter)
-        .single();
-
-      if (userError) {
-        console.error('❌ Erro ao buscar instância do usuário:', userError);
-        // Se não conseguir mapear, retorna dados vazios
-        return {
-          grid: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
-          maxValue: 0
-        };
-      }
-
-      if (userData?.chat_instance) {
-        instanceFilter = userData.chat_instance;
-        console.log(`👤 Usuário ${userData.full_name} (${brokerFilter}) mapeado para instância: ${instanceFilter}`);
-      } else {
-        console.log(`⚠️ Usuário ${userData.full_name} (${brokerFilter}) não tem instância configurada - retornando dados vazios`);
-        // Se não tem instância, retorna dados vazios
-        return {
-          grid: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
-          maxValue: 0
-        };
-      }
-    }
-
-    let query = supabase
-      .from('crm_whatsapp_messages')
-      .select('data, instancia')
-      .gte('data', options.from.toISOString())
-      .lte('data', options.to.toISOString());
-
-    // Aplicar filtro de instância se especificado
-    if (instanceFilter) {
-      query = query.eq('instancia', instanceFilter);
-      console.log(`🔒 Filtrando por instância: ${instanceFilter}`);
-    } else {
-      console.log('🌐 Buscando todas as instâncias (sem filtro de corretor)');
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('❌ Erro na query crm_whatsapp_messages:', error);
-      throw error;
-    }
-
-    console.log('📊 Dados encontrados para heatmap:', data?.length || 0, 'mensagens');
-    if (data && data.length > 0) {
-      console.log('📅 Amostra de dados:', data.slice(0, 3));
-      console.log('📋 Instâncias encontradas:', [...new Set(data.map(d => d.instancia))]);
-    }
-
-    const result = processHeatmapData((data || []).map(msg => ({ timestamp: msg.data })));
-    console.log('🔥 Resultado do heatmap:', result);
-
-    return result;
-    
-  } catch (error) {
-    console.error('Erro ao buscar dados do crm_whatsapp_messages:', error);
+    console.error('Erro ao buscar dados de mensagens (heatmap):', error);
     throw error;
   }
 }
 
 function processHeatmapData(data: Array<{ timestamp: string }>): HeatmapData {
-  console.log('🔧 Processando dados para heatmap...', data.length, 'registros');
-  
-  // Matriz 7x24: [dia][hora] onde dia 0=Segunda, 6=Domingo
   const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   
-  data.forEach((item, index) => {
+  data.forEach((item) => {
     const date = new Date(item.timestamp);
-    
-    // Converter dia da semana: Postgres 0=Dom...6=Sáb → UI 0=Seg...6=Dom
     const dow = date.getDay();
     const uiDay = dow === 0 ? 6 : dow - 1;
-    
     const hour = date.getHours();
-    
-    if (index < 3) {
-      console.log(`📅 Item ${index}:`, {
-        timestamp: item.timestamp,
-        date: date.toISOString(),
-        dow,
-        uiDay,
-        hour,
-        dayName: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dow]
-      });
-    }
     
     if (uiDay >= 0 && uiDay < 7 && hour >= 0 && hour < 24) {
       grid[uiDay][hour]++;
-      if (index < 3) {
-        console.log(`✅ Incrementando grid[${uiDay}][${hour}] = ${grid[uiDay][hour]}`);
-      }
-    } else {
-      console.warn(`⚠️ Índices inválidos: day=${uiDay}, hour=${hour}`);
     }
   });
   
   const maxValue = Math.max(...grid.flat());
-  
-  console.log('📊 Grid processado:', {
-    totalEntries: data.length,
-    maxValue,
-    nonZeroCells: grid.flat().filter(v => v > 0).length
-  });
-  
   return { grid, maxValue };
 }
 
 /**
  * Busca imóveis mais procurados
  */
-export async function getMostSearchedProperties(options: DateRange): Promise<ChartPoint[]> {
+export async function getMostSearchedProperties(options: DateRange, scope: MetricsScope): Promise<ChartPoint[]> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('leads')
       .select('imovel_interesse')
+      .eq('company_id', scope.companyId)
       .not('imovel_interesse', 'is', null)
       .neq('imovel_interesse', '')
       .gte('created_at', options.from.toISOString())
       .lte('created_at', options.to.toISOString());
+
+    if (isCorretorScope(scope)) {
+      query = query.eq('id_corretor_responsavel', scope.userId!);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -725,13 +560,15 @@ export async function getMostSearchedProperties(options: DateRange): Promise<Cha
       return acc;
     }, {} as Record<string, number>);
 
+    // Short labels only — imovel_interesse is often a full ficha técnica dump
     return Object.entries(propertyCounts)
-      .map(([name, value]) => ({ 
-        name: `Imóvel ${name}`, 
-        value 
-      }))
+      .map(([raw, value]) => ({ raw, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
+      .slice(0, 6)
+      .map(({ raw, value }) => ({
+        name: formatImovelInteresseLabel(raw),
+        value,
+      }));
       
   } catch (error) {
     console.error('Erro ao buscar imóveis mais procurados:', error);
@@ -740,13 +577,14 @@ export async function getMostSearchedProperties(options: DateRange): Promise<Cha
 }
 
 /**
- * Busca corretores disponíveis com instâncias configuradas
+ * Busca corretores disponíveis com instâncias configuradas (da empresa)
  */
-export async function getAvailableBrokers(): Promise<Array<{ id: string; name: string }>> {
+export async function getAvailableBrokers(scope: MetricsScope): Promise<Array<{ id: string; name: string }>> {
   try {
     const { data, error } = await supabase
       .from('user_profiles')
       .select('id, full_name, email, chat_instance')
+      .eq('company_id', scope.companyId)
       .eq('role', 'corretor')
       .eq('is_active', true)
       .not('chat_instance', 'is', null)
@@ -755,14 +593,15 @@ export async function getAvailableBrokers(): Promise<Array<{ id: string; name: s
 
     if (error) throw error;
 
-    const brokersWithInstances = (data || []).map(broker => ({
+    let brokers = data || [];
+    if (isCorretorScope(scope)) {
+      brokers = brokers.filter(b => b.id === scope.userId);
+    }
+
+    return brokers.map(broker => ({
       id: broker.id,
       name: `${broker.full_name || broker.email || 'Corretor sem nome'} (${broker.chat_instance})`
     }));
-
-    console.log('👥 Corretores com instâncias configuradas:', brokersWithInstances);
-    
-    return brokersWithInstances;
     
   } catch (error) {
     console.error('Erro ao buscar corretores disponíveis:', error);

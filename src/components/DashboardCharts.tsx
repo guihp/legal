@@ -8,12 +8,11 @@ import { PieChart } from '@mui/x-charts/PieChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
-import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
+import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, chartsTooltipSx, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   fetchDistribuicaoPorTipo, 
   fetchFunilLeads, 
-  fetchHeatmapConversas, 
   fetchCorretoresComConversas, 
   fetchHeatmapConversasPorCorretor, 
   fetchLeadsPorCanalTop8, 
@@ -24,9 +23,9 @@ import {
   fetchTaxaOcupacao, 
   fetchImoveisMaisProcurados, 
   fetchVgvByPeriod,
-  generateTemporalFallback,
   type VgvPeriod, 
-  type TimeRange 
+  type TimeRange,
+  type DashboardScope,
 } from '@/services/dashboardAdapter';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -39,8 +38,19 @@ import {
   ChartSkeletonVariants
 } from '@/components/chart';
 import { useRealtimeDashboard } from '@/hooks/useRealtimeMetrics';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 export const DashboardCharts: React.FC = () => {
+	const { profile } = useUserProfile();
+	const metricsScope = React.useMemo<DashboardScope | null>(() => {
+		if (!profile?.company_id) return null;
+		return {
+			companyId: profile.company_id,
+			userId: profile.id,
+			role: profile.role,
+		};
+	}, [profile?.company_id, profile?.id, profile?.role]);
+
 	const [vgv, setVgv] = React.useState<{ month: string; vgv: number; qtd: number }[]>([]);
 	const [canal, setCanal] = React.useState<{ name: string; value: number }[]>([]);
 	const [tipos, setTipos] = React.useState<{ name: string; value: number }[]>([]);
@@ -86,35 +96,35 @@ export const DashboardCharts: React.FC = () => {
 
 	// Função para buscar dados do heatmap com filtro de corretor
 	const refetchHeatmapData = React.useCallback(() => {
-		fetchHeatmapConversasPorCorretor(selectedBrokerForHeat || undefined)
+		if (!metricsScope) {
+			setHeat([]);
+			return Promise.resolve();
+		}
+		return fetchHeatmapConversasPorCorretor(metricsScope, selectedBrokerForHeat || undefined)
 			.then(setHeat)
 			.catch(() => setHeat([]));
-	}, [selectedBrokerForHeat]);
+	}, [selectedBrokerForHeat, metricsScope]);
 
 	// Função centralizada para recarregar todos os dados
 	const refetchAllData = React.useCallback(async () => {
+		if (!metricsScope) return;
+
 		setIsLoading(true);
 		setErrors({});
 
 		try {
 			const fetchTasks = [
-				{ key: 'vgv', task: () => fetchVgvByPeriod(vgvPeriod).then(setVgv) },
-				{ key: 'canal', task: () => fetchLeadsPorCanalTop8().then(setCanal) },
-				{ key: 'tipos', task: () => fetchDistribuicaoPorTipo().then(setTipos) },
-				{ key: 'funil', task: () => fetchFunilLeads().then(setFunil) },
-				{ key: 'brokers', task: () => fetchLeadsPorCorretor().then(setBrokers) },
-				{ key: 'brokersStages', task: () => fetchLeadsCorretorEstagio().then(setBrokersStages) },
-				{ key: 'unassigned', task: () => fetchLeadsSemCorretor().then(setUnassignedLeads) },
-				{ key: 'leadsTempo', task: () => {
-					console.log('🎯 [DashboardCharts] Executando fetchLeadsPorTempo para timeRange:', timeRange);
-					return fetchLeadsPorTempo(timeRange).then((result) => {
-						console.log('🎯 [DashboardCharts] setLeadsTempo recebeu:', result);
-						setLeadsTempo(result);
-					});
-				}},
-				{ key: 'gauge', task: () => fetchTaxaOcupacao().then(setGauge) },
-				{ key: 'imoveis', task: () => fetchImoveisMaisProcurados().then(setImoveisProcurados) },
-				{ key: 'availableBrokers', task: () => fetchCorretoresComConversas().then(setAvailableBrokers) }
+				{ key: 'vgv', task: () => fetchVgvByPeriod(vgvPeriod, metricsScope).then(setVgv) },
+				{ key: 'canal', task: () => fetchLeadsPorCanalTop8(metricsScope).then(setCanal) },
+				{ key: 'tipos', task: () => fetchDistribuicaoPorTipo(metricsScope).then(setTipos) },
+				{ key: 'funil', task: () => fetchFunilLeads(metricsScope).then(setFunil) },
+				{ key: 'brokers', task: () => fetchLeadsPorCorretor(metricsScope).then(setBrokers) },
+				{ key: 'brokersStages', task: () => fetchLeadsCorretorEstagio(metricsScope).then(setBrokersStages) },
+				{ key: 'unassigned', task: () => fetchLeadsSemCorretor(metricsScope).then(setUnassignedLeads) },
+				{ key: 'leadsTempo', task: () => fetchLeadsPorTempo(timeRange, metricsScope).then(setLeadsTempo) },
+				{ key: 'gauge', task: () => fetchTaxaOcupacao(metricsScope).then(setGauge) },
+				{ key: 'imoveis', task: () => fetchImoveisMaisProcurados(metricsScope).then(setImoveisProcurados) },
+				{ key: 'availableBrokers', task: () => fetchCorretoresComConversas(metricsScope).then(setAvailableBrokers) }
 			];
 
 			const results = await Promise.allSettled(
@@ -160,16 +170,19 @@ export const DashboardCharts: React.FC = () => {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [vgvPeriod, timeRange, refetchHeatmapData]);
+	}, [vgvPeriod, timeRange, refetchHeatmapData, metricsScope]);
 
 	// Hook de realtime para atualizações automáticas
 	const { isConnected: isRealtimeConnected, lastUpdate, updateCount } = useRealtimeDashboard(refetchAllData);
 
 	// Effect para atualizar VGV quando período muda
 	React.useEffect(() => {
-		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
-	}, [vgvPeriod]);
-
+		if (!metricsScope) {
+			setVgv([]);
+			return;
+		}
+		fetchVgvByPeriod(vgvPeriod, metricsScope).then(setVgv).catch(() => setVgv([]));
+	}, [vgvPeriod, metricsScope]);
 	// Dados temporais agora são carregados via refetchAllData
 
 	// Função para buscar informações básicas do imóvel no hover
@@ -189,12 +202,17 @@ export const DashboardCharts: React.FC = () => {
 				y: rect.top
 			});
 
-			// Buscar informações básicas do imóvel pelo listing_id
-			const { data: property, error } = await supabase
+			// Buscar informações básicas do imóvel pelo listing_id (escopo da empresa)
+			let propertyQuery = supabase
 				.from('imoveisvivareal')
 				.select('id, listing_id, tipo_imovel, descricao, preco, tamanho_m2, quartos, banheiros, garagem, endereco, cidade, bairro')
-				.eq('listing_id', imovelId) // O imovel_interesse contém o listing_id
-				.single();
+				.eq('listing_id', imovelId); // O imovel_interesse contém o listing_id
+
+			if (metricsScope?.companyId) {
+				propertyQuery = propertyQuery.eq('company_id', metricsScope.companyId);
+			}
+
+			const { data: property, error } = await propertyQuery.single();
 			
 			if (error) {
 				console.error('Erro ao buscar informações do imóvel:', error);
@@ -257,17 +275,8 @@ export const DashboardCharts: React.FC = () => {
 		return result;
 	}, [vgv, vgvPeriod]);
 	
-	// Dados de fallback para o gráfico temporal se não houver dados
-	const tempoData = React.useMemo(() => {
-		console.log('🎨 [DashboardCharts] tempoData useMemo - leadsTempo:', leadsTempo);
-		if (leadsTempo.length > 0) {
-			console.log('🎨 [DashboardCharts] Usando dados reais, count:', leadsTempo.length);
-			return leadsTempo;
-		}
-		// Usar helper function para gerar fallback
-		console.log('🎨 [DashboardCharts] Usando fallback temporal');
-		return generateTemporalFallback(6);
-	}, [leadsTempo]);
+	// Série temporal real — sem fallback inventado (empty state via renderChartWithStates)
+	const tempoData = React.useMemo(() => leadsTempo, [leadsTempo]);
 
 	// Processar dados dos corretores para gráfico de barras
 	const brokersChartData = React.useMemo(() => {
@@ -293,7 +302,7 @@ export const DashboardCharts: React.FC = () => {
 				chartData.push({
 					name: 'Nenhum corretor',
 					value: unassignedLeads,
-					tooltip: `${unassignedLeads} lead${unassignedLeads !== 1 ? 's' : ''} não atribuído${unassignedLeads !== 1 ? 's' : ''}`,
+					tooltip: `${unassignedLeads} agendamento${unassignedLeads !== 1 ? 's' : ''} não atribuído${unassignedLeads !== 1 ? 's' : ''}`,
 					isUnassigned: true
 				});
 			}
@@ -673,13 +682,13 @@ export const DashboardCharts: React.FC = () => {
 								imoveisProcurados,
 								() => (
 							<div className="flex flex-col h-full min-w-0">
-								{/* Gráfico de barras horizontais — eixo Y usa #1..#n porque imovel_interesse pode ser texto longo */}
+								{/* Barras horizontais: eixo Y = #1..#n; label/tooltip = rótulo curto (sem ficha técnica) */}
 								<div className="flex-1 min-w-0 overflow-hidden">
 									<ChartContainer
 										xAxis={[{ 
 											scaleType: 'linear', 
 											position: 'bottom', 
-											valueFormatter: (v: number) => `${Number(v||0)} leads`,
+											valueFormatter: (v: number) => `${Number(v||0)}`,
 											tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
 										}]}
 										yAxis={[{ 
@@ -697,12 +706,18 @@ export const DashboardCharts: React.FC = () => {
 											const colors = [
 												'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', '#22d3ee'
 											];
+											const shortLabel = `#${i + 1} ${imovel.name}`;
 											return {
 												type: 'bar' as const,
 												data: imoveisProcurados.map((_, j) => (j === i ? imovel.value : 0)),
-												label: imovel.name,
+												label: shortLabel,
 												color: colors[i % colors.length],
-												layout: 'horizontal' as const
+												layout: 'horizontal' as const,
+												valueFormatter: (v: number | null) => {
+													const n = Number(v || 0);
+													if (!n) return '';
+													return `${n} menç${n === 1 ? 'ão' : 'ões'}`;
+												},
 											};
 										})}
 										height={180}
@@ -715,30 +730,30 @@ export const DashboardCharts: React.FC = () => {
 									>
 										<BarPlot />
 										<ChartsAxis />
-										<ChartsTooltip />
+										<ChartsTooltip trigger="item" sx={chartsTooltipSx} />
 									</ChartContainer>
 								</div>
 								
-								{/* Legenda clicável */}
+								{/* Legenda — rótulo curto (#n Tipo · bairro/área), nunca a ficha completa */}
 								<div className="mt-4 flex flex-wrap gap-2 justify-center max-w-full">
 									{imoveisProcurados.map((imovel, i) => {
 										const colors = [
 											'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', '#22d3ee'
 										];
+										const legendLabel = `#${i + 1} ${imovel.name}`;
 										return (
 											<div
 												key={`procurado-${i}`}
 												onMouseEnter={(e) => handlePropertyHover(imovel.id, e)}
 												onMouseLeave={handlePropertyHoverExit}
-												className="flex max-w-full min-w-0 items-center gap-2 px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors text-xs cursor-pointer"
+												className="flex max-w-[220px] min-w-0 items-center gap-2 px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors text-xs cursor-pointer"
 											>
 												<div 
 													className="w-3 h-3 shrink-0 rounded-full"
 													style={{ backgroundColor: colors[i % colors.length] }}
 												></div>
-												<span className="text-gray-200 min-w-0 shrink truncate" title={imovel.id}>
-													<span className="text-gray-400 mr-1">#{i + 1}</span>
-													{imovel.id}
+												<span className="text-gray-200 min-w-0 shrink truncate" title={legendLabel}>
+													{legendLabel}
 												</span>
 											</div>
 										);
@@ -1073,7 +1088,7 @@ export const DashboardCharts: React.FC = () => {
 						{/* Gráfico de corretores por leads */}
 						<div className="flex-1 flex flex-col">
 							<div className="flex items-center justify-between mb-3">
-								<h4 className="text-lg font-semibold text-gray-300">Corretores por Leads</h4>
+								<h4 className="text-lg font-semibold text-gray-300">Corretores por Agendamentos</h4>
 								<button 
 									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
 									className="text-sm text-blue-400 hover:text-blue-300 transition-colors px-3 py-1.5 rounded hover:bg-blue-900/20"
@@ -1142,7 +1157,7 @@ export const DashboardCharts: React.FC = () => {
 												yAxis={[{ 
 													scaleType: 'linear', 
 													position: 'left',
-													label: 'Qtd. Leads',
+													label: 'Qtd. Agendamentos',
 													valueFormatter: numberValueFormatter,
 													tickLabelStyle: { 
 														fill: chartPalette.textSecondary, 
@@ -1179,7 +1194,7 @@ export const DashboardCharts: React.FC = () => {
 									<div className="mt-3 pt-3 border-t border-gray-700/50">
 										<div className="text-center text-sm text-gray-400">
 											{selectedBrokers.size === 0 
-												? `Eixo X: Quantidade de corretores • Eixo Y: Leads por grupo • Vermelho: Não atribuídos`
+												? `Só leads com agendamento (Visita Agendada+) • Vermelho: Não atribuídos`
 												: `Comparativo: ${selectedBrokers.size} corretor${selectedBrokers.size !== 1 ? 'es' : ''} selecionado${selectedBrokers.size !== 1 ? 's' : ''}`
 											}
 										</div>
@@ -1219,7 +1234,7 @@ export const DashboardCharts: React.FC = () => {
 						<div className="flex mb-4">
 							<div className="w-16"></div> {/* Espaço para labels de hora */}
 							<div className="grid grid-cols-7 gap-2 flex-1">
-							{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
+							{['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((day, i) => (
 									<div key={i} className="text-center text-sm font-semibold text-gray-300 py-2">
 									{day}
 								</div>
@@ -1268,7 +1283,7 @@ export const DashboardCharts: React.FC = () => {
 										return (
 											<div 
 													key={`${dayIndex}-${hour}`}
-													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} conversa${value !== 1 ? 's' : ''}`}
+													title={`${['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} conversa${value !== 1 ? 's' : ''}`}
 													className="h-6 w-full rounded-md transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
 													style={{ 
 														backgroundColor: bgColor,
