@@ -290,13 +290,17 @@ serve(async (req) => {
         const pTom = getSPParts(tom);
         const dowTom = new Date(`${pTom.year}-${pTom.month}-${pTom.day}T12:00:00-03:00`).getDay(); 
         ctrl = isWknd(dowTom) ? "segunda-feira" : "dia_util";
-      } else if (isWknd(dowReq)) ctrl = "segunda-feira";
+      // Pedido explícito de sáb/dom: usar o próprio dia (plantão decide se há brokers).
+      // Não redirecionar fim de semana para nextBizDays.
+      } else if (isWknd(dowReq)) ctrl = "dia_especificado";
 
       // ---- BUSCA ABERTA ----
       if (tipoBusca === "aberta") {
         const targetDates: Date[] = ctrl === "segunda-feira"
           ? nextBizDays(dt, 3)
-          : [ctrl === "hoje" ? dt : (nextBizDays(addDays(dt, -1), 1)[0] || dt)];
+          : ctrl === "hoje" || ctrl === "dia_especificado"
+            ? [dt]
+            : [nextBizDays(addDays(dt, -1), 1)[0] || dt];
 
         const blocos: string[] = [];
         const allSlotsText: string[] = [];

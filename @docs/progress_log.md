@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-24 — schedule-api: fim de semana explícito + plantão Jastelo
+
+- **Código:** busca aberta com data sáb/dom explícita usa `ctrl = "dia_especificado"` e `targetDates = [dt]` (não redireciona para `nextBizDays`). Mantém `ctrl === "segunda-feira"` para “hoje ≥16h / amanhã é fim de semana”.
+- **Dados:** `oncall_schedules` Jastelo (`jasteloempreendimentos@gmail.com`) — `sat_works` 09:00–17:00, `sun_works` 11:30–17:00.
+- **Deploy:** `schedule-api` v32 em `bfcssdogttmqeujgmxdf`.
+- **Nota:** `texto_disponibilidade` para `dia_especificado` segue o ramo `blocos[0]` (dia único).
+
 ## 2026-07-22 — Dashboard: tooltip curto em Imóveis mais Procurados
 
 - Tooltip/legenda do gráfico “Imóveis mais Procurados” não dumpam mais a ficha técnica completa de `imovel_interesse`.
