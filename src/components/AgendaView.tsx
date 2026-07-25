@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { invokeEdge } from "@/integrations/supabase/invoke";
 import { toast } from "sonner";
+import { resolveAgendaEventCorretor } from "@/lib/agendaCorretor";
 
 interface AgendaEvent {
   id: number | string;
@@ -24,6 +25,15 @@ interface AgendaEvent {
   calendarId?: string; // ID do Google Calendar associado ao evento
   channel?: string; // Canal de origem do agendamento (WhatsApp, Instagram, Facebook, etc)
 }
+
+type AgendaCalendarOption = {
+  id: string;
+  full_name: string;
+  accessRole?: string;
+  canWrite?: boolean;
+  brokerName?: string | null;
+  _assigned_user_id?: string | null;
+};
 
 const UNKNOWN_CLIENT = 'Cliente não informado';
 
@@ -68,7 +78,7 @@ export function AgendaView() {
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [selectedAgenda, setSelectedAgenda] = useState<string>("Todos"); // ID do calendário selecionado ou 'Todos'
   const [selectedAgendaName, setSelectedAgendaName] = useState<string>("Todos os calendários");
-  const [corretores, setCorretores] = useState<{ id: string; full_name: string; accessRole?: string; canWrite?: boolean }[]>([]);
+  const [corretores, setCorretores] = useState<AgendaCalendarOption[]>([]);
   const [loadingCorretores, setLoadingCorretores] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const fetchInFlightRef = useRef(false);
@@ -140,7 +150,7 @@ export function AgendaView() {
   };
 
   // Função para carregar calendários (mesma fonte do Plantão > Calendários)
-  const loadCorretores = async (): Promise<{ id: string; full_name: string; accessRole?: string; canWrite?: boolean }[]> => {
+  const loadCorretores = async (): Promise<AgendaCalendarOption[]> => {
     try {
       setLoadingCorretores(true);
       console.log('🔍 Carregando calendários da Agenda (Plantão > Calendários)...');
@@ -168,11 +178,12 @@ export function AgendaView() {
       setIsConnected(true);
       setConnectedGoogleEmail(edgeData?.google_email || null);
 
-      const normalized = list.map((item: any) => ({
+      const normalized: AgendaCalendarOption[] = list.map((item: any) => ({
         id: item?.id ?? "",
         full_name: item?.name ?? "Sem nome",
         accessRole: item?.accessRole || "",
         canWrite: ["owner", "writer"].includes(String(item?.accessRole || "").toLowerCase()),
+        brokerName: null,
         _assigned_user_id: null,
       }));
 
@@ -184,28 +195,47 @@ export function AgendaView() {
       let finalAndRel = normalized;
 
       if (companyId) {
-        // Buscar vínculos no banco (para casos onde precisamos verificar vínculos)
+        // Buscar vínculos no banco (corretor atribuído ao calendário)
         const { data: schedules } = await supabase
           .from('oncall_schedules')
-          .select('calendar_id, assigned_user_id')
+          .select('calendar_id, assigned_user_id, assigned_user:assigned_user_id(full_name)')
           .eq('company_id', companyId);
+
+        const brokerByCalendar = new Map<string, { userId: string | null; name: string | null }>();
+        for (const s of schedules || []) {
+          const calId = String((s as any).calendar_id || "");
+          if (!calId) continue;
+          const profile = (s as any).assigned_user;
+          const name = String(profile?.full_name || "").trim() || null;
+          brokerByCalendar.set(calId, {
+            userId: (s as any).assigned_user_id || null,
+            name,
+          });
+        }
+
+        for (const cal of normalized) {
+          const link = brokerByCalendar.get(cal.id);
+          if (!link) continue;
+          cal._assigned_user_id = link.userId;
+          if (link.name) {
+            cal.brokerName = link.name;
+            // Badge/lista: preferir nome do corretor vinculado ao nome genérico do calendário
+            cal.full_name = link.name;
+          }
+        }
 
         if (userRole === 'corretor') {
           // Corretor: apenas as vinculadas a ele
-          // Verificar se assigned_user_id vem do N8N (novo formato)
-          // Também verificar no banco (para compatibilidade com calendários antigos)
           const myIds = schedules
             ?.filter(s => s.assigned_user_id === user?.id)
             .map(s => s.calendar_id) || [];
           
-          // Combinar ambos: calendários do N8N com assigned_user_id OU do banco
           finalAndRel = normalized.filter(c => 
             c._assigned_user_id === user?.id || myIds.includes(c.id)
           );
           console.log(`🔐 Corretor: ${finalAndRel.length} calendários permitidos.`);
         } else {
           // Gestor/Admin: TODOS os calendários que vêm do N8N
-          // O N8N já filtra por company_id, então todos são da empresa correta
           finalAndRel = normalized;
           console.log(`🔐 Gestor/Admin: ${finalAndRel.length} calendários permitidos (todos da empresa via N8N).`);
         }
@@ -648,63 +678,16 @@ export function AgendaView() {
           // 6. Extrair localização
           const location = event.location || 'Local não informado';
 
-          // 7. Extrair corretor do evento (prioridade para displayName)
-          let corretor = 'Não informado';
-
-          // 1ª prioridade: Verificar displayName no creator
-          if (event.creator?.displayName) {
-            const displayName = event.creator.displayName.toLowerCase();
-            if (displayName.includes('isis')) corretor = 'Isis';
-            else if (displayName.includes('arthur')) corretor = 'Arthur';
-            else corretor = event.creator.displayName; // Usar o nome como está se não for Isis/Arthur
-          }
-
-          // 2ª prioridade: Verificar displayName no organizer
-          if (corretor === 'Não informado' && event.organizer?.displayName) {
-            const displayName = event.organizer.displayName.toLowerCase();
-            if (displayName.includes('isis')) corretor = 'Isis';
-            else if (displayName.includes('arthur')) corretor = 'Arthur';
-            else corretor = event.organizer.displayName; // Usar o nome como está se não for Isis/Arthur
-          }
-
-          // 3ª prioridade: Tentar extrair do email do creator/organizer
-          if (corretor === 'Não informado' && event.creator?.email) {
-            const email = event.creator.email.toLowerCase();
-            if (email.includes('isis')) corretor = 'Isis';
-            else if (email.includes('arthur')) corretor = 'Arthur';
-          }
-
-          // 4ª prioridade: Tentar extrair do email do organizer
-          if (corretor === 'Não informado' && event.organizer?.email) {
-            const email = event.organizer.email.toLowerCase();
-            if (email.includes('isis')) corretor = 'Isis';
-            else if (email.includes('arthur')) corretor = 'Arthur';
-          }
-
-          // 5ª prioridade: Tentar na description
-          if (corretor === 'Não informado') {
-            const descLower = description.toLowerCase();
-            if (descLower.includes('isis')) corretor = 'Isis';
-            else if (descLower.includes('arthur')) corretor = 'Arthur';
-          }
-
-          // 6ª prioridade: Se ainda não identificou e não está filtrando por agenda específica,
-          // usar o nome do corretor vinculado ao calendário selecionado como fallback (não o ID)
-          if (corretor === 'Não informado' && selectedAgenda !== 'Todos') {
-            const found = corretores.find(c => c.id === selectedAgenda);
-            corretor = found?.full_name || selectedAgendaName || 'Corretor';
-          }
-
-          // Calendar ID do evento (preferir campo do payload; senão inferir por seleção/nomes)
-          let calendarId: string | undefined = event.calendarId || event.calendar_id || event.organizer?.id || event.creator?.id || event.calendar?.id;
-          if (!calendarId) {
-            if (selectedAgenda !== 'Todos') {
-              calendarId = selectedAgenda;
-            } else if (corretor && corretores.length > 0 && corretor !== 'Não informado') {
-              const match = corretores.find(c => (c.full_name || '').toLowerCase().includes(corretor.toLowerCase()));
-              if (match) calendarId = match.id;
-            }
-          }
+          // 7. Corretor: calendarId (Todos) / broker_name / descrição — sem hardcode Isis/Arthur
+          const calendarId: string | undefined =
+            event.calendarId || event.calendar_id || event.organizer?.id || event.creator?.id || event.calendar?.id;
+          const corretor = resolveAgendaEventCorretor({
+            event,
+            description,
+            selectedAgenda,
+            selectedAgendaName,
+            calendars: corretores,
+          });
 
           const processedEvent = {
             id: event.id || `event_${index + 1}`,
@@ -715,7 +698,7 @@ export function AgendaView() {
             type: eventType,
             status: attendeeStatus,
             corretor: corretor,
-            calendarId,
+            calendarId: calendarId || (selectedAgenda !== 'Todos' ? selectedAgenda : undefined),
             channel: eventChannel || undefined
           };
 
@@ -781,35 +764,21 @@ export function AgendaView() {
             clientName = getEventContactFallback(event);
           }
 
-          // Extrair corretor (prioridade para displayName)
-          let corretor = 'Não informado';
-          if (event.creator?.displayName) {
-            const displayName = event.creator.displayName.toLowerCase();
-            if (displayName.includes('isis')) corretor = 'Isis';
-            else if (displayName.includes('arthur')) corretor = 'Arthur';
-            else corretor = event.creator.displayName;
-          } else if (event.creator?.email) {
-            const email = event.creator.email.toLowerCase();
-            if (email.includes('isis')) corretor = 'Isis';
-            else if (email.includes('arthur')) corretor = 'Arthur';
-          }
-
-          // Fallback: se não identificado e filtrando agenda específica, usar o nome do corretor da agenda
-          if (corretor === 'Não informado' && selectedAgenda !== 'Todos') {
-            const found = corretores.find(c => c.id === selectedAgenda);
-            corretor = found?.full_name || selectedAgendaName || 'Corretor';
-          }
-
-          // Calendar ID (mesma estratégia de inferência)
-          let calendarId: string | undefined = (event as any).calendarId || (event as any).calendar_id || (event as any).organizer?.id || (event as any).creator?.id || (event as any).calendar?.id;
-          if (!calendarId) {
-            if (selectedAgenda !== 'Todos') {
-              calendarId = selectedAgenda;
-            } else if (corretor && corretores.length > 0 && corretor !== 'Não informado') {
-              const match = corretores.find(c => (c.full_name || '').toLowerCase().includes(corretor.toLowerCase()));
-              if (match) calendarId = match.id;
-            }
-          }
+          // Corretor via calendarId / broker_name / descrição
+          const calendarId: string | undefined =
+            (event as any).calendarId ||
+            (event as any).calendar_id ||
+            (event as any).organizer?.id ||
+            (event as any).creator?.id ||
+            (event as any).calendar?.id ||
+            (selectedAgenda !== 'Todos' ? selectedAgenda : undefined);
+          const corretor = resolveAgendaEventCorretor({
+            event,
+            description: event.description || '',
+            selectedAgenda,
+            selectedAgendaName,
+            calendars: corretores,
+          });
 
           return {
             id: event.id || `event_${index + 1}`,
@@ -1337,29 +1306,29 @@ export function AgendaView() {
   const stats = getEventStats();
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8 min-w-0">
       {/* Header Modernizado */}
-      <div className="bg-gradient-to-r from-blue-600/15 to-emerald-600/25 rounded-xl p-6 border border-emerald-500/25">
-        <div className="flex justify-between items-start">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="bg-emerald-500/15 p-2 rounded-lg">
-                <Calendar className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+      <div className="bg-gradient-to-r from-blue-600/15 to-emerald-600/25 rounded-xl p-4 sm:p-6 border border-emerald-500/25">
+        <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-start">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+              <div className="bg-emerald-500/15 p-2 rounded-lg shrink-0">
+                <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h1 className="text-3xl font-bold text-foreground">
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
                 Agenda Inteligente
               </h1>
               {loading && (
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-blue-500"></div>
               )}
             </div>
 
-            <p className="text-muted-foreground mb-4">
+            <p className="text-muted-foreground mb-3 sm:mb-4 text-sm sm:text-base">
               Gerencie seus agendamentos e compromissos de forma inteligente
             </p>
 
             {/* Status da conexão */}
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
               <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${isConnected ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'
                 }`}>
                 <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-orange-400'
@@ -1373,16 +1342,16 @@ export function AgendaView() {
                 </span>
               )}
               {isConnected && connectedGoogleEmail && (
-                <span className="text-emerald-400">
+                <span className="text-emerald-400 break-all sm:break-normal">
                   Google: {connectedGoogleEmail}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col xs:flex-row sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
             <Button
               onClick={() => setIsAddEventModalOpen(true)}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center gap-2 px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto"
             >
               <Plus className="h-5 w-5" />
               Novo Evento
@@ -1391,7 +1360,7 @@ export function AgendaView() {
               <Button
                 onClick={handleDisconnectGoogle}
                 variant="outline"
-                className="border-red-500/30 text-red-300 hover:bg-red-500/10"
+                className="border-red-500/30 text-red-300 hover:bg-red-500/10 w-full sm:w-auto"
                 disabled={connectingGoogle}
               >
                 <Link2Off className="h-4 w-4 mr-2" />
@@ -1401,7 +1370,7 @@ export function AgendaView() {
               <Button
                 onClick={handleConnectGoogle}
                 variant="outline"
-                className="border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                className="border-blue-500/30 text-blue-300 hover:bg-blue-500/10 w-full sm:w-auto"
                 disabled={connectingGoogle}
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4 mr-2" aria-hidden="true">
@@ -1418,89 +1387,89 @@ export function AgendaView() {
       </div>
 
       {/* Dashboard de Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-500/20 p-2 rounded-lg">
-              <span className="text-2xl">📅</span>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
+        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 rounded-xl p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-blue-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
+              <span className="text-xl sm:text-2xl">📅</span>
             </div>
-            <div>
-              <p className="text-blue-600 dark:text-blue-400 text-sm font-medium">Hoje</p>
-              <p className="text-2xl font-bold text-foreground">{stats.today}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-green-500/20 p-2 rounded-lg">
-              <span className="text-2xl">📊</span>
-            </div>
-            <div>
-              <p className="text-green-700 dark:text-green-400 text-sm font-medium">Esta Semana</p>
-              <p className="text-2xl font-bold text-foreground">{stats.thisWeek}</p>
+            <div className="min-w-0">
+              <p className="text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-medium truncate">Hoje</p>
+              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.today}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-purple-500/20 p-2 rounded-lg">
-              <span className="text-2xl">🗓️</span>
+        <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/20 rounded-xl p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-green-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
+              <span className="text-xl sm:text-2xl">📊</span>
             </div>
-            <div>
-              <p className="text-purple-700 dark:text-purple-400 text-sm font-medium">Este Mês</p>
-              <p className="text-2xl font-bold text-foreground">{stats.thisMonth}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-emerald-500/20 p-2 rounded-lg">
-              <span className="text-2xl">✅</span>
-            </div>
-            <div>
-              <p className="text-emerald-700 dark:text-emerald-400 text-sm font-medium">Confirmados</p>
-              <p className="text-2xl font-bold text-foreground">{stats.confirmed}</p>
+            <div className="min-w-0">
+              <p className="text-green-700 dark:text-green-400 text-xs sm:text-sm font-medium truncate">Esta Semana</p>
+              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.thisWeek}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border border-orange-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-orange-500/20 p-2 rounded-lg">
-              <span className="text-2xl">🎯</span>
+        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-xl p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-purple-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
+              <span className="text-xl sm:text-2xl">🗓️</span>
             </div>
-            <div>
-              <p className="text-orange-700 dark:text-orange-400 text-sm font-medium">Total</p>
-              <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+            <div className="min-w-0">
+              <p className="text-purple-700 dark:text-purple-400 text-xs sm:text-sm font-medium truncate">Este Mês</p>
+              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.thisMonth}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-emerald-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
+              <span className="text-xl sm:text-2xl">✅</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm font-medium truncate">Confirmados</p>
+              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.confirmed}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border border-orange-500/20 rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-orange-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
+              <span className="text-xl sm:text-2xl">🎯</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-orange-700 dark:text-orange-400 text-xs sm:text-sm font-medium truncate">Total</p>
+              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.total}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Filtros Modernizados */}
-      <div className="bg-card rounded-xl p-6 border border-border">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <span className="text-2xl">🎛️</span>
-            Filtros da Agenda
+      <div className="bg-card rounded-xl p-4 sm:p-6 border border-border min-w-0">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <h3 className="text-base sm:text-xl font-semibold text-foreground flex items-center gap-2 min-w-0">
+            <span className="text-xl sm:text-2xl shrink-0">🎛️</span>
+            <span className="truncate">Filtros da Agenda</span>
           </h3>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => void handleRefreshAgenda()}
             disabled={loading || loadingCorretores}
-            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 shrink-0"
           >
             🔄 Atualizar
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
           {/* Seletor de Calendário (desabilitado para corretor) */}
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0">
             <label className="text-sm font-medium text-muted-foreground">Corretor</label>
             <Select value={selectedAgenda} disabled={profile?.role === 'corretor'} onValueChange={(val) => {
               setSelectedAgenda(val);
@@ -1554,15 +1523,15 @@ export function AgendaView() {
           </div>
 
           {/* Indicador visual */}
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0">
             <label className="text-sm font-medium text-muted-foreground">Status</label>
-            <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
-              <div className={`w-3 h-3 rounded-full animate-pulse ${selectedAgenda === 'Todos' ? 'bg-blue-500' : 'bg-green-500'
+            <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border min-w-0">
+              <div className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${selectedAgenda === 'Todos' ? 'bg-blue-500' : 'bg-green-500'
                 }`}></div>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground truncate">
                 {selectedAgenda === 'Todos'
-                  ? `Visualizando todos os calendários (${events.length} eventos)`
-                  : `Calendário: ${selectedAgendaName} (${events.length} eventos)`
+                  ? `Todos os calendários (${events.length} eventos)`
+                  : `${selectedAgendaName} (${events.length} eventos)`
                 }
               </span>
             </div>

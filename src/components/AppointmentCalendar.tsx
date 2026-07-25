@@ -185,6 +185,7 @@ export function AppointmentCalendar({
   ];
 
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const dayNamesShort = ["D", "S", "T", "Q", "Q", "S", "S"];
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -598,10 +599,10 @@ export function AppointmentCalendar({
   const selectedAppointments = getAppointmentsForDate(selectedDate);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 min-w-0">
       {/* Calendário Modernizado */}
-      <Card className="lg:col-span-2 bg-card border-border shadow-lg">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6 border-b border-border">
+      <Card className="xl:col-span-2 min-w-0 overflow-hidden bg-card border-border shadow-lg">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0 pb-4 sm:pb-6 border-b border-border px-3 sm:px-6 pt-4 sm:pt-6">
           <CardTitle className="text-foreground flex items-center gap-3">
             <div className="bg-blue-500/20 p-2 rounded-lg">
               <Calendar className="h-6 w-6 text-blue-400" />
@@ -644,23 +645,24 @@ export function AppointmentCalendar({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-2 sm:p-4 md:p-6">
           {/* Header dos dias da semana modernizado */}
-          <div className="grid grid-cols-7 gap-2 mb-6">
-            {dayNames.map(day => (
-              <div key={day} className="p-3 text-center bg-muted/40 rounded-lg border border-border">
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{day}</span>
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1 md:gap-2 mb-3 sm:mb-6">
+            {dayNames.map((day, i) => (
+              <div key={day} className="p-1.5 sm:p-3 text-center bg-muted/40 rounded-lg border border-border">
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide sm:hidden">{dayNamesShort[i]}</span>
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide hidden sm:inline">{day}</span>
               </div>
             ))}
           </div>
 
           {/* Grade de dias modernizada */}
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1 md:gap-2">
             {days.map((day, index) => {
               // Se for célula vazia, renderizar apenas um espaço vazio elegante
               if (day.isEmpty || !day.date) {
                 return (
-                  <div key={index} className="h-16 bg-muted/20 rounded-lg border border-border"></div>
+                  <div key={index} className="h-11 sm:h-14 md:h-16 bg-muted/20 rounded-lg border border-border"></div>
                 );
               }
 
@@ -680,7 +682,7 @@ export function AppointmentCalendar({
                     }
                   }}
                   className={`
-                    group relative p-3 h-16 text-sm rounded-xl transition-all duration-300 transform hover:scale-105
+                    group relative p-1 sm:p-2 md:p-3 h-11 sm:h-14 md:h-16 text-xs sm:text-sm rounded-xl transition-all duration-300 transform md:hover:scale-[1.03]
                     border-2 shadow-sm hover:shadow-lg
                     ${isSelected 
                       ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400 shadow-blue-500/25 hover:shadow-blue-500/40' 
@@ -696,7 +698,7 @@ export function AppointmentCalendar({
                 >
                   {/* Número do dia */}
                   <div className="flex flex-col items-center justify-center h-full">
-                    <span className={`text-lg font-semibold mb-1 ${
+                    <span className={`text-base sm:text-lg font-semibold mb-0.5 sm:mb-1 ${
                       isSelected ? 'text-white' :
                       isToday ? 'text-foreground dark:text-white' :
                       isPastDate ? 'text-muted-foreground' : 'text-foreground'
@@ -708,7 +710,7 @@ export function AppointmentCalendar({
                     {hasApts && (
                       <div className="flex flex-col items-center gap-1">
                         {/* Contador de eventos */}
-                        <div className={`flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ${
+                        <div className={`flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 rounded-full text-[10px] sm:text-xs font-bold ${
                           isSelected 
                             ? 'bg-white text-blue-600' 
                             : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white'
@@ -718,7 +720,7 @@ export function AppointmentCalendar({
                         
                         {/* Indicadores por corretor quando "Todos" está selecionado */}
                         {selectedAgenda === "Todos" && dayAppointments.length > 0 && uniqueCorretoresSorted.length > 0 && (
-                          <div className="flex gap-0.5">
+                          <div className="hidden sm:flex gap-0.5">
                             {uniqueCorretoresSorted.map((corretor) => {
                               const corretorCount = dayAppointments.filter(
                                 (apt) => (apt.corretor || '').trim() === corretor
@@ -743,9 +745,6 @@ export function AppointmentCalendar({
                   {isToday && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse shadow-lg"></div>
                   )}
-
-                  {/* Efeito de hover */}
-                  <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                   
                   {/* Borda de seleção animada */}
                   {isSelected && (
@@ -786,15 +785,15 @@ export function AppointmentCalendar({
       </Card>
 
       {/* Lista de Agendamentos do Dia Modernizada */}
-      <Card className="bg-card border-border shadow-lg">
-        <CardHeader className="border-b border-border pb-4">
-          <CardTitle className="text-foreground flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-purple-500/20 p-2 rounded-lg">
+      <Card className="min-w-0 overflow-hidden bg-card border-border shadow-lg">
+        <CardHeader className="border-b border-border pb-4 px-3 sm:px-6 pt-4 sm:pt-6">
+          <CardTitle className="text-foreground flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="bg-purple-500/20 p-2 rounded-lg shrink-0">
                 <Clock className="h-6 w-6 text-purple-400" />
               </div>
-              <div className="flex flex-col">
-                <span className="text-xl font-semibold">
+              <div className="flex flex-col min-w-0">
+                <span className="text-xl font-semibold break-words">
                   {selectedDate.toLocaleDateString('pt-BR', { 
                     day: '2-digit', 
                     month: 'long',
@@ -807,7 +806,7 @@ export function AppointmentCalendar({
               </div>
             </div>
             {selectedAppointments.length > 0 && (
-              <div className="flex flex-col items-end gap-1">
+              <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
                 <span className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-full text-sm font-semibold border border-blue-500/30">
                   {selectedAppointments.length} evento{selectedAppointments.length !== 1 ? 's' : ''}
                 </span>
@@ -818,7 +817,7 @@ export function AppointmentCalendar({
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="p-3 sm:p-6 space-y-3">
           {selectedAppointments.length > 0 ? (
             <>
               <div className="mb-4 pb-2 border-b border-border">
@@ -832,7 +831,7 @@ export function AppointmentCalendar({
                 .map(appointment => (
                 <div
                   key={appointment.id}
-                  className="group relative p-5 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 hover:border-border transition-all duration-300 shadow-sm hover:shadow-md"
+                  className="group relative p-3 sm:p-5 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 hover:border-border transition-all duration-300 shadow-sm hover:shadow-md"
                 >
                   {/* Linha vertical colorida à esquerda com gradiente */}
                   <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${
@@ -849,8 +848,8 @@ export function AppointmentCalendar({
                   }`}></div>
                   
                   {/* Header do evento com horário, tipo e corretor */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       {/* Horário */}
                       <div className="flex items-center gap-2 bg-background px-3 py-2 rounded-lg border border-border">
                         <Clock className="h-4 w-4 text-blue-500" />
@@ -872,7 +871,9 @@ export function AppointmentCalendar({
                     </div>
                     
                     {/* Corretor - sempre no canto direito quando "Todos" estiver selecionado */}
-                    {selectedAgenda === "Todos" && appointment.corretor && (
+                    {selectedAgenda === "Todos" &&
+                      appointment.corretor &&
+                      appointment.corretor !== "Não informado" && (
                       <div className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 dark:bg-gray-500/25 dark:text-gray-200 dark:border-gray-400/50 dark:hover:bg-gray-500/35">
                         <span className="text-lg">👤</span>
                         <span className="font-bold tracking-wide">{appointment.corretor}</span>
@@ -882,9 +883,9 @@ export function AppointmentCalendar({
                    
                   {/* Nome do cliente */}
                   <div className="mb-3">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-emerald-400" />
-                      <span className="text-foreground font-medium text-lg">{appointment.client}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <User className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <span className="text-foreground font-medium text-base sm:text-lg break-words min-w-0">{appointment.client}</span>
                       {/* Badge do canal de origem */}
                       {(appointment as any).channel && (
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -920,9 +921,9 @@ export function AppointmentCalendar({
                   </div>
                    
                   {/* Status e Ações */}
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-wrap justify-between items-center gap-2">
                     {/* Botões de Ação */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {/* Botão de Alterar Status */}
                       <Button
                         variant="outline"
@@ -969,7 +970,7 @@ export function AppointmentCalendar({
 
                     {/* Status - Apenas ícone com tooltip */}
                     <div 
-                      className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-semibold ${getStatusColor(appointment.status)} border ${
+                      className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-xl font-semibold ${getStatusColor(appointment.status)} border ${
                         appointment.status === 'Confirmado' ? 'border-green-400/30' :
                         appointment.status === 'Aguardando confirmação' ? 'border-yellow-400/30' :
                         appointment.status === 'Cancelado' ? 'border-red-400/30' :

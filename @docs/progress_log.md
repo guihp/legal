@@ -1,5 +1,16 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-25 — Agenda: responsividade mobile
+
+- Header/stats/filtros empilham em telas estreitas; padding do `main` reduzido (`p-3` → `md:p-6`).
+- Grade do calendário: células menores, dias abreviados no mobile, sem scale agressivo.
+- Cards de compromisso: header/ações com wrap; layout 1 col até `xl`.
+
+## 2026-07-25 — Agenda: badge do corretor em “Todos”
+
+- Causa: com filtro **Todos**, o nome vinha de heuristics Isis/Arthur; sem match → “Não informado”. O `calendarId` do evento não era usado.
+- Fix: `resolveAgendaEventCorretor` (broker_name → calendarId/oncall → descrição → creator). `loadCorretores` enriquece com `assigned_user.full_name`. Badge some se ainda for “Não informado”.
+
 ## 2026-07-25 — Chat vídeo: MIME vazio, ffmpeg retry, sem falso-MP4
 
 - **Causa:** (1) `ffmpegLoadPromise` envenenava após 1 falha de CDN; (2) MOV/WebM ≤16 MB eram só renomeados pra `.mp4` sem transcode; (3) `file.type === ""` rejeitava anexo; (4) upload sem Content-Type → Storage `octet-stream`.

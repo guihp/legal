@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { invokeEdge } from "@/integrations/supabase/invoke";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveAgendaEventCorretor } from "@/lib/agendaCorretor";
 
 // Tipagem compartilhada com AgendaView
 export interface AgendaEvent {
@@ -76,21 +77,6 @@ function normalizeStatus(googleStatus: string | undefined): string {
 	}
 }
 
-function inferCorretor(event: any, fallbackAgenda?: string): string {
-	let corretor = "Não informado";
-	const sum = (event?.summary || "") as string;
-	const desc = (event?.description || "") as string;
-	const organizer = (event?.organizer?.displayName || "") as string;
-	const all = `${sum} ${desc} ${organizer}`.toLowerCase();
-
-	if (all.includes("isis")) corretor = "Isis";
-	else if (all.includes("arthur")) corretor = "Arthur";
-	else if (fallbackAgenda && fallbackAgenda !== "Todos") corretor = fallbackAgenda;
-
-	return corretor;
-}
-
-// Converte um item do Google Calendar no nosso modelo de AgendaEvent
 function mapWebhookItemToAgendaEvent(event: any, index: number, selectedAgenda?: string): AgendaEvent | null {
 	const date = parseGoogleDate(event);
 	if (!date) return null;
@@ -117,7 +103,11 @@ function mapWebhookItemToAgendaEvent(event: any, index: number, selectedAgenda?:
 		client = summary.substring(dashIdx + 3).trim() || client;
 	}
 
-	const corretor = inferCorretor(event, selectedAgenda);
+	const corretor = resolveAgendaEventCorretor({
+		event,
+		selectedAgenda: selectedAgenda || "Todos",
+		calendars: [],
+	});
 
 	return {
 		id: event?.id || `event_${index + 1}`,
