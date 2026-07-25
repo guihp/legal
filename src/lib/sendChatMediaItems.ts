@@ -1,4 +1,5 @@
 import type { ChatMediaItemType } from "@/lib/chatMediaFiles";
+import { contentTypeForChatUpload } from "@/lib/chatMediaKind";
 import {
   dbMensageTypeFromChatType,
   formatConteudoMediaForDb,
@@ -32,7 +33,7 @@ export async function uploadAndBuildChatMediaItems(
       return {
         url: uploadedUrl,
         tipo: item.type,
-        mime_type: item.file.type,
+        mime_type: contentTypeForChatUpload(item.file, item.type),
         nome: item.file.name,
         caption: item.caption || "",
       };

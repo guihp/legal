@@ -474,6 +474,7 @@ export function ConversasViewInstagram() {
           body: JSON.stringify({
             session_id: conversation.sessionId,
             instancia,
+            company_id: profile?.company_id || '',
             user_email: profile?.email || '',
             role: profile?.role || '',
           }),
@@ -491,7 +492,7 @@ export function ConversasViewInstagram() {
         setSummaryModal({ isOpen: true, data: { error: true } });
       }
     },
-    [profile?.email, profile?.role, resolveIgInstancia]
+    [profile?.company_id, profile?.email, profile?.role, resolveIgInstancia]
   );
 
   const handleFollowUp = useCallback(
@@ -504,6 +505,7 @@ export function ConversasViewInstagram() {
           body: JSON.stringify({
             session_id: conversation.sessionId,
             instancia,
+            company_id: profile?.company_id || '',
             user_email: profile?.email || '',
             role: profile?.role || '',
           }),
@@ -520,7 +522,7 @@ export function ConversasViewInstagram() {
         });
       }
     },
-    [profile?.email, profile?.role, resolveIgInstancia, toast]
+    [profile?.company_id, profile?.email, profile?.role, resolveIgInstancia, toast]
   );
 
   // Sem canal IG: nem ID na empresa (legado Imobi) nem contas em `company_instagram_accounts`

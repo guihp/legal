@@ -1,14 +1,18 @@
 import { convertImageFileToPng } from "@/lib/chatImage";
 import {
-  CHAT_VIDEO_MAX_LABEL,
+  ChatVideoPrepareError,
   ChatVideoSizeLimitError,
   compressVideoForChat,
   type CompressVideoProgress,
 } from "@/lib/compressChatVideo";
+import {
+  inferChatMediaKindFromFileMeta,
+  type ChatMediaItemType,
+} from "@/lib/chatMediaKind";
 import { normalizeAudioFileForInstagram } from "@/lib/voiceAudioInstagram";
 import { normalizeAudioFileForWhatsapp } from "@/lib/voiceAudioWhatsapp";
 
-export type ChatMediaItemType = "imagem" | "audio" | "video" | "pdf";
+export type { ChatMediaItemType } from "@/lib/chatMediaKind";
 export type ChatSurface = "whatsapp" | "instagram";
 
 export type ChatPreviewItem = {
@@ -18,9 +22,12 @@ export type ChatPreviewItem = {
   caption: string;
 };
 
+/** Aceita MP4 + MOV/WebM comuns; MIME vazio ainda é coberto por extensão no normalize. */
 export const CHAT_FILE_ACCEPT: Record<ChatSurface, string> = {
-  whatsapp: "image/*,video/mp4,audio/ogg,audio/webm,application/pdf",
-  instagram: "image/*,video/mp4,audio/mp4,audio/x-m4a,.m4a,application/pdf",
+  whatsapp:
+    "image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,audio/ogg,audio/webm,application/pdf",
+  instagram:
+    "image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,audio/mp4,audio/x-m4a,.m4a,application/pdf",
 };
 
 export async function normalizeAttachmentForChat(
@@ -28,7 +35,12 @@ export async function normalizeAttachmentForChat(
   surface: ChatSurface,
   options?: { onVideoCompressProgress?: (p: CompressVideoProgress) => void },
 ): Promise<{ file: File; type: ChatMediaItemType }> {
-  if (file.type.startsWith("image/")) {
+  const kind = inferChatMediaKindFromFileMeta(file);
+  if (!kind) {
+    throw new Error("Arquivo deve ser imagem, áudio, vídeo (MP4/MOV/WebM) ou PDF");
+  }
+
+  if (kind === "imagem") {
     try {
       return { file: await convertImageFileToPng(file), type: "imagem" };
     } catch {
@@ -36,7 +48,7 @@ export async function normalizeAttachmentForChat(
     }
   }
 
-  if (file.type.startsWith("audio/") || file.name.toLowerCase().endsWith(".m4a")) {
+  if (kind === "audio") {
     const normalized =
       surface === "instagram"
         ? await normalizeAudioFileForInstagram(file)
@@ -44,7 +56,7 @@ export async function normalizeAttachmentForChat(
     return { file: normalized, type: "audio" };
   }
 
-  if (file.type.startsWith("video/") || file.name.toLowerCase().endsWith(".mp4")) {
+  if (kind === "video") {
     try {
       const compressed = await compressVideoForChat(file, {
         onProgress: options?.onVideoCompressProgress,
@@ -52,17 +64,17 @@ export async function normalizeAttachmentForChat(
       return { file: compressed, type: "video" };
     } catch (err) {
       if (err instanceof ChatVideoSizeLimitError) throw err;
-      throw new Error(
-        `Não foi possível preparar o vídeo para envio (limite ${CHAT_VIDEO_MAX_LABEL}). Tente outro arquivo.`,
+      if (err instanceof ChatVideoPrepareError) throw err;
+      const detail = err instanceof Error ? err.message : "erro desconhecido";
+      throw new ChatVideoPrepareError(
+        `Não foi possível preparar o vídeo "${file.name}" para envio. ${detail}`,
+        { cause: err },
       );
     }
   }
 
-  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    return { file, type: "pdf" };
-  }
-
-  throw new Error("Arquivo deve ser imagem, áudio, vídeo MP4 ou PDF");
+  // pdf
+  return { file, type: "pdf" };
 }
 
 export async function buildChatPreviewItems(

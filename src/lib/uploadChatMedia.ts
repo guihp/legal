@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { ChatMediaItemType } from "@/lib/chatMediaFiles";
+import { contentTypeForChatUpload } from "@/lib/chatMediaKind";
 import { chatMediaStorageSubdir } from "@/lib/chatMediaStorage";
 
 export async function uploadChatMediaAndGetPublicUrl(
@@ -14,8 +15,9 @@ export async function uploadChatMediaAndGetPublicUrl(
   if (!companyId) throw new Error("company_id ausente para upload da mídia");
   const subdir = chatMediaStorageSubdir(mediaType);
   const path = `${safeCompany}/chat-media/${channel}/${subdir}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const contentType = contentTypeForChatUpload(file, mediaType);
   const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    contentType: file.type || undefined,
+    contentType,
     upsert: false,
   });
   if (error) throw new Error(`Falha ao subir mídia: ${error.message}`);

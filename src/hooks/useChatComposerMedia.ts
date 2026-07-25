@@ -5,7 +5,11 @@ import {
   type ChatPreviewItem,
   type ChatSurface,
 } from "@/lib/chatMediaFiles";
-import { ChatVideoSizeLimitError } from "@/lib/compressChatVideo";
+import { inferChatMediaKindFromFileMeta } from "@/lib/chatMediaKind";
+import {
+  ChatVideoPrepareError,
+  ChatVideoSizeLimitError,
+} from "@/lib/compressChatVideo";
 
 export type ChatPreviewState = {
   items: ChatPreviewItem[];
@@ -54,9 +58,7 @@ export function useChatComposerMedia(options: {
       }
       try {
         setBusy(true);
-        const hasVideo = files.some(
-          (f) => f.type.startsWith("video/") || f.name.toLowerCase().endsWith(".mp4"),
-        );
+        const hasVideo = files.some((f) => inferChatMediaKindFromFileMeta(f) === "video");
         if (hasVideo) {
           toast({
             title: "Preparando vídeo",
@@ -82,7 +84,11 @@ export function useChatComposerMedia(options: {
         }
       } catch (err: unknown) {
         const title =
-          err instanceof ChatVideoSizeLimitError ? "Vídeo acima do limite" : "Erro ao processar arquivo";
+          err instanceof ChatVideoSizeLimitError
+            ? "Vídeo acima do limite"
+            : err instanceof ChatVideoPrepareError
+              ? "Erro ao preparar vídeo"
+              : "Erro ao processar arquivo";
         const message = err instanceof Error ? err.message : "Erro ao processar arquivo";
         toast({ title, description: message, variant: "destructive" });
       } finally {

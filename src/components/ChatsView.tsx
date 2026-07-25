@@ -292,7 +292,10 @@ export function ChatsView() {
       const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/resumo_conversa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: selectedChat })
+        body: JSON.stringify({
+          session_id: selectedChat,
+          company_id: profile?.company_id || '',
+        })
       });
 
       const raw = await response.text();

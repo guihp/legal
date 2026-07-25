@@ -48,3 +48,45 @@ Must be set for the project (cannot be set by deploy scripts alone):
 ### Related (unchanged)
 
 WhatsApp visit reminders (1 day / 3 hours) via n8n remain separate (`visit_reminder_jobs` / `visit-reminder-dispatch`).
+
+---
+
+## conversation.summary.request
+
+| Field | Value |
+|-------|--------|
+| **Name** | `conversation.summary.request` |
+| **Channel** | n8n webhook `resumo_conversa` |
+| **When** | User clicks **Gerar resumo** in conversation actions menu |
+| **URL** | `…/webhook/resumo_conversa` |
+
+### Body
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `session_id` | string | Phone / conversation key |
+| `instancia` | string | WhatsApp/IG instance |
+| `company_id` | string (uuid) | Tenant company id |
+| `user_email` | string | Actor email |
+| `role` | string | Actor role |
+
+---
+
+## conversation.follow_up.request
+
+| Field | Value |
+|-------|--------|
+| **Name** | `conversation.follow_up.request` |
+| **Channel** | n8n webhook `follow-up-chats` |
+| **When** | User clicks **Fazer follow up** in conversation actions menu |
+| **URL** | `…/webhook/follow-up-chats` |
+
+### Body
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `session_id` | string | Phone / conversation key |
+| `instancia` | string | WhatsApp/IG instance |
+| `company_id` | string (uuid) | Tenant company id |
+| `user_email` | string | Actor email |
+| `role` | string | Actor role |

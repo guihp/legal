@@ -1311,6 +1311,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         body: JSON.stringify({
           session_id: conversation.sessionId,
           instancia: targetInstancia,
+          company_id: profile?.company_id || '',
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -1351,6 +1352,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
         body: JSON.stringify({
           session_id: conversation.sessionId,
           instancia: targetInstancia,
+          company_id: profile?.company_id || '',
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),

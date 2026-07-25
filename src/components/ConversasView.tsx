@@ -143,6 +143,7 @@ export function ConversasView() {
         body: JSON.stringify({
           session_id: conversation.sessionId,
           instancia: conversation.instancia,
+          company_id: profile?.company_id || '',
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -191,6 +192,7 @@ export function ConversasView() {
         body: JSON.stringify({
           session_id: conversation.sessionId,
           instancia: conversation.instancia,
+          company_id: profile?.company_id || '',
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),

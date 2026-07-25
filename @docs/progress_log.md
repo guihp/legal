@@ -1,5 +1,16 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-25 — Chat vídeo: MIME vazio, ffmpeg retry, sem falso-MP4
+
+- **Causa:** (1) `ffmpegLoadPromise` envenenava após 1 falha de CDN; (2) MOV/WebM ≤16 MB eram só renomeados pra `.mp4` sem transcode; (3) `file.type === ""` rejeitava anexo; (4) upload sem Content-Type → Storage `octet-stream`.
+- **Fix:** `chatMediaKind.ts` (inferência MIME/extensão, pass-through só MP4 real, Content-Type no upload); `compressChatVideo` reseta cache + fallback jsDelivr/unpkg; accept inclui `.mov`/`.webm`; `ChatVideoPlayer` mostra erro de load; testes em `chatMediaKind.test.ts`.
+
+## 2026-07-25 — Conversas: `company_id` nos webhooks resumo + follow-up
+
+- Body de `resumo_conversa` e `follow-up-chats` passa a incluir `company_id` (além de `session_id`, `instancia`, `user_email`, `role`).
+- Views: `ConversasViewPremium`, `ConversasViewInstagram`, `ConversasView`, `ChatsView` (resumo).
+- Catálogo: `docs/events.md` — `conversation.summary.request` / `conversation.follow_up.request`.
+
 ## 2026-07-24 — schedule-api: fim de semana explícito + plantão Jastelo
 
 - **Código:** busca aberta com data sáb/dom explícita usa `ctrl = "dia_especificado"` e `targetDates = [dt]` (não redireciona para `nextBizDays`). Mantém `ctrl === "segunda-feira"` para “hoje ≥16h / amanhã é fim de semana”.

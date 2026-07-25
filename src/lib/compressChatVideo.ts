@@ -1,9 +1,20 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
+import {
+  ensureMp4FileMeta,
+  isPassThroughChatMp4,
+  needsChatVideoTranscode as needsTranscodeWithLimit,
+} from "@/lib/chatMediaKind";
 
 /** Limite WhatsApp / Instagram para vídeo no envio pelo painel. */
 export const CHAT_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
 export const CHAT_VIDEO_MAX_LABEL = "16 MB";
+
+export { ensureMp4FileMeta } from "@/lib/chatMediaKind";
+
+export function needsChatVideoTranscode(file: File): boolean {
+  return needsTranscodeWithLimit(file, CHAT_VIDEO_MAX_BYTES);
+}
 
 export class ChatVideoSizeLimitError extends Error {
   readonly originalSizeMb: number;
@@ -19,6 +30,16 @@ export class ChatVideoSizeLimitError extends Error {
   }
 }
 
+export class ChatVideoPrepareError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = "ChatVideoPrepareError";
+    if (options?.cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = options.cause;
+    }
+  }
+}
+
 export type CompressVideoProgress = {
   phase: "loading" | "compressing" | "done";
   ratio?: number;
@@ -28,32 +49,58 @@ type FfmpegInstance = FFmpeg;
 
 let ffmpegLoadPromise: Promise<FfmpegInstance> | null = null;
 
-async function getFfmpeg(onProgress?: (p: CompressVideoProgress) => void): Promise<FfmpegInstance> {
-  if (!ffmpegLoadPromise) {
-    ffmpegLoadPromise = (async () => {
-      onProgress?.({ phase: "loading" });
-      const ffmpeg = new FFmpeg();
-      const coreVersion = "0.12.6";
-      const baseURL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${coreVersion}/dist/esm`;
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-      });
-      return ffmpeg;
-    })();
-  }
-  return ffmpegLoadPromise;
-}
+const FFMPEG_CORE_VERSION = "0.12.6";
+const FFMPEG_CDN_BASES = [
+  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+  `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+] as const;
 
 function outputName(inputName: string): string {
   const base = inputName.replace(/\.[^.]+$/, "") || "video";
   return `${base}-chat.mp4`;
 }
 
+async function loadFfmpegFromBase(baseURL: string): Promise<FfmpegInstance> {
+  const ffmpeg = new FFmpeg();
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+  });
+  return ffmpeg;
+}
+
+async function getFfmpeg(onProgress?: (p: CompressVideoProgress) => void): Promise<FfmpegInstance> {
+  if (!ffmpegLoadPromise) {
+    ffmpegLoadPromise = (async () => {
+      onProgress?.({ phase: "loading" });
+      let lastErr: unknown;
+      for (const baseURL of FFMPEG_CDN_BASES) {
+        try {
+          return await loadFfmpegFromBase(baseURL);
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr instanceof Error
+        ? lastErr
+        : new Error("Falha ao carregar compressor de vídeo (ffmpeg)");
+    })().catch((err) => {
+      // Permite nova tentativa na próxima anexação (CDN flake / rede).
+      ffmpegLoadPromise = null;
+      throw err;
+    });
+  }
+  return ffmpegLoadPromise;
+}
+
+/** Expõe reset para testes / recuperação após falha grave no exec. */
+export function resetChatVideoFfmpegCache(): void {
+  ffmpegLoadPromise = null;
+}
+
 async function runCompressPass(
   ffmpeg: FfmpegInstance,
   inputBytes: Uint8Array,
-  inputName: string,
   opts: { crf: number; maxWidth: number },
   onProgress?: (ratio: number) => void,
 ): Promise<Uint8Array> {
@@ -69,26 +116,26 @@ async function runCompressPass(
 
   await ffmpeg.writeFile(inFile, inputBytes);
   try {
-  await ffmpeg.exec([
-    "-i",
-    inFile,
-    "-c:v",
-    "libx264",
-    "-preset",
-    "medium",
-    "-crf",
-    String(opts.crf),
-    "-vf",
-    `scale='min(${opts.maxWidth},iw)':-2`,
-    "-c:a",
-    "aac",
-    "-b:a",
-    "96k",
-    "-movflags",
-    "+faststart",
-    "-y",
-    outFile,
-  ]);
+    await ffmpeg.exec([
+      "-i",
+      inFile,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "medium",
+      "-crf",
+      String(opts.crf),
+      "-vf",
+      `scale='min(${opts.maxWidth},iw)':-2`,
+      "-c:a",
+      "aac",
+      "-b:a",
+      "96k",
+      "-movflags",
+      "+faststart",
+      "-y",
+      outFile,
+    ]);
   } finally {
     ffmpeg.off("progress", onFfmpegProgress);
   }
@@ -106,49 +153,66 @@ async function runCompressPass(
 }
 
 /**
- * Garante MP4 <= 16 MB para envio no chat. Comprime com H.264/AAC preservando qualidade
- * o máximo possível (CRF + largura progressivos).
+ * Garante MP4 <= 16 MB para envio no chat.
+ * - MP4 já ≤16 MB: passa direto (só normaliza MIME/nome).
+ * - MOV/WebM ou >16 MB: transcodifica com ffmpeg.wasm (retry de CDN se load falhar).
  */
 export async function compressVideoForChat(
   file: File,
   options?: { onProgress?: (p: CompressVideoProgress) => void },
 ): Promise<File> {
-  if (file.size <= CHAT_VIDEO_MAX_BYTES) {
-    return toMp4File(file);
+  const onProgress = options?.onProgress;
+  const canPassThrough = !needsChatVideoTranscode(file);
+
+  if (canPassThrough) {
+    onProgress?.({ phase: "done", ratio: 1 });
+    return ensureMp4FileMeta(file);
   }
 
-  const onProgress = options?.onProgress;
   onProgress?.({ phase: "compressing", ratio: 0 });
 
-  const ffmpeg = await getFfmpeg(onProgress);
-  const inputBytes = new Uint8Array(await file.arrayBuffer());
+  try {
+    const ffmpeg = await getFfmpeg(onProgress);
+    const inputBytes = new Uint8Array(await file.arrayBuffer());
 
-  const passes: Array<{ crf: number; maxWidth: number }> = [
-    { crf: 23, maxWidth: 1280 },
-    { crf: 26, maxWidth: 1280 },
-    { crf: 28, maxWidth: 960 },
-    { crf: 30, maxWidth: 720 },
-    { crf: 32, maxWidth: 640 },
-    { crf: 34, maxWidth: 480 },
-  ];
+    const passes: Array<{ crf: number; maxWidth: number }> = [
+      { crf: 23, maxWidth: 1280 },
+      { crf: 26, maxWidth: 1280 },
+      { crf: 28, maxWidth: 960 },
+      { crf: 30, maxWidth: 720 },
+      { crf: 32, maxWidth: 640 },
+      { crf: 34, maxWidth: 480 },
+    ];
 
-  for (const pass of passes) {
-    const out = await runCompressPass(ffmpeg, inputBytes, file.name, pass, (ratio) => {
-      onProgress?.({ phase: "compressing", ratio });
-    });
+    for (const pass of passes) {
+      const out = await runCompressPass(ffmpeg, inputBytes, pass, (ratio) => {
+        onProgress?.({ phase: "compressing", ratio });
+      });
 
-    if (out.byteLength <= CHAT_VIDEO_MAX_BYTES) {
-      onProgress?.({ phase: "done", ratio: 1 });
-      return new File([out], outputName(file.name), { type: "video/mp4" });
+      if (out.byteLength <= CHAT_VIDEO_MAX_BYTES) {
+        onProgress?.({ phase: "done", ratio: 1 });
+        return new File([out], outputName(file.name), { type: "video/mp4" });
+      }
     }
-  }
 
-  throw new ChatVideoSizeLimitError(file.size);
-}
+    throw new ChatVideoSizeLimitError(file.size);
+  } catch (err) {
+    // Instância pode ter ficado inconsistente após exec falho.
+    resetChatVideoFfmpegCache();
 
-function toMp4File(file: File): File {
-  if (file.type === "video/mp4" && file.name.toLowerCase().endsWith(".mp4")) {
-    return file;
+    if (err instanceof ChatVideoSizeLimitError) throw err;
+
+    // Fallback: MP4 ≤16 MB — envia original se o compressor falhou.
+    if (file.size <= CHAT_VIDEO_MAX_BYTES && isPassThroughChatMp4(file)) {
+      onProgress?.({ phase: "done", ratio: 1 });
+      return ensureMp4FileMeta(file);
+    }
+
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new ChatVideoPrepareError(
+      `Não foi possível preparar o vídeo para envio (limite ${CHAT_VIDEO_MAX_LABEL}). ` +
+        `Tente um arquivo MP4 menor ou outro navegador. Detalhe: ${detail}`,
+      { cause: err },
+    );
   }
-  return new File([file], outputName(file.name), { type: "video/mp4" });
 }
