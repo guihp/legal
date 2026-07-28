@@ -3,10 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { resolveConversationListPreview } from '@/lib/conversaMedia';
 import type { ConversationPreviewKind } from '@/lib/conversaMedia';
-import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
+import { resolveCompanyAiLabel } from '@/lib/conversationContactLabels';
 import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
 import { mensagemWhatsappPreviewType } from '@/lib/mensagensWhatsapp';
 import { normalizePhoneDigits } from '@/lib/normalizePhone';
+import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 
 function conversaFallbackLabel(phoneNorm: string): string {
   const id = String(phoneNorm || '').trim();
@@ -23,6 +24,10 @@ export interface Conversa {
   leadPhone?: string | null;
   leadId?: string | null;
   leadStage?: string | null;
+  /** Cor do catálogo (`company_ai_labels.color`) para o badge. */
+  labelColor?: string | null;
+  /** Slug persistido em `conversation_contact_labels.status`. */
+  labelSlug?: string | null;
   crmStage?: string | null;
   hasCrmLead?: boolean;
   /** URL da foto de perfil WhatsApp do lead (pode expirar). */
@@ -42,6 +47,7 @@ export function useConversasList(selectedInstance?: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { profile, isManager } = useUserProfile();
+  const { labels: aiLabels } = useCompanyAiLabels();
 
   const scopedInstance = useMemo(() => {
     if (!selectedInstance) return null;
@@ -141,16 +147,25 @@ export function useConversasList(selectedInstance?: string | null) {
 
           scopedList.forEach((item) => {
             const st = statusBySession.get(item.sessionId) || 'ai_ativa';
-            item.leadStage = conversationLabelStatusToDisplay(st);
+            const meta = resolveCompanyAiLabel(st, aiLabels);
+            item.labelSlug = meta.slug;
+            item.leadStage = meta.name;
+            item.labelColor = meta.color;
           });
         } catch {
           scopedList.forEach((item) => {
-            item.leadStage = 'AI ATIVA';
+            const meta = resolveCompanyAiLabel('ai_ativa', aiLabels);
+            item.labelSlug = meta.slug;
+            item.leadStage = meta.name;
+            item.labelColor = meta.color;
           });
         }
       } else {
         scopedList.forEach((item) => {
-          item.leadStage = 'AI ATIVA';
+          const meta = resolveCompanyAiLabel('ai_ativa', aiLabels);
+          item.labelSlug = meta.slug;
+          item.leadStage = meta.name;
+          item.labelColor = meta.color;
         });
       }
 
@@ -165,7 +180,7 @@ export function useConversasList(selectedInstance?: string | null) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [profile?.company_id, profile?.role, scopedInstance, isManager, profile]);
+  }, [profile?.company_id, profile?.role, scopedInstance, isManager, profile, aiLabels]);
 
   useEffect(() => {
     void fetchConversas(false);

@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { resolveConversationListPreview, type ConversationPreviewKind } from '@/lib/conversaMedia';
-import { conversationLabelStatusToDisplay } from '@/lib/conversationContactLabels';
+import { resolveCompanyAiLabel } from '@/lib/conversationContactLabels';
 import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
 import { mensagemPreviewType, PLATAFORMA_INSTAGRAM } from '@/lib/mensagensRow';
+import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 
 function instagramListaFallbackLabel(sessionId: string): string {
   const id = String(sessionId || '').trim();
@@ -23,7 +24,9 @@ export interface InstagramConversa {
   lastProfileSyncInstagram?: string | null;
   instagramIdCliente?: string | null;
   leadPhone?: string | null;   // reservado (IG não usa telefone)
-  leadStage?: string | null; // etiqueta do contato (Humano | Humano solicitado | AI ATIVA)
+  leadStage?: string | null; // etiqueta do contato (nome do catálogo)
+  labelColor?: string | null;
+  labelSlug?: string | null;
   crmStage?: string | null;
   hasCrmLead?: boolean;
   lastMessageDate: string;
@@ -46,6 +49,7 @@ export function useInstagramConversasList(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { profile, isManager } = useUserProfile();
+  const { labels: aiLabels } = useCompanyAiLabels();
 
   const scopedInstance = useMemo(() => {
     if (!selectedInstance) return null;
@@ -229,13 +233,26 @@ export function useInstagramConversasList(
 
           scopedList.forEach((item) => {
             const st = statusBySession.get(item.sessionId) || 'ai_ativa';
-            item.leadStage = conversationLabelStatusToDisplay(st);
+            const meta = resolveCompanyAiLabel(st, aiLabels);
+            item.labelSlug = meta.slug;
+            item.leadStage = meta.name;
+            item.labelColor = meta.color;
           });
         } catch {
-          scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+          scopedList.forEach((item) => {
+            const meta = resolveCompanyAiLabel('ai_ativa', aiLabels);
+            item.labelSlug = meta.slug;
+            item.leadStage = meta.name;
+            item.labelColor = meta.color;
+          });
         }
       } else {
-        scopedList.forEach((item) => { item.leadStage = 'AI ATIVA'; });
+        scopedList.forEach((item) => {
+          const meta = resolveCompanyAiLabel('ai_ativa', aiLabels);
+          item.labelSlug = meta.slug;
+          item.leadStage = meta.name;
+          item.labelColor = meta.color;
+        });
       }
 
       scopedList.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
@@ -246,7 +263,7 @@ export function useInstagramConversasList(
     } finally {
       if (!background) setLoading(false);
     }
-  }, [profile?.company_id, scopedInstance, isManager, profile]);
+  }, [profile?.company_id, scopedInstance, isManager, profile, aiLabels]);
 
   useEffect(() => {
     fetchConversas({ background: false });

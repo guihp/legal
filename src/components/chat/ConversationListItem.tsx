@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ConversationListPreview } from '@/components/chat/ConversationListPreview';
 import type { ConversationPreviewKind } from '@/lib/conversaMedia';
-import { conversationLabelListBadgeClasses } from '@/lib/conversationContactLabels';
+import { conversationLabelListBadgeClasses, labelColorListBadgeClasses } from '@/lib/conversationContactLabels';
 import { crmStageBadgeClasses } from '@/lib/crmKanbanStages';
 
 export type ConversationListItemProps = {
@@ -9,6 +9,8 @@ export type ConversationListItemProps = {
   onClick: () => void;
   displayName: string;
   leadStage?: string | null;
+  /** Cor do catálogo; se omitida, infere pelo nome legado. */
+  labelColor?: string | null;
   crmStage?: string | null;
   hasCrmLead?: boolean;
   timeLabel?: string;
@@ -37,6 +39,7 @@ export function ConversationListItem({
   onClick,
   displayName,
   leadStage,
+  labelColor,
   crmStage,
   hasCrmLead,
   timeLabel,
@@ -48,6 +51,9 @@ export function ConversationListItem({
 }: ConversationListItemProps) {
   const labelStage = leadStage || 'AI ATIVA';
   const crmLabel = crmStage?.trim() || 'CRM';
+  const labelBadgeClass = labelColor
+    ? labelColorListBadgeClasses(labelColor)
+    : conversationLabelListBadgeClasses(labelStage);
 
   return (
     <button
@@ -76,7 +82,7 @@ export function ConversationListItem({
 
         <div className="conversas-list-item__badges-row">
           <div className="conversas-list-item__badges">
-            <ListBadge className={conversationLabelListBadgeClasses(labelStage)}>{labelStage}</ListBadge>
+            <ListBadge className={labelBadgeClass}>{labelStage}</ListBadge>
             {hasCrmLead ? (
               <ListBadge
                 className={crmStageBadgeClasses(crmLabel)}

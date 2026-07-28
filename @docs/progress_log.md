@@ -1,5 +1,32 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-28 — Delete usuário: FK `audit_logs.actor_id`
+
+- **Causa:** `audit_logs_actor_id_fkey` com `NO ACTION` bloqueava `DELETE` em `user_profiles` (histórico de auditoria).
+- **Migration** `20260728022743_audit_logs_actor_id_on_delete_set_null`: `ON DELETE SET NULL` em `audit_logs.actor_id` e demais FKs nullable para `user_profiles`.
+- Edge `admin-delete-user`: remove `oncall_schedules` do usuário (FK NOT NULL) antes do delete; null em `leads.user_id`.
+- UI: mensagem amigável em PT quando o erro for de vínculo/FK.
+
+## 2026-07-27 — Config IA: settings shell + seções
+
+- Layout profissional tipo settings: nav lateral (desktop) / tabs (mobile) com deep link `?section=`.
+- Seções: Geral, Identidade, Contexto, Etiquetas, Visitas; form compartilhado + sticky Salvar/Descartar.
+- Monólito `AiConfigurationView` extraído para `src/components/ai-config/*`; re-export estável no path antigo.
+- Visual: header compacto, badges Ativa/Inativa + contagem de etiquetas + indicador dirty; placeholders duplicados removidos.
+
+## 2026-07-27 — Etiquetas da IA (catálogo) + Config IA light mode
+
+- Migration `company_ai_labels` (RLS company-scoped; gestor+ write; system não deletável) + seed das 3 labels por empresa; CHECK rígido de `conversation_contact_labels.status` removido.
+- Edge `conversation-label-api`: `list_catalog` / `upsert_catalog` / `delete_catalog`; `set_label` valida slug no catálogo.
+- UI: `AiConfigurationView` + `BusinessHoursFields` com tokens de tema; card **Etiquetas da IA**; Conversas (Premium/IG) usam catálogo no menu e badges.
+- Docs: `conversation.label.set` em `docs/events.md`.
+
+## 2026-07-27 — Modal Resumo: light mode + mobile + Qualidade
+
+- `SummaryModalAnimated`: tokens de tema (`bg-background`/`text-foreground`) no lugar de zinc hardcoded.
+- Mobile: sheet full-height, header/footer sticky, botões full-width.
+- Card Qualidade: abre por padrão; Progress sem animação de width que escondia as barras; labels PT + score 0–10/0–100.
+
 ## 2026-07-25 — Agenda: responsividade mobile
 
 - Header/stats/filtros empilham em telas estreitas; padding do `main` reduzido (`p-3` → `md:p-6`).

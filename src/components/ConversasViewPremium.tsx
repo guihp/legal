@@ -111,6 +111,7 @@ import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { LeadViewModal } from './LeadViewModal';
@@ -682,6 +683,7 @@ interface ConversasViewPremiumProps { }
 
 export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   const { profile } = useUserProfile();
+  const { labels: aiCatalogLabels } = useCompanyAiLabels();
   const { isOfficialApi } = useCompanyApiMode();
   const { toast } = useToast();
   const controls = useAnimation();
@@ -1067,7 +1069,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     ],
   );
 
-  const setConversationLabel = useCallback(async (sessionId: string, status: 'ai_ativa' | 'humano' | 'humano_solicitado') => {
+  const setConversationLabel = useCallback(async (sessionId: string, status: string) => {
     if (!profile?.company_id) return;
     const { error } = await supabase
       .from('conversation_contact_labels')
@@ -1313,7 +1315,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           instancia: targetInstancia,
           company_id: profile?.company_id || '',
           user_email: profile?.email || '',
-          role: profile?.role || ''
+          role: profile?.role || '',
+          plataforma: 'WhatsApp',
+          rota: 'whatsapp',
         }),
       });
 
@@ -1354,7 +1358,9 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           instancia: targetInstancia,
           company_id: profile?.company_id || '',
           user_email: profile?.email || '',
-          role: profile?.role || ''
+          role: profile?.role || '',
+          plataforma: 'WhatsApp',
+          rota: 'whatsapp',
         }),
       });
 
@@ -1987,6 +1993,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                     unreadCount={getUnreadCount(conv.sessionId)}
                     displayName={conv.displayName}
                     leadStage={conv.leadStage}
+                    labelColor={conv.labelColor}
                     crmStage={conv.crmStage}
                     hasCrmLead={conv.hasCrmLead}
                     timeLabel={conv.lastMessageDate ? formatConversationListTime(conv.lastMessageDate) : undefined}
@@ -2001,42 +2008,21 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   />
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-52">
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'humano');
-                        toast({ title: 'Etiqueta atualizada para Humano' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como Humano
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'humano_solicitado');
-                        toast({ title: 'Etiqueta atualizada para Humano solicitado' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como Humano solicitado
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'ai_ativa');
-                        toast({ title: 'Etiqueta atualizada para AI ATIVA' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como AI ATIVA
-                  </ContextMenuItem>
+                  {aiCatalogLabels.map((label) => (
+                    <ContextMenuItem
+                      key={label.id}
+                      onClick={async () => {
+                        try {
+                          await setConversationLabel(conv.sessionId, label.slug);
+                          toast({ title: `Etiqueta atualizada para ${label.name}` });
+                        } catch (e: any) {
+                          toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
+                        }
+                      }}
+                    >
+                      Marcar como {label.name}
+                    </ContextMenuItem>
+                  ))}
                   <ContextMenuSub>
                     <ContextMenuSubTrigger
                       disabled={!conv.hasCrmLead}

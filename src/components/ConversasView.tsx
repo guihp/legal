@@ -145,7 +145,9 @@ export function ConversasView() {
           instancia: conversation.instancia,
           company_id: profile?.company_id || '',
           user_email: profile?.email || '',
-          role: profile?.role || ''
+          role: profile?.role || '',
+          plataforma: 'WhatsApp',
+          rota: 'whatsapp',
         }),
       });
 
@@ -194,7 +196,9 @@ export function ConversasView() {
           instancia: conversation.instancia,
           company_id: profile?.company_id || '',
           user_email: profile?.email || '',
-          role: profile?.role || ''
+          role: profile?.role || '',
+          plataforma: 'WhatsApp',
+          rota: 'whatsapp',
         }),
       });
 

@@ -106,6 +106,57 @@ export type Database = {
           },
         ]
       }
+      company_ai_labels: {
+        Row: {
+          id: string
+          company_id: string
+          slug: string
+          name: string
+          color: string
+          is_system: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          slug: string
+          name: string
+          color?: string
+          is_system?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          slug?: string
+          name?: string
+          color?: string
+          is_system?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_ai_labels_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_ai_labels_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_contact_labels: {
         Row: {
           channel: string

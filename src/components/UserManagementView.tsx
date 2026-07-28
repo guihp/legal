@@ -361,10 +361,15 @@ export function UserManagementView() {
         setError(null);
       } catch (error: any) {
         toast.dismiss(loadingToast);
-        toast.error('❌ Erro ao deletar usuário', {
-          description: error.message || 'Falha na operação de exclusão'
+        const raw = error?.message || '';
+        const friendly =
+          /foreign key|violates foreign key|audit_logs_actor_id|user_profiles/i.test(raw)
+            ? 'Não foi possível excluir o usuário porque ainda existem registros vinculados a ele. Desative e tente novamente, ou contate o suporte.'
+            : (raw || 'Falha na operação de exclusão');
+        toast.error('Erro ao deletar usuário', {
+          description: friendly
         });
-        setError(error.message);
+        setError(friendly);
       }
     }
   };

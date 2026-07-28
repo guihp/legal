@@ -69,6 +69,8 @@ WhatsApp visit reminders (1 day / 3 hours) via n8n remain separate (`visit_remin
 | `company_id` | string (uuid) | Tenant company id |
 | `user_email` | string | Actor email |
 | `role` | string | Actor role |
+| `plataforma` | string | `WhatsApp` ou `Instagram` |
+| `rota` | string | `whatsapp` ou `instagram` (canal da UI) |
 
 ---
 
@@ -90,3 +92,52 @@ WhatsApp visit reminders (1 day / 3 hours) via n8n remain separate (`visit_remin
 | `company_id` | string (uuid) | Tenant company id |
 | `user_email` | string | Actor email |
 | `role` | string | Actor role |
+| `plataforma` | string | `WhatsApp` ou `Instagram` |
+| `rota` | string | `whatsapp` ou `instagram` (canal da UI) |
+
+---
+
+## conversation.label.set
+
+| Field | Value |
+|-------|--------|
+| **Name** | `conversation.label.set` |
+| **Channel** | Edge Function `conversation-label-api` |
+| **When** | n8n / automação aplica etiqueta de contato, ou UI de Conversas (upsert direto na tabela) |
+| **Auth** | JWT do usuário **ou** `Authorization: Bearer <service_role>` **ou** header `x-n8n-secret` (= `N8N_INTERNAL_API_KEY`) |
+
+### Actions
+
+| `action` | Descrição |
+|----------|-----------|
+| `set_label` | Upsert em `conversation_contact_labels`; `status` deve existir em `company_ai_labels.slug` da empresa |
+| `get_labels` | Lista `{ session_id, status }` por canal + `session_ids[]` |
+| `list_catalog` | Lista catálogo `company_ai_labels` da empresa |
+| `upsert_catalog` | Cria/edita etiqueta (gestor/admin/service_role); system: não altera slug/`is_system` |
+| `delete_catalog` | Remove etiqueta custom (`id` ou `slug`); system bloqueado |
+
+### Body — `set_label`
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `action` | string | `set_label` |
+| `company_id` | uuid | Obrigatório em auth interna / service_role |
+| `channel` | string | `whatsapp` \| `instagram` |
+| `session_id` | string | Chave da conversa |
+| `status` | string | Slug do catálogo (ex.: `ai_ativa`, `humano`, `visita_agendada`) |
+
+### Body — `upsert_catalog`
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `action` | string | `upsert_catalog` |
+| `company_id` | uuid | Auth interna |
+| `id` | uuid | Opcional; se omitido, cria |
+| `name` | string | Nome de exibição |
+| `slug` | string | snake_case; auto a partir do nome se omitido |
+| `color` | string | `emerald` \| `amber` \| `orange` \| `sky` \| `violet` \| `rose` \| `slate` |
+| `sort_order` | number | Opcional |
+
+### System labels (seed por empresa)
+
+`ai_ativa` (emerald), `humano` (amber), `humano_solicitado` (orange) — não deletáveis.

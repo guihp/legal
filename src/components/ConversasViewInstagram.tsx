@@ -18,6 +18,7 @@ import {
 import { LeadInstagramAvatar } from '@/components/LeadInstagramAvatar';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 import { useToast } from '@/hooks/use-toast';
 import { useInstagramInstances } from '@/hooks/useInstagramInstances';
 import { useInstagramConversasList } from '@/hooks/useInstagramConversasList';
@@ -205,6 +206,7 @@ function InstagramMessageBubble({
 
 export function ConversasViewInstagram() {
   const { profile } = useUserProfile();
+  const { labels: aiCatalogLabels } = useCompanyAiLabels();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const controls = useAnimation();
@@ -398,7 +400,7 @@ export function ConversasViewInstagram() {
     [messages],
   );
 
-  const setConversationLabel = useCallback(async (sessionId: string, status: 'ai_ativa' | 'humano' | 'humano_solicitado') => {
+  const setConversationLabel = useCallback(async (sessionId: string, status: string) => {
     if (!profile?.company_id) return;
     const { error } = await supabase
       .from('conversation_contact_labels')
@@ -477,6 +479,8 @@ export function ConversasViewInstagram() {
             company_id: profile?.company_id || '',
             user_email: profile?.email || '',
             role: profile?.role || '',
+            plataforma: 'Instagram',
+            rota: 'instagram',
           }),
         });
         const result = await response.json();
@@ -508,6 +512,8 @@ export function ConversasViewInstagram() {
             company_id: profile?.company_id || '',
             user_email: profile?.email || '',
             role: profile?.role || '',
+            plataforma: 'Instagram',
+            rota: 'instagram',
           }),
         });
         toast({
@@ -1013,6 +1019,7 @@ export function ConversasViewInstagram() {
                     unreadCount={getUnreadCount(conv.sessionId)}
                     displayName={conv.displayName}
                     leadStage={conv.leadStage}
+                    labelColor={conv.labelColor}
                     crmStage={conv.crmStage}
                     hasCrmLead={conv.hasCrmLead}
                     timeLabel={conv.lastMessageDate ? formatConversationListTime(conv.lastMessageDate) : undefined}
@@ -1040,42 +1047,21 @@ export function ConversasViewInstagram() {
                   />
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-52">
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'humano');
-                        toast({ title: 'Etiqueta atualizada para Humano' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como Humano
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'humano_solicitado');
-                        toast({ title: 'Etiqueta atualizada para Humano solicitado' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como Humano solicitado
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={async () => {
-                      try {
-                        await setConversationLabel(conv.sessionId, 'ai_ativa');
-                        toast({ title: 'Etiqueta atualizada para AI ATIVA' });
-                      } catch (e: any) {
-                        toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
-                      }
-                    }}
-                  >
-                    Marcar como AI ATIVA
-                  </ContextMenuItem>
+                  {aiCatalogLabels.map((label) => (
+                    <ContextMenuItem
+                      key={label.id}
+                      onClick={async () => {
+                        try {
+                          await setConversationLabel(conv.sessionId, label.slug);
+                          toast({ title: `Etiqueta atualizada para ${label.name}` });
+                        } catch (e: any) {
+                          toast({ title: 'Erro ao atualizar etiqueta', description: e?.message, variant: 'destructive' });
+                        }
+                      }}
+                    >
+                      Marcar como {label.name}
+                    </ContextMenuItem>
+                  ))}
                   <ContextMenuSub>
                     <ContextMenuSubTrigger
                       disabled={!conv.hasCrmLead}

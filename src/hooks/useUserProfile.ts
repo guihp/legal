@@ -32,6 +32,19 @@ export interface Company {
   is_active: boolean;
 }
 
+function friendlyDeleteUserError(message?: string | null): string {
+  const raw = (message || '').trim();
+  if (!raw) return 'Falha ao deletar usuário';
+  if (/foreign key|violates foreign key|audit_logs_actor_id|_fkey/i.test(raw)) {
+    return 'Não foi possível excluir o usuário porque ainda existem registros vinculados a ele. Tente novamente ou contate o suporte.';
+  }
+  // Strip noisy edge wrapper prefixes when present
+  return raw
+    .replace(/^Delete operation failed:\s*/i, '')
+    .replace(/^Erro ao deletar user_profiles:\s*/i, '')
+    || 'Falha ao deletar usuário';
+}
+
 export function useUserProfile() {
   const { session, user: authUser } = useAuthManager();
   const [user, setUser] = useState<User | null>(null);
@@ -399,10 +412,10 @@ export function useUserProfile() {
       });
 
       if (fnError) {
-        throw new Error(fnError.message || 'Falha ao deletar usuário');
+        throw new Error(friendlyDeleteUserError(fnError.message) || 'Falha ao deletar usuário');
       }
       if ((fnData as any)?.error) {
-        throw new Error((fnData as any).error);
+        throw new Error(friendlyDeleteUserError((fnData as any).error));
       }
 
       return fnData;

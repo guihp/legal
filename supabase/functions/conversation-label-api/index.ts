@@ -3,9 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-n8n-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const ALLOWED_COLORS = new Set(["emerald", "amber", "orange", "sky", "violet", "rose", "slate"]);
+const SLUG_RE = /^[a-z][a-z0-9_]*$/;
 
 function env(name: string, fallback = "") {
   return Deno.env.get(name) ?? fallback;
@@ -33,6 +36,21 @@ function getJwtRole(token: string): string {
   } catch {
     return "";
   }
+}
+
+function isManagerRole(role: string): boolean {
+  return ["admin", "gestor", "super_admin", "system"].includes(role);
+}
+
+function normalizeSlug(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
 }
 
 serve(async (req) => {
@@ -75,17 +93,143 @@ serve(async (req) => {
       profile = userProfile;
     }
 
+    if (action === "list_catalog") {
+      const { data, error } = await service
+        .from("company_ai_labels")
+        .select("id, company_id, slug, name, color, is_system, sort_order, created_at, updated_at")
+        .eq("company_id", profile.company_id)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (error) return json({ success: false, error: error.message }, 400);
+      return json({ success: true, labels: data || [] });
+    }
+
+    if (action === "upsert_catalog") {
+      if (!isManagerRole(profile.role)) {
+        return json({ success: false, error: "Apenas gestor/admin podem gerenciar o catálogo" }, 403);
+      }
+
+      const id = body?.id ? String(body.id).trim() : "";
+      const name = String(body?.name || "").trim();
+      let slug = normalizeSlug(String(body?.slug || name));
+      const color = String(body?.color || "slate").trim().toLowerCase();
+      const sortOrder = Number.isFinite(Number(body?.sort_order))
+        ? Number(body.sort_order)
+        : 100;
+
+      if (!name) return json({ success: false, error: "name é obrigatório" }, 400);
+      if (!slug || !SLUG_RE.test(slug)) {
+        return json({ success: false, error: "slug inválido (snake_case, começa com letra)" }, 400);
+      }
+      if (!ALLOWED_COLORS.has(color)) {
+        return json({
+          success: false,
+          error: "color inválida (emerald|amber|orange|sky|violet|rose|slate)",
+        }, 400);
+      }
+
+      if (id) {
+        const { data: existing, error: existingError } = await service
+          .from("company_ai_labels")
+          .select("id, is_system, slug")
+          .eq("id", id)
+          .eq("company_id", profile.company_id)
+          .maybeSingle();
+
+        if (existingError) return json({ success: false, error: existingError.message }, 400);
+        if (!existing) return json({ success: false, error: "Etiqueta não encontrada" }, 404);
+
+        const patch: Record<string, unknown> = { name, color, sort_order: sortOrder };
+        if (!existing.is_system) patch.slug = slug;
+
+        const { data, error } = await service
+          .from("company_ai_labels")
+          .update(patch)
+          .eq("id", id)
+          .eq("company_id", profile.company_id)
+          .select("id, company_id, slug, name, color, is_system, sort_order, created_at, updated_at")
+          .single();
+
+        if (error) return json({ success: false, error: error.message }, 400);
+        return json({ success: true, data });
+      }
+
+      const { data, error } = await service
+        .from("company_ai_labels")
+        .insert({
+          company_id: profile.company_id,
+          slug,
+          name,
+          color,
+          is_system: false,
+          sort_order: sortOrder,
+        })
+        .select("id, company_id, slug, name, color, is_system, sort_order, created_at, updated_at")
+        .single();
+
+      if (error) return json({ success: false, error: error.message }, 400);
+      return json({ success: true, data });
+    }
+
+    if (action === "delete_catalog") {
+      if (!isManagerRole(profile.role)) {
+        return json({ success: false, error: "Apenas gestor/admin podem gerenciar o catálogo" }, 403);
+      }
+
+      const id = String(body?.id || "").trim();
+      const slug = normalizeSlug(String(body?.slug || ""));
+      if (!id && !slug) return json({ success: false, error: "id ou slug é obrigatório" }, 400);
+
+      let query = service
+        .from("company_ai_labels")
+        .select("id, is_system, slug")
+        .eq("company_id", profile.company_id);
+
+      if (id) query = query.eq("id", id);
+      else query = query.eq("slug", slug);
+
+      const { data: existing, error: existingError } = await query.maybeSingle();
+      if (existingError) return json({ success: false, error: existingError.message }, 400);
+      if (!existing) return json({ success: false, error: "Etiqueta não encontrada" }, 404);
+      if (existing.is_system) {
+        return json({ success: false, error: "Etiquetas de sistema não podem ser excluídas" }, 400);
+      }
+
+      const { error } = await service
+        .from("company_ai_labels")
+        .delete()
+        .eq("id", existing.id)
+        .eq("company_id", profile.company_id);
+
+      if (error) return json({ success: false, error: error.message }, 400);
+      return json({ success: true, deleted: existing.id });
+    }
+
     if (action === "set_label") {
       const channel = String(body?.channel || "").trim().toLowerCase();
       const sessionId = String(body?.session_id || "").trim();
-      const status = String(body?.status || "").trim().toLowerCase();
+      const status = normalizeSlug(String(body?.status || ""));
 
       if (!["whatsapp", "instagram"].includes(channel)) {
         return json({ success: false, error: "channel inválido (whatsapp|instagram)" }, 400);
       }
       if (!sessionId) return json({ success: false, error: "session_id é obrigatório" }, 400);
-      if (!["ai_ativa", "humano", "humano_solicitado"].includes(status)) {
-        return json({ success: false, error: "status inválido (ai_ativa|humano|humano_solicitado)" }, 400);
+      if (!status) return json({ success: false, error: "status é obrigatório" }, 400);
+
+      const { data: catalogRow, error: catalogError } = await service
+        .from("company_ai_labels")
+        .select("slug")
+        .eq("company_id", profile.company_id)
+        .eq("slug", status)
+        .maybeSingle();
+
+      if (catalogError) return json({ success: false, error: catalogError.message }, 400);
+      if (!catalogRow) {
+        return json({
+          success: false,
+          error: `status '${status}' não existe no catálogo da empresa`,
+        }, 400);
       }
 
       const payload = {

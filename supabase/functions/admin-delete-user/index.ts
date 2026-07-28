@@ -101,18 +101,38 @@ Deno.serve(async (req: Request) => {
 
     // TRANSAÇÃO: Executar todas as operações de exclusão
     try {
-      // 1. Desvincular leads (definir corretor responsável como NULL)
+      // 1. Desvincular leads (nullable FKs also use ON DELETE SET NULL in DB)
       const { error: leadsUpdateErr } = await adminClient
         .from("leads")
         .update({ 
           id_corretor_responsavel: null,
-          assigned_user_id: null
+          user_id: null,
         })
-        .eq("id_corretor_responsavel", payload.user_id);
+        .or(`id_corretor_responsavel.eq.${payload.user_id},user_id.eq.${payload.user_id}`);
 
       if (leadsUpdateErr) {
         console.warn("Erro ao desvincular leads:", leadsUpdateErr);
         // Não falhar a operação por isso
+      }
+
+      // 1b. oncall_schedules.user_id is NOT NULL — must remove owned rows before profile delete
+      const { error: oncallDeleteErr } = await adminClient
+        .from("oncall_schedules")
+        .delete()
+        .eq("user_id", payload.user_id);
+
+      if (oncallDeleteErr) {
+        console.warn("Erro ao remover oncall_schedules:", oncallDeleteErr);
+        throw new Error(`Não foi possível remover escalas do usuário: ${oncallDeleteErr.message}`);
+      }
+
+      const { error: oncallAssignErr } = await adminClient
+        .from("oncall_schedules")
+        .update({ assigned_user_id: null })
+        .eq("assigned_user_id", payload.user_id);
+
+      if (oncallAssignErr) {
+        console.warn("Erro ao desvincular assigned_user_id em oncall_schedules:", oncallAssignErr);
       }
 
       // 2. Remover de user_profiles
@@ -122,7 +142,13 @@ Deno.serve(async (req: Request) => {
         .eq("id", payload.user_id);
 
       if (profileDeleteErr) {
-        throw new Error(`Erro ao deletar user_profiles: ${profileDeleteErr.message}`);
+        const msg = profileDeleteErr.message || "";
+        if (/foreign key|violates foreign key/i.test(msg)) {
+          throw new Error(
+            "Não foi possível excluir o usuário porque ainda existem registros vinculados a ele. Tente novamente ou contate o suporte."
+          );
+        }
+        throw new Error(`Erro ao deletar user_profiles: ${msg}`);
       }
 
       // 3. Remover de auth.users
