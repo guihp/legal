@@ -1,317 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Alert, AlertDescription } from "./ui/alert";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Alert, AlertDescription } from './ui/alert';
+import { Checkbox } from './ui/checkbox';
 import {
-  Building2,
-  Mail,
-  Lock,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
   Loader2,
   CheckCircle,
-  Home,
-  Building,
-  MapPin,
   Key,
-  Shield,
-  ArrowRight,
-  Star,
-  Sparkles,
-  Zap,
-  HelpCircle,
-  X,
-  Eye,
-  EyeOff
-} from "lucide-react";
+  Mail,
+  Check,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
-import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
 }
 
-// Componente para as partículas flutuantes melhoradas
-const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
-  const particleVariants = {
-    default: "w-2 h-2 bg-blue-400/20 rounded-full",
-    star: "w-1 h-1 bg-yellow-400/30 rounded-full",
-    spark: "w-0.5 h-4 bg-purple-400/40 rounded-full",
-    glow: "w-3 h-3 bg-emerald-400/25 rounded-full blur-sm"
-  };
+const REMEMBER_EMAIL_KEY = 'iafe-login-remember-email';
 
-  return (
-    <motion.div
-      className={`absolute ${particleVariants[type]}`}
-      initial={{
-        x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-        y: (typeof window !== 'undefined' ? window.innerHeight : 800) + 20,
-        opacity: 0,
-        scale: 0
-      }}
-      animate={{
-        y: -50,
-        opacity: [0, 1, 0.8, 0],
-        scale: [0, 1, 1.2, 0],
-        rotate: 360
-      }}
-      transition={{
-        duration,
-        delay,
-        repeat: Infinity,
-        ease: "easeInOut"
-      }}
-    />
-  );
-};
+const STATS = [
+  { value: '128', label: 'IMÓVEIS GERIDOS' },
+  { value: '338', label: 'LEADS NO MÊS' },
+  { value: '24 h', label: 'ATENDIMENTO IA' },
+] as const;
 
-// Componente para luzes pulsantes
-const PulsingLights = () => (
-  <div className="absolute inset-0 overflow-hidden">
-    {Array.from({ length: 8 }).map((_, i) => (
-      <motion.div
-        key={i}
-        className="absolute rounded-full"
-        style={{
-          left: `${Math.random() * 100}%`,
-          top: `${Math.random() * 100}%`,
-          width: `${20 + Math.random() * 40}px`,
-          height: `${20 + Math.random() * 40}px`,
-        }}
-        animate={{
-          opacity: [0, 0.3, 0],
-          scale: [0.5, 1.5, 0.5],
-          background: [
-            "radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%)",
-            "radial-gradient(circle, rgba(147, 51, 234, 0.2) 0%, transparent 70%)",
-            "radial-gradient(circle, rgba(16, 185, 129, 0.2) 0%, transparent 70%)",
-            "radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%)"
-          ]
-        }}
-        transition={{
-          duration: 4 + Math.random() * 4,
-          delay: i * 0.5,
-          repeat: Infinity,
-          ease: "easeInOut"
-        }}
-      />
-    ))}
-  </div>
-);
-
-// Componente para efeito de vidro quebrado
-const GlassShards = () => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {Array.from({ length: 12 }).map((_, i) => (
-      <motion.div
-        key={i}
-        className="absolute bg-gradient-to-br from-white/5 to-transparent backdrop-blur-sm"
-        style={{
-          left: `${Math.random() * 100}%`,
-          top: `${Math.random() * 100}%`,
-          width: `${30 + Math.random() * 60}px`,
-          height: `${30 + Math.random() * 60}px`,
-          clipPath: "polygon(30% 0%, 0% 50%, 30% 100%, 100% 70%, 70% 30%)",
-          transform: `rotate(${Math.random() * 360}deg)`
-        }}
-        animate={{
-          opacity: [0, 0.4, 0],
-          rotate: [0, 180, 360],
-          scale: [0.8, 1.2, 0.8]
-        }}
-        transition={{
-          duration: 8 + Math.random() * 6,
-          delay: i * 0.7,
-          repeat: Infinity,
-          ease: "easeInOut"
-        }}
-      />
-    ))}
-  </div>
-);
-
-// Componente para os ícones de construção flutuantes melhorados
-const FloatingIcon = ({ Icon, delay = 0, x = 0, y = 0, color = "blue" }) => {
-  const colorVariants = {
-    blue: "text-blue-300/10",
-    purple: "text-purple-300/10",
-    emerald: "text-emerald-300/10",
-    yellow: "text-yellow-300/10",
-    pink: "text-pink-300/10"
-  };
-
-  return (
-    <motion.div
-      className={`absolute ${colorVariants[color]}`}
-      style={{ left: `${x}%`, top: `${y}%` }}
-      initial={{ opacity: 0, scale: 0, rotate: -180 }}
-      animate={{
-        opacity: [0, 0.4, 0],
-        scale: [0, 1.2, 0],
-        rotate: [0, 360, 720],
-        y: [-30, 30, -30],
-        x: [-10, 10, -10]
-      }}
-      transition={{
-        duration: 10 + Math.random() * 5,
-        delay,
-        repeat: Infinity,
-        ease: "easeInOut"
-      }}
-    >
-      <Icon size={35 + Math.random() * 20} />
-    </motion.div>
-  );
-};
-
-// Componente para o grid arquitetônico melhorado
-const ArchitecturalGrid = () => (
-  <div className="absolute inset-0 overflow-hidden">
-    {/* Grid lines animadas mais complexas */}
-    <svg className="absolute inset-0 w-full h-full">
-      <defs>
-        <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
-          <motion.path
-            d="M 80 0 L 0 0 0 80"
-            fill="none"
-            stroke="rgba(59, 130, 246, 0.08)"
-            strokeWidth="1"
-            initial={{ pathLength: 0, opacity: 0 }}
-            animate={{
-              pathLength: [0, 1, 0],
-              opacity: [0, 0.3, 0]
-            }}
-            transition={{ duration: 4, repeat: Infinity, repeatType: "loop" }}
-          />
-          <motion.circle
-            cx="40"
-            cy="40"
-            r="2"
-            fill="rgba(147, 51, 234, 0.1)"
-            animate={{
-              r: [1, 4, 1],
-              opacity: [0.1, 0.4, 0.1]
-            }}
-            transition={{ duration: 3, repeat: Infinity }}
-          />
-        </pattern>
-
-        <pattern id="hexGrid" width="100" height="87" patternUnits="userSpaceOnUse">
-          <motion.polygon
-            points="50,0 93.3,25 93.3,62 50,87 6.7,62 6.7,25"
-            fill="none"
-            stroke="rgba(16, 185, 129, 0.06)"
-            strokeWidth="1"
-            animate={{
-              opacity: [0, 0.2, 0],
-              strokeWidth: [0.5, 2, 0.5]
-            }}
-            transition={{ duration: 6, repeat: Infinity }}
-          />
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#grid)" />
-      <rect width="100%" height="100%" fill="url(#hexGrid)" opacity="0.5" />
-    </svg>
-
-    {/* Formas geométricas arquitetônicas mais elaboradas */}
-    <motion.div
-      className="absolute top-20 left-10 border border-blue-400/20"
-      style={{ width: "120px", height: "120px" }}
-      initial={{ opacity: 0, scale: 0, rotate: 0 }}
-      animate={{
-        opacity: [0, 0.4, 0],
-        scale: [0, 1.1, 0],
-        rotate: [0, 180, 360],
-        borderRadius: ["0%", "50%", "0%"]
-      }}
-      transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-    />
-
-    <motion.div
-      className="absolute bottom-20 right-10 border-2 border-emerald-400/20"
-      style={{ width: "80px", height: "140px" }}
-      initial={{ opacity: 0, y: 50, skewY: 0 }}
-      animate={{
-        opacity: [0, 0.5, 0],
-        y: [50, -20, 50],
-        skewY: [-5, 5, -5],
-        borderColor: [
-          "rgba(16, 185, 129, 0.2)",
-          "rgba(59, 130, 246, 0.2)",
-          "rgba(147, 51, 234, 0.2)",
-          "rgba(16, 185, 129, 0.2)"
-        ]
-      }}
-      transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-    />
-
-    {/* Triângulos decorativos */}
-    <motion.div
-      className="absolute top-1/2 left-1/4 w-0 h-0"
-      style={{
-        borderLeft: "40px solid transparent",
-        borderRight: "40px solid transparent",
-        borderBottom: "60px solid rgba(147, 51, 234, 0.1)"
-      }}
-      animate={{
-        rotate: [0, 120, 240, 360],
-        scale: [0.8, 1.3, 0.8],
-        opacity: [0.1, 0.4, 0.1]
-      }}
-      transition={{ duration: 10, repeat: Infinity }}
-    />
-
-    {/* Círculos decorativos melhorados */}
-    <motion.div
-      className="absolute top-1/3 right-1/4 rounded-full border-2"
-      style={{ width: "60px", height: "60px" }}
-      animate={{
-        scale: [1, 1.4, 1],
-        opacity: [0.2, 0.6, 0.2],
-        borderColor: [
-          "rgba(59, 130, 246, 0.3)",
-          "rgba(16, 185, 129, 0.3)",
-          "rgba(147, 51, 234, 0.3)",
-          "rgba(59, 130, 246, 0.3)"
-        ],
-        rotate: 360
-      }}
-      transition={{ duration: 8, repeat: Infinity }}
-    />
-  </div>
-);
+const FEATURES = [
+  'Atendimento por IA 24 h no WhatsApp',
+  'Agenda e plantão sincronizados com a equipe',
+  'Relatórios de VGV e funil prontos para exportar',
+] as const;
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const { theme } = useTheme();
-  const isLight = theme === 'light';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [particles, setParticles] = useState<number[]>([]);
 
-  // Estados para "Esqueci minha senha"
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [forgotPasswordError, setForgotPasswordError] = useState<string | null>(null);
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
 
-  // Gerar partículas variadas (só tema escuro — no claro o fundo é limpo)
   useEffect(() => {
-    if (!isLight) {
-      const particleArray = Array.from({ length: 25 }, (_, i) => i);
-      setParticles(particleArray);
-    } else {
-      setParticles([]);
+    try {
+      const saved = localStorage.getItem(REMEMBER_EMAIL_KEY);
+      if (saved) {
+        setEmail(saved);
+        setRememberMe(true);
+      }
+    } catch {
+      /* ignore */
     }
-  }, [isLight]);
+  }, []);
 
   const handleEmailPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,46 +75,51 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setMessage(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (signInError) throw signInError;
 
       if (data.user) {
-        // Verificar se o usuário está ativo no perfil antes de prosseguir
+        try {
+          if (rememberMe) {
+            localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+          } else {
+            localStorage.removeItem(REMEMBER_EMAIL_KEY);
+          }
+        } catch {
+          /* ignore */
+        }
+
         const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
           .select('is_active, role, company_id')
           .eq('id', data.user.id)
           .single();
 
-        // Se não existir perfil ou estiver inativo, impedir acesso
         if (profileError || !profile || profile.is_active === false) {
           await supabase.auth.signOut();
           setError('Seu acesso está desativado. Entre em contato com o administrador.');
           return;
         }
 
-        // Super admin sempre pode acessar
         if (profile.role === 'super_admin') {
           onLoginSuccess();
           return;
         }
 
-        // Verificar status da empresa usando a função RPC
-        const { data: accessData, error: accessError } = await supabase
-          .rpc('check_current_user_access');
+        const { data: accessData, error: accessError } = await supabase.rpc(
+          'check_current_user_access'
+        );
 
         if (accessError) {
           console.error('Erro ao verificar acesso da empresa:', accessError);
-          // Permitir acesso em caso de erro na verificação (para não bloquear por falha técnica)
           onLoginSuccess();
           return;
         }
 
-        // Verificar resultado da verificação
         if (accessData && accessData.length > 0) {
           const accessStatus = accessData[0];
 
@@ -369,7 +129,6 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             return;
           }
 
-          // Se está em período de carência, mostrar aviso mas permitir acesso
           if (accessStatus.is_grace_period) {
             setMessage(`⚠️ ${accessStatus.message}`);
           }
@@ -377,8 +136,9 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         onLoginSuccess();
       }
-    } catch (error: any) {
-      setError(error.message || 'Erro ao processar solicitação');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao processar solicitação';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -396,432 +156,305 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         return;
       }
 
-      // Configurar URL de redirecionamento após reset
       const redirectUrl = `${window.location.origin}/reset-password`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
-        redirectTo: redirectUrl,
-      });
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        forgotPasswordEmail,
+        { redirectTo: redirectUrl }
+      );
 
-      if (error) throw error;
+      if (resetError) throw resetError;
 
       setForgotPasswordSuccess(true);
       setForgotPasswordEmail('');
-    } catch (error: any) {
-      setForgotPasswordError(error.message || 'Erro ao enviar email de recuperação');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao enviar email de recuperação';
+      setForgotPasswordError(msg);
     } finally {
       setForgotPasswordLoading(false);
     }
   };
 
-  const particleTypes = ['default', 'star', 'spark', 'glow'];
-
   return (
-    <div
-      className={cn(
-        'min-h-screen relative overflow-hidden',
-        isLight
-          ? 'bg-gradient-to-br from-slate-100 via-white to-blue-50/90 text-slate-900'
-          : 'bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950'
-      )}
-    >
-      {!isLight && (
-        <>
-          <ArchitecturalGrid />
-          <PulsingLights />
-          <GlassShards />
-          {particles.map((particle, index) => (
-            <FloatingParticle
-              key={particle}
-              delay={index * 1.5}
-              duration={12 + Math.random() * 8}
-              type={particleTypes[index % particleTypes.length]}
-            />
-          ))}
-          <FloatingIcon Icon={Building2} delay={0} x={8} y={15} color="blue" />
-          <FloatingIcon Icon={Home} delay={2} x={88} y={12} color="emerald" />
-          <FloatingIcon Icon={Building} delay={4} x={12} y={75} color="purple" />
-          <FloatingIcon Icon={MapPin} delay={6} x={85} y={78} color="yellow" />
-          <FloatingIcon Icon={Key} delay={8} x={50} y={8} color="pink" />
-          <FloatingIcon Icon={Star} delay={3} x={25} y={45} color="blue" />
-          <FloatingIcon Icon={Sparkles} delay={7} x={75} y={40} color="purple" />
-          <FloatingIcon Icon={Zap} delay={5} x={60} y={85} color="emerald" />
-        </>
-      )}
-
-      {isLight ? (
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[#F7F5F0]">
+      {/* Left — marketing (desktop) */}
+      <aside
+        className="relative hidden lg:flex lg:w-1/2 flex-col justify-between overflow-hidden px-10 xl:px-14 py-10 text-white"
+        style={{ backgroundColor: '#0C2919' }}
+      >
         <div
-          className="absolute inset-0 pointer-events-none opacity-50"
+          className="pointer-events-none absolute inset-0 opacity-[0.14]"
           aria-hidden
-        >
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#cbd5e1_1px,transparent_1px),linear-gradient(to_bottom,#cbd5e1_1px,transparent_1px)] bg-[size:56px_56px]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-blue-100/40 via-transparent to-slate-50/80" />
-        </div>
-      ) : (
-        <>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent via-purple-900/10 to-black/40 pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-900/5 to-transparent pointer-events-none" />
-        </>
-      )}
-
-      {/* Conteúdo principal */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 60, scale: 0.85, rotateX: 15 }}
-          animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
-          transition={{
-            duration: 1.2,
-            ease: "easeOut",
-            type: "spring",
-            stiffness: 80
+          style={{
+            backgroundImage:
+              'linear-gradient(to right, rgba(255,255,255,0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.12) 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
           }}
-          className="w-full max-w-md"
-        >
-          <motion.div
-            className={cn(
-              'absolute inset-0 rounded-3xl blur-xl',
-              isLight
-                ? 'bg-gradient-to-r from-blue-200/30 via-purple-200/25 to-emerald-200/30'
-                : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-emerald-500/10'
-            )}
-            animate={{
-              opacity: [0.3, 0.6, 0.3],
-              scale: [0.95, 1.05, 0.95]
-            }}
-            transition={{ duration: 4, repeat: Infinity }}
-          />
+        />
+        <div
+          className="pointer-events-none absolute inset-0"
+          aria-hidden
+          style={{
+            background:
+              'radial-gradient(ellipse 80% 60% at 15% 10%, rgba(52, 211, 153, 0.18), transparent 55%)',
+          }}
+        />
 
-          <Card
-            className={cn(
-              'relative backdrop-blur-2xl shadow-2xl rounded-3xl overflow-hidden border',
-              isLight
-                ? 'bg-white/95 border-slate-200/90 shadow-slate-200/50'
-                : 'bg-gray-900/85 border-gray-700/60'
-            )}
-          >
-            {/* Borda animada */}
-            <motion.div
-              className="absolute inset-0 rounded-3xl"
-              style={{
-                background: "linear-gradient(45deg, transparent, rgba(59, 130, 246, 0.2), transparent, rgba(147, 51, 234, 0.2), transparent)",
-                backgroundSize: "300% 300%"
-              }}
-              animate={{
-                backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"]
-              }}
-              transition={{ duration: 6, repeat: Infinity }}
+        <div className="relative z-10">
+          <div className="flex items-center">
+            <img
+              src="/IMOBI-LOGO-(1).png"
+              alt="IAFÉ IMOBI"
+              className="h-16 max-h-16 w-auto max-w-[min(100%,280px)] object-contain"
             />
+          </div>
 
-            <div
-              className={cn(
-                'relative backdrop-blur-2xl m-0.5 rounded-3xl',
-                isLight ? 'bg-white' : 'bg-gray-900/90'
-              )}
-            >
-              <CardHeader className="text-center relative pt-8">
-                <motion.div
-                  className="flex justify-center items-center mb-4"
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.8, ease: "easeOut" }}
-                >
-                  <img
-                    src={isLight ? '/IMOBI-LOGO-2.png' : '/IMOBI-LOGO-(1).png'}
-                    alt="Logo IAFÉ IMOBI"
-                    className={cn(
-                      'h-24 w-auto object-contain',
-                      isLight ? 'drop-shadow-md' : 'drop-shadow-2xl'
-                    )}
-                    style={{ marginTop: '-16px', marginBottom: '-16px' }}
-                  />
-                </motion.div>
-              </CardHeader>
+          <motion.h1
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mt-14 max-w-md text-[2rem] xl:text-[2.35rem] font-semibold leading-[1.15] tracking-tight"
+            style={{ color: '#ffffff' }}
+          >
+            A operação inteira da sua imobiliária em um só lugar.
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.08 }}
+            className="mt-4 max-w-md text-[15px] leading-relaxed text-emerald-100/65"
+          >
+            Portfólio, agenda, pipeline e o atendimento por IA no WhatsApp — com relatórios
+            prontos para a diretoria.
+          </motion.p>
 
-              <CardContent className="relative px-8 pb-8">
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                >
-                  <motion.form
-                    onSubmit={handleEmailPassword}
-                    className="space-y-8"
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8, delay: 0.3 }}
-                  >
-                    <motion.div
-                      className="space-y-3"
-                      whileHover={{ scale: 1.02 }}
-                      transition={{ type: "spring", stiffness: 300 }}
-                    >
-                      <Label
-                        htmlFor="email"
-                        className={cn(
-                          'flex items-center gap-2 text-sm font-medium',
-                          isLight ? 'text-slate-700' : 'text-gray-200'
-                        )}
-                      >
-                        <Mail className={cn('w-4 h-4', isLight ? 'text-blue-600' : 'text-blue-400')} />
-                        Email Corporativo
-                      </Label>
-                      <div className="relative group">
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-emerald-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-sm"
-                          layoutId="input-glow"
-                        />
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"
-                        />
-                        <Input
-                          id="email"
-                          type="email"
-                          placeholder="seu.email@empresa.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className={cn(
-                            'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg',
-                            isLight
-                              ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25'
-                              : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30'
-                          )}
-                          required
-                        />
-                      </div>
-                    </motion.div>
+          <div className="mt-10 grid grid-cols-3 gap-3 max-w-lg">
+            {STATS.map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-xl border border-white/10 bg-black/25 px-3 py-3.5 backdrop-blur-sm"
+              >
+                <div className="text-xl font-semibold tabular-nums" style={{ color: '#111827' }}>
+                  {stat.value}
+                </div>
+                <div className="mt-1 text-[9px] font-medium uppercase tracking-wider text-emerald-800">
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
 
-                    <motion.div
-                      className="space-y-3"
-                      whileHover={{ scale: 1.02 }}
-                      transition={{ type: "spring", stiffness: 300 }}
-                    >
-                      <Label
-                        htmlFor="password"
-                        className={cn(
-                          'flex items-center gap-2 text-sm font-medium',
-                          isLight ? 'text-slate-700' : 'text-gray-200'
-                        )}
-                      >
-                        <Shield className={cn('w-4 h-4', isLight ? 'text-purple-600' : 'text-purple-400')} />
-                        Senha Segura
-                      </Label>
-                      <div className="relative group">
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-blue-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-sm"
-                          layoutId="password-glow"
-                        />
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"
-                        />
-                        <div className="relative">
-                          <Input
-                            id="password"
-                            type={showPassword ? 'text' : 'password'}
-                            placeholder="••••••••••••"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            autoComplete="current-password"
-                            className={cn(
-                              'relative backdrop-blur-sm transition-all duration-500 rounded-xl h-12 text-lg pr-11',
-                              isLight
-                                ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/25'
-                                : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30'
-                            )}
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword((v) => !v)}
-                            className={cn(
-                              'absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/40',
-                              isLight
-                                ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                                : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
-                            )}
-                            aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-5 w-5" aria-hidden />
-                            ) : (
-                              <Eye className="h-5 w-5" aria-hidden />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
+          <ul className="mt-8 space-y-3">
+            {FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-2.5 text-sm text-emerald-50/85">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+                  <Check className="h-3 w-3 text-emerald-400" strokeWidth={3} />
+                </span>
+                {feature}
+              </li>
+            ))}
+          </ul>
+        </div>
 
-                    {/* Link "Esqueci minha senha" */}
-                    <motion.div
-                      className="flex justify-end"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.8 }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowForgotPassword(true);
-                          setForgotPasswordEmail(email); // Preencher com email do formulário
-                        }}
-                        className={cn(
-                          'text-sm transition-colors duration-300 flex items-center gap-1 group',
-                          isLight ? 'text-blue-600 hover:text-blue-800' : 'text-blue-400 hover:text-blue-300'
-                        )}
-                      >
-                        <HelpCircle className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                        <span>Esqueci minha senha</span>
-                      </button>
-                    </motion.div>
+        <footer className="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-emerald-100/40">
+          <span>v1.0.0</span>
+          <span aria-hidden>·</span>
+          <span>© 2026 IAFÉ IMOBI</span>
+          <span aria-hidden>·</span>
+          <a href="#" className="hover:text-emerald-100/70 transition-colors">
+            Termos
+          </a>
+          <span aria-hidden>·</span>
+          <a href="#" className="hover:text-emerald-100/70 transition-colors">
+            Privacidade
+          </a>
+        </footer>
+      </aside>
 
-                    <AnimatePresence>
-                      {error && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -20, scale: 0.9 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -20, scale: 0.9 }}
-                          transition={{ duration: 0.4, type: "spring" }}
-                        >
-                          <Alert
-                            variant="destructive"
-                            className={cn(
-                              'backdrop-blur-sm rounded-xl',
-                              isLight
-                                ? 'bg-red-50 border-red-200'
-                                : 'bg-red-900/30 border-red-500/60'
-                            )}
-                          >
-                            <AlertDescription className={isLight ? 'text-red-800' : 'text-red-200'}>
-                              {error}
-                            </AlertDescription>
-                          </Alert>
-                        </motion.div>
-                      )}
+      {/* Right — form */}
+      <main className="relative flex flex-1 lg:w-1/2 flex-col items-center justify-center px-4 py-8 sm:px-8 bg-[#F7F5F0]">
+        {/* Mobile brand */}
+        <div className="mb-6 flex w-full max-w-[420px] items-center justify-center mx-auto lg:hidden">
+          <img
+            src="/IMOBI-LOGO-2.png"
+            alt="IAFÉ IMOBI"
+            className="h-20 max-h-20 w-auto max-w-[min(100%,280px)] object-contain"
+          />
+        </div>
 
-                      {message && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -20, scale: 0.9 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -20, scale: 0.9 }}
-                          transition={{ duration: 0.4, type: "spring" }}
-                        >
-                          <Alert
-                            className={cn(
-                              'backdrop-blur-sm rounded-xl',
-                              isLight
-                                ? 'bg-emerald-50 border-emerald-200'
-                                : 'bg-emerald-900/30 border-emerald-500/60'
-                            )}
-                          >
-                            <CheckCircle
-                              className={cn('h-4 w-4', isLight ? 'text-emerald-600' : 'text-emerald-400')}
-                            />
-                            <AlertDescription className={isLight ? 'text-emerald-900' : 'text-emerald-200'}>
-                              {message}
-                            </AlertDescription>
-                          </Alert>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <motion.div
-                      whileHover={{ scale: 1.03, y: -2 }}
-                      whileTap={{ scale: 0.97, y: 0 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 10 }}
-                    >
-                      <Button
-                        type="submit"
-                        className="relative w-full bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600 hover:from-blue-700 hover:via-purple-700 hover:to-emerald-700 text-white font-bold py-4 shadow-2xl hover:shadow-3xl transition-all duration-500 group rounded-xl text-lg overflow-hidden"
-                        disabled={loading}
-                      >
-                        {/* Efeito de brilho no botão */}
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                          animate={{
-                            x: ["-100%", "100%"]
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            repeatDelay: 3
-                          }}
-                        />
-
-                        {loading ? (
-                          <motion.div
-                            className="flex items-center justify-center"
-                            animate={{ opacity: [0.7, 1, 0.7] }}
-                            transition={{ duration: 1.5, repeat: Infinity }}
-                          >
-                            <Loader2 className="mr-3 h-6 w-6 animate-spin" />
-                            <span className="text-lg">Processando...</span>
-                          </motion.div>
-                        ) : (
-                          <span className="relative flex items-center justify-center">
-                            <Lock className="mr-3 h-5 w-5" />
-                            <span className="text-lg">Acessar Plataforma</span>
-                            <ArrowRight className="ml-3 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
-                          </span>
-                        )}
-                      </Button>
-                    </motion.div>
-                  </motion.form>
-                </motion.div>
-              </CardContent>
-            </div>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Modal "Esqueci minha senha" */}
-      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
-        <DialogContent
-          className={cn(
-            'backdrop-blur-xl max-w-md',
-            isLight
-              ? 'bg-white border-slate-200 text-slate-900'
-              : 'bg-gray-900/95 border-gray-700/60 text-white'
-          )}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="w-full max-w-[420px]"
         >
-          <DialogHeader>
-            <DialogTitle
-              className={cn(
-                'text-2xl font-bold flex items-center gap-2',
-                isLight
-                  ? 'text-slate-900'
-                  : 'bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent'
-              )}
+          <div className="rounded-2xl border border-stone-200/80 bg-white p-6 sm:p-8 shadow-[0_8px_30px_rgba(28,40,30,0.06)]">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+              Entrar na plataforma
+            </h2>
+            <p className="mt-1.5 text-sm text-slate-500">
+              Use o e-mail corporativo cadastrado pela sua imobiliária.
+            </p>
+
+            <form onSubmit={handleEmailPassword} className="mt-6 space-y-5">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="email"
+                  className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"
+                >
+                  E-mail corporativo
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="seu.email@empresa.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  className="h-11 rounded-xl border-stone-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:ring-emerald-700/30 focus-visible:border-emerald-800"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label
+                    htmlFor="password"
+                    className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"
+                  >
+                    Senha
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotPassword(true);
+                      setForgotPasswordEmail(email);
+                    }}
+                    className="text-xs font-medium text-emerald-800 hover:text-emerald-950 transition-colors"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    className="h-11 rounded-xl border-stone-200 bg-white pr-20 text-slate-900 placeholder:text-slate-400 focus-visible:ring-emerald-700/30 focus-visible:border-emerald-800"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={rememberMe}
+                    onCheckedChange={(v) => setRememberMe(v === true)}
+                    id="remember"
+                    className="border-stone-300 data-[state=checked]:bg-emerald-700 data-[state=checked]:border-emerald-700"
+                  />
+                  <span className="text-sm text-slate-700">Manter conectado</span>
+                </label>
+                <span className="text-xs text-slate-400">30 dias</span>
+              </div>
+
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                  >
+                    <Alert variant="destructive" className="rounded-xl bg-red-50 border-red-200">
+                      <AlertDescription className="text-red-800">{error}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+                {message && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                  >
+                    <Alert className="rounded-xl bg-emerald-50 border-emerald-200">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      <AlertDescription className="text-emerald-900">{message}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="btn-on-emerald w-full h-11 rounded-xl bg-emerald-900 hover:bg-emerald-800 font-medium shadow-sm"
+                style={{ color: '#ffffff', backgroundColor: '#0C2919' }}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processando...
+                  </>
+                ) : (
+                  'Acessar plataforma'
+                )}
+              </Button>
+            </form>
+          </div>
+
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Não tem acesso?{' '}
+            <button
+              type="button"
+              className="font-semibold text-emerald-900 hover:text-emerald-950 transition-colors"
+              onClick={() =>
+                toast.info('Peça ao administrador da sua imobiliária para liberar o acesso.')
+              }
             >
-              <Key className={cn('w-6 h-6', isLight ? 'text-blue-600' : 'text-blue-400')} />
+              Fale com o administrador
+            </button>
+          </p>
+
+          <p className="mt-4 text-center text-[11px] text-slate-400 lg:hidden">
+            v1.0.0 · © 2026 IAFÉ IMOBI
+          </p>
+        </motion.div>
+      </main>
+
+      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+        <DialogContent className="max-w-md bg-white border-stone-200 text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold flex items-center gap-2 text-slate-900">
+              <Key className="w-5 h-5 text-emerald-800" />
               Recuperar Senha
             </DialogTitle>
-            <DialogDescription className={isLight ? 'text-slate-600' : 'text-gray-300'}>
+            <DialogDescription className="text-slate-600">
               Digite seu email e enviaremos um link para redefinir sua senha
             </DialogDescription>
           </DialogHeader>
 
           {forgotPasswordSuccess ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="space-y-4"
-            >
-              <Alert
-                className={cn(
-                  isLight ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-900/30 border-emerald-500/60'
-                )}
-              >
-                <CheckCircle className={cn('h-5 w-5', isLight ? 'text-emerald-600' : 'text-emerald-400')} />
-                <AlertDescription className={isLight ? 'text-emerald-900' : 'text-emerald-200'}>
+            <div className="space-y-4">
+              <Alert className="bg-emerald-50 border-emerald-200">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <AlertDescription className="text-emerald-900">
                   <strong>Email enviado com sucesso!</strong>
                   <br />
                   Verifique sua caixa de entrada e siga as instruções para redefinir sua senha.
                   <br />
-                  <span
-                    className={cn(
-                      'text-sm mt-2 block',
-                      isLight ? 'text-emerald-800' : 'text-emerald-300/80'
-                    )}
-                  >
+                  <span className="text-sm mt-2 block text-emerald-800">
                     O link expira em 1 hora.
                   </span>
                 </AlertDescription>
@@ -831,15 +464,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   setShowForgotPassword(false);
                   setForgotPasswordSuccess(false);
                 }}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                className="btn-on-emerald w-full bg-emerald-900 hover:bg-emerald-800"
+                style={{ color: '#ffffff', backgroundColor: '#0C2919' }}
               >
                 Fechar
               </Button>
-            </motion.div>
+            </div>
           ) : (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="forgot-email" className={isLight ? 'text-slate-700' : 'text-gray-200'}>
+                <Label htmlFor="forgot-email" className="text-slate-700">
                   Email
                 </Label>
                 <Input
@@ -848,24 +482,15 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   placeholder="seu.email@empresa.com"
                   value={forgotPasswordEmail}
                   onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className={cn(
-                    isLight
-                      ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
-                      : 'bg-gray-800/60 border-gray-600/60 text-white placeholder-gray-400 focus:border-blue-500'
-                  )}
+                  className="bg-white border-stone-200 text-slate-900 placeholder:text-slate-400 focus-visible:border-emerald-800"
                   required
                   disabled={forgotPasswordLoading}
                 />
               </div>
 
               {forgotPasswordError && (
-                <Alert
-                  variant="destructive"
-                  className={cn(
-                    isLight ? 'bg-red-50 border-red-200' : 'bg-red-900/30 border-red-500/60'
-                  )}
-                >
-                  <AlertDescription className={isLight ? 'text-red-800' : 'text-red-200'}>
+                <Alert variant="destructive" className="bg-red-50 border-red-200">
+                  <AlertDescription className="text-red-800">
                     {forgotPasswordError}
                   </AlertDescription>
                 </Alert>
@@ -880,19 +505,15 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                     setForgotPasswordError(null);
                     setForgotPasswordEmail('');
                   }}
-                  className={cn(
-                    'flex-1',
-                    isLight
-                      ? 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                      : 'border-gray-600 text-gray-300 hover:bg-gray-800'
-                  )}
+                  className="flex-1 border-stone-300 text-slate-700 hover:bg-stone-50"
                   disabled={forgotPasswordLoading}
                 >
                   Cancelar
                 </Button>
                 <Button
                   type="submit"
-                  className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  className="btn-on-emerald flex-1 bg-emerald-900 hover:bg-emerald-800"
+                  style={{ color: '#ffffff', backgroundColor: '#0C2919' }}
                   disabled={forgotPasswordLoading}
                 >
                   {forgotPasswordLoading ? (

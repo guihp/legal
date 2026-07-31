@@ -1,5 +1,11 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-31 — Login: redesign cream (mockup split-screen)
+
+- Split 50/50: painel forest `#0C2919` (logo iA, headline, stats decorativos, checks, footer v1.0.0) + cream `#F7F5F0` com card “Entrar na plataforma”.
+- Form: e-mail/senha, Esqueci minha senha (dialog reset intacto), Mostrar, Manter conectado (localStorage e-mail), CTA `.btn-on-emerald` + `#ffffff` inline.
+- Soft: Google Workspace / código de convite → toast “em breve”; “Fale com o administrador” → toast. Auth email/password + checks de perfil/empresa preservados. Mobile: form first + brand compacto.
+
 ## 2026-07-31 — Relatórios: fix load dead-state
 
 - **Causa:** `fetchReportsBundle` perdeu `async` (StrReplace) → Vite `await isn't allowed in non-async function` → módulo não carrega → bundle null → “Não foi possível carregar os dados.”
