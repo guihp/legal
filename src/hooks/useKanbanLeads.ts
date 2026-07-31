@@ -343,11 +343,6 @@ export function useKanbanLeads() {
         id_corretor_responsavel: options?.assignedUserId ?? user.id
       };
 
-      // Adicionar property_id se existir na estrutura da tabela
-      if (leadData.property_id) {
-        insertData.property_id = leadData.property_id;
-      }
-
       // Adicionar message se existir na estrutura da tabela
       if (leadData.message) {
         insertData.message = leadData.message;
@@ -396,20 +391,19 @@ export function useKanbanLeads() {
         updated_at: new Date().toISOString()
       };
 
-      if (updates.nome) updateData.name = updates.nome;
+      if (updates.nome !== undefined) updateData.name = updates.nome.trim() || null;
       if (updates.email !== undefined) updateData.email = updates.email || null;
       if (updates.telefone !== undefined) updateData.phone = updates.telefone || null;
       if (updates.cpf !== undefined) updateData.cpf = updates.cpf || null;
       if (updates.endereco !== undefined) updateData.endereco = updates.endereco || null;
       if (updates.estado_civil !== undefined) updateData.estado_civil = updates.estado_civil || null;
-      if (updates.origem) updateData.source = updates.origem;
-      if (updates.stage) updateData.stage = updates.stage as LeadStage;
+      if (updates.origem !== undefined) updateData.source = updates.origem || null;
+      if (updates.stage !== undefined) updateData.stage = updates.stage as LeadStage;
       if (updates.interesse !== undefined) updateData.interest = updates.interesse || null;
       if (updates.valorEstimado !== undefined || updates.valor !== undefined) {
-        updateData.estimated_value = updates.valorEstimado || updates.valor || null;
+        updateData.estimated_value = updates.valorEstimado ?? updates.valor ?? null;
       }
       if (updates.observacoes !== undefined) updateData.notes = updates.observacoes || null;
-      if (updates.property_id !== undefined) updateData.property_id = updates.property_id || null;
       if (updates.imovel_interesse !== undefined) updateData.imovel_interesse = updates.imovel_interesse || null;
       if (updates.message !== undefined) updateData.message = updates.message || null;
       // Atribuição de corretor responsável (padronizado)

@@ -1,4 +1,6 @@
 import React from 'react';
+import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -16,7 +18,6 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    // No console noise in production bundles; useful in dev
     if (import.meta.env.DEV) {
       console.error('ErrorBoundary capturou um erro:', error, errorInfo);
     }
@@ -26,26 +27,57 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
     window.location.reload();
   };
 
+  handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.assign('/');
+  };
+
   render() {
     if (this.state.hasError) {
+      const detail = this.state.error?.message?.trim();
+
       return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center p-6 text-white">
-          <div className="max-w-md w-full bg-gray-900/80 border border-gray-700 rounded-xl p-6 text-center">
-            <h1 className="text-xl font-semibold mb-2">Ocorreu um erro inesperado</h1>
-            <p className="text-gray-300 mb-4">Tente recarregar a página. Se o problema persistir, verifique o console do navegador.</p>
-            {import.meta.env.DEV && this.state.error && (
-              <div className="text-left bg-red-900/20 border border-red-800 rounded-lg p-3 text-red-200 text-sm mb-4 overflow-auto max-h-48">
-                <div className="font-mono whitespace-pre-wrap">
-                  {this.state.error.message}
-                </div>
+        <div className="min-h-screen flex items-center justify-center p-6 bg-[#F7F5F0] dark:bg-background text-foreground">
+          <div className="max-w-md w-full rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-sm text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-6 w-6" aria-hidden />
+            </div>
+
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Algo deu errado
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+              Não foi possível carregar esta tela. Tente recarregar a página. Se o problema
+              continuar, volte e tente novamente em instantes.
+            </p>
+
+            {detail ? (
+              <div
+                role="alert"
+                className="mt-5 rounded-xl border border-border bg-muted/60 dark:bg-muted/40 px-3.5 py-3 text-left"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
+                  Detalhe técnico
+                </p>
+                <pre className="font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words max-h-40 overflow-auto">
+                  {detail}
+                </pre>
               </div>
-            )}
-            <button
-              onClick={this.handleReload}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 transition-colors"
-            >
-              Recarregar
-            </button>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-center gap-2.5">
+              <Button type="button" variant="outline" onClick={this.handleBack} className="rounded-xl">
+                <ArrowLeft className="h-4 w-4" />
+                Voltar
+              </Button>
+              <Button type="button" onClick={this.handleReload} className="rounded-xl">
+                <RefreshCw className="h-4 w-4" />
+                Recarregar
+              </Button>
+            </div>
           </div>
         </div>
       );
@@ -54,5 +86,3 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
     return this.props.children;
   }
 }
-
-

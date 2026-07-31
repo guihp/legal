@@ -16,6 +16,7 @@ export type LeadStage =
   | 'Novo Lead'
   | 'Qualificado'
   | 'Visita Agendada'
+  | 'Visita Realizada'
   | 'Visita Cancelada'
   | 'Em Negociação'
   | 'Documentação'
@@ -61,6 +62,10 @@ export interface KanbanLead {
   valorEstimado: number; // Alias para compatibilidade
   stage: string;
   dataContato: string;
+  /** ISO timestamp from leads.created_at — for relative time / KPIs */
+  createdAt?: string;
+  /** ISO timestamp from leads.updated_at */
+  updatedAt?: string;
   observacoes: string;
   property_id?: string;
   imovel_interesse?: string; // ID numérico do imóvel
@@ -96,9 +101,18 @@ export interface KanbanStats {
   percentage: number;
 }
 
+const LEAD_NAME_PLACEHOLDERS = new Set(['', '~', '-', '.', 'null', 'undefined']);
+
+/** Treats WhatsApp / CRM placeholder values as empty (mirrors SQL lead_display_name). */
+export function normalizeLeadStoredName(raw: string | null | undefined): string {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed || LEAD_NAME_PLACEHOLDERS.has(trimmed.toLowerCase())) return '';
+  return trimmed;
+}
+
 // Função para converter DatabaseLead para KanbanLead
 export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
-  const name = String(dbLead?.name || '').trim();
+  const name = normalizeLeadStoredName(dbLead?.name);
   const igName = String(dbLead?.nome_instagram_cliente || '').trim();
   const igHandle = String(dbLead?.arroba_instagram_cliente || '').trim();
   const displayName = name || igName || (igHandle ? (igHandle.startsWith('@') ? igHandle : `@${igHandle}`) : '');
@@ -117,6 +131,8 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     valorEstimado: dbLead.estimated_value || 0,
     stage: normalizeStageForDisplay(dbLead.stage || 'Novo Lead'), // Normalizar: hífens -> espaços, trim, capitalizar
     dataContato: dbLead.created_at ? toCalendarDateYmdBrazil(dbLead.created_at) : '',
+    createdAt: dbLead.created_at ? String(dbLead.created_at) : undefined,
+    updatedAt: dbLead.updated_at ? String(dbLead.updated_at) : undefined,
     observacoes: dbLead.notes || '',
     property_id: dbLead.property_id || undefined,
     imovel_interesse: dbLead.imovel_interesse || undefined,
@@ -149,7 +165,6 @@ export function kanbanLeadToDatabaseLead(kanbanLead: KanbanLead): Partial<Databa
     interest: kanbanLead.interesse || null,
     estimated_value: kanbanLead.valorEstimado || kanbanLead.valor || null,
     notes: kanbanLead.observacoes || null,
-    property_id: kanbanLead.property_id || null,
     imovel_interesse: kanbanLead.imovel_interesse || null,
     message: kanbanLead.message || null,
     updated_at: new Date().toISOString()

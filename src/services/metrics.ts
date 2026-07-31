@@ -123,6 +123,7 @@ const STAGE_ORDER: Record<string, number> = {
  */
 const REALIZED_APPOINTMENT_STAGES = new Set([
   'visita agendada',
+  'visita realizada',
   'em negociacao',
   'documentacao',
   'contrato',

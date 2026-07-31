@@ -4,6 +4,41 @@ Versioned catalog of domain events emitted by the platform.
 
 ---
 
+## in_app.lead_stage_changed
+
+| Field | Value |
+|-------|--------|
+| **Name** | `in_app.lead_stage_changed` |
+| **Channel** | In-app (`user_notifications`) |
+| **When** | `leads.stage` changes (Kanban/pipeline move), except when transitioning *into* visit-scheduled (that emits `appointment`) |
+| **Recipients** | Assigned broker (`id_corretor_responsavel` or `user_id`) + active `gestor`/`admin` of the company |
+| **Emitter** | DB trigger `trg_notify_lead_stage_change` on `public.leads` |
+
+### Payload (`meta` jsonb)
+
+- `lead_id`, `lead_name`
+- `from_stage` / `to_stage` (+ `*_label` PT)
+- `route`: `/clients`
+
+---
+
+## in_app.appointment
+
+| Field | Value |
+|-------|--------|
+| **Name** | `in_app.appointment` |
+| **Channel** | In-app (`user_notifications`) |
+| **When** | Lead stage changes **to** visita agendada (`visita-agendada` / `Visita Agendada`), including `schedule-api` `book_visit` and CRM Kanban |
+| **Recipients** | Same as stage-changed |
+| **Emitter** | Same trigger (typed as `appointment` when entering visit stage) |
+| **Note** | Pipeline stages (order): Novo Lead → Qualificado → Visita Agendada → **Visita Realizada** (`visita-realizada`) → Visita Cancelada → Em Negociação → Documentação → Contrato → Fechamento. Moving to `visita-realizada` emits `lead_stage_changed`, not `appointment`. |
+
+### Payload (`meta` jsonb)
+
+- Same as stage-changed; `route`: `/agenda`
+
+---
+
 ## visit.booked.email_broker
 
 | Field | Value |
@@ -57,20 +92,36 @@ WhatsApp visit reminders (1 day / 3 hours) via n8n remain separate (`visit_remin
 |-------|--------|
 | **Name** | `conversation.summary.request` |
 | **Channel** | n8n webhook `resumo_conversa` |
-| **When** | User clicks **Gerar resumo** in conversation actions menu |
+| **When** | User clicks **Gerar resumo** in conversation actions menu **or** in **LeadViewModal** (seção Contato) |
 | **URL** | `…/webhook/resumo_conversa` |
 
 ### Body
 
 | Field | Type | Notes |
 |-------|------|--------|
-| `session_id` | string | Phone / conversation key |
+| `session_id` | string | Phone / conversation key (IG: `leads.id`) |
 | `instancia` | string | WhatsApp/IG instance |
 | `company_id` | string (uuid) | Tenant company id |
 | `user_email` | string | Actor email |
 | `role` | string | Actor role |
 | `plataforma` | string | `WhatsApp` ou `Instagram` |
 | `rota` | string | `whatsapp` ou `instagram` (canal da UI) |
+| `lead_id` | string (uuid) | Opcional — enviado pelo LeadViewModal |
+| `phone` | string | Opcional — telefone do lead |
+| `email` | string | Opcional — e-mail do lead |
+| `name` | string | Opcional — nome do lead |
+
+### Response (n8n — formas comuns)
+
+| Shape | Notes |
+|-------|--------|
+| `{ resumo_conversa: string }` | Principal (SummaryModalAnimated) |
+| `{ resumo }` / `{ summary }` / `{ message }` | Alternativas |
+| `[{ output: string \| object }]` | Array n8n com JSON em `output` |
+| `{ data: { resumo } }` | Wrapper aninhado |
+| plain text | Fallback |
+
+Persistência (LeadViewModal): `leads.conversation_summary` (text).
 
 ---
 

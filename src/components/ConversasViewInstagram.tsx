@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/context-menu';
 import { LeadInstagramAvatar } from '@/components/LeadInstagramAvatar';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useIsXlUp } from '@/hooks/useMediaQuery';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 import { useToast } from '@/hooks/use-toast';
@@ -37,6 +38,7 @@ import { normInstagramSessionId } from '@/lib/mensagensRow';
 import { ChatConversationTextSearchTrigger } from '@/components/ChatConversationTextSearchTrigger';
 import { ConversationActionsMenu } from '@/components/ConversationActionsMenu';
 import { SummaryModalAnimated } from '@/components/SummaryModalAnimated';
+import { LeadViewModal } from '@/components/LeadViewModal';
 import { CRM_KANBAN_STAGE_TITLES } from '@/lib/crmKanbanStages';
 import type { LeadStage } from '@/types/kanban';
 import { ConversationListItem } from '@/components/chat/ConversationListItem';
@@ -64,6 +66,15 @@ import {
 } from '@/lib/sendChatMediaItems';
 import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
 import { formatConversationListTime } from '@/lib/formatConversationListTime';
+import { useNavigate } from 'react-router-dom';
+import {
+  ConversasInboxFilters,
+  matchesInboxFilter,
+  type InboxFilterId,
+} from '@/components/conversas/ConversasInboxFilters';
+import { ConversasLeadPanel } from '@/components/conversas/ConversasLeadPanel';
+import { ConversasChatHeaderActions } from '@/components/conversas/ConversasChatHeaderActions';
+import type { ChannelStats } from '@/components/conversas/ConversasTopBar';
 
 /* ---------- utils ---------- */
 
@@ -204,17 +215,28 @@ function InstagramMessageBubble({
 
 /* ---------- componente principal ---------- */
 
-export function ConversasViewInstagram() {
+export function ConversasViewInstagram({
+  onInboxStats,
+  openTemplatesRequest = 0,
+}: {
+  onInboxStats?: (stats: ChannelStats) => void;
+  openTemplatesRequest?: number;
+} = {}) {
   const { profile } = useUserProfile();
   const { labels: aiCatalogLabels } = useCompanyAiLabels();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const isXlUp = useIsXlUp();
   const controls = useAnimation();
+  const navigate = useNavigate();
 
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<InboxFilterId>('all');
+  const [leadPanelOpen, setLeadPanelOpen] = useState(false);
+  const [assuming, setAssuming] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -229,6 +251,7 @@ export function ConversasViewInstagram() {
   });
   const [inChatSearchQuery, setInChatSearchQuery] = useState('');
   const [chatSearchHighlightId, setChatSearchHighlightId] = useState<string | null>(null);
+  const [viewContactLeadId, setViewContactLeadId] = useState<string | null>(null);
 
   const composerMedia = useChatComposerMedia({
     surface: 'instagram',
@@ -386,14 +409,24 @@ export function ConversasViewInstagram() {
   const filteredConversas = useMemo(() => {
     const raw = searchQuery.trim().toLowerCase();
     const q = raw.replace(/^@+/, '');
-    if (!q) return conversas;
-    return conversas.filter(c => {
+    return conversas.filter((c) => {
       const name = (c.displayName || '').toLowerCase();
       const sid = (c.sessionId || '').toLowerCase();
       const arroba = (c.arrobaInstagramCliente || '').toLowerCase().replace(/^@+/, '');
-      return name.includes(q) || sid.includes(q) || arroba.includes(q);
+      const matchesSearch =
+        !q ||
+        name.includes(q) ||
+        sid.includes(q) ||
+        arroba.includes(q) ||
+        (c.lastMessageContent || '').toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+      return matchesInboxFilter(inboxFilter, {
+        unreadCount: getUnreadCount(c.sessionId),
+        labelSlug: c.labelSlug,
+        leadStage: c.leadStage,
+      });
     });
-  }, [conversas, searchQuery]);
+  }, [conversas, searchQuery, inboxFilter, getUnreadCount]);
 
   const displayChatItems = useMemo(
     () => groupChatMessagesForDisplay(messages),
@@ -418,6 +451,22 @@ export function ConversasViewInstagram() {
     refetchConversas();
   }, [profile?.company_id, profile?.id, refetchConversas]);
 
+  useEffect(() => {
+    if (!onInboxStats) return;
+    const unread = conversas.reduce((acc, c) => acc + (getUnreadCount(c.sessionId) > 0 ? 1 : 0), 0);
+    onInboxStats({ total: conversas.length, unread });
+  }, [conversas, getUnreadCount, onInboxStats]);
+
+  useEffect(() => {
+    if (selectedConversation) {
+      setLeadPanelOpen(isXlUp);
+    } else {
+      setLeadPanelOpen(false);
+    }
+  }, [isXlUp, selectedConversation]);
+
+  void openTemplatesRequest;
+
   const setConversationCrmStage = useCallback(async (leadId: string | null | undefined, stage: LeadStage) => {
     const id = leadId?.trim();
     if (!id) throw new Error('Lead não vinculado ao CRM para esta conversa');
@@ -430,6 +479,26 @@ export function ConversasViewInstagram() {
     () => conversas.find(c => c.sessionId === selectedConversation),
     [conversas, selectedConversation]
   );
+
+  const handleAssumeConversation = useCallback(async () => {
+    if (!selectedConversation) return;
+    try {
+      setAssuming(true);
+      await setConversationLabel(selectedConversation, 'humano');
+      toast({
+        title: 'Atendimento assumido',
+        description: 'A conversa foi marcada como atendimento humano (corretor).',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Não foi possível assumir',
+        description: e?.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAssuming(false);
+    }
+  }, [selectedConversation, setConversationLabel, toast]);
 
   const headerConversation = useMemo(() => {
     if (currentConversation) return currentConversation;
@@ -909,43 +978,32 @@ export function ConversasViewInstagram() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
+    <div className="h-full min-h-0 min-w-0 bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-xl sm:rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR */}
       <div
-        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0`}
+        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[min(40%,300px)] lg:w-[320px] xl:w-[380px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0 min-h-0 min-w-0`}
       >
-        {/* HEADER */}
-        <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm"
-              style={{ background: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)' }}
+        <ConversasInboxFilters
+          title="Caixa de entrada"
+          totalCount={conversas.length}
+          unreadCount={conversas.reduce((acc, c) => acc + (getUnreadCount(c.sessionId) > 0 ? 1 : 0), 0)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchPlaceholder="Pesquisar por nome ou @ do Instagram…"
+          activeFilter={inboxFilter}
+          onFilterChange={setInboxFilter}
+          headerMenu={
+            <button
+              type="button"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-lg hover:bg-[var(--cv-hover)]"
+              onClick={() => void refreshInstances()}
+              title="Atualizar"
+              aria-label="Atualizar contas Instagram"
             >
-              <Instagram className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-semibold text-[var(--cv-text)] text-sm md:text-base">Conversas Instagram</h1>
-              <p className="text-[11px] text-[var(--cv-text-muted)]">Direct Messages</p>
-            </div>
-          </div>
-          <div className="flex gap-3 text-[var(--cv-icon)]">
-            <MessageSquare className="w-5 h-5 cursor-pointer" onClick={refreshInstances} />
-            <MoreVertical className="w-5 h-5 cursor-pointer" />
-          </div>
-        </div>
-
-        {/* SEARCH */}
-        <div className="p-2 border-b border-[var(--cv-border)]">
-          <div className="bg-[var(--cv-search-bg)] rounded-lg px-3 py-1.5 flex items-center gap-2">
-            <Search className="w-4 h-4 text-[var(--cv-text-muted)]" />
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Pesquisar por nome ou @ do Instagram…"
-              className="bg-transparent border-none outline-none text-sm text-[var(--cv-input-text)] w-full placeholder:text-[var(--cv-text-muted)]"
-            />
-          </div>
-        </div>
+              <MessageSquare className="w-4 h-4" />
+            </button>
+          }
+        />
 
         {/* INSTANCES LIST */}
         <div className="py-2 px-3 border-b border-[var(--cv-border)] overflow-x-auto whitespace-nowrap custom-scrollbar">
@@ -968,7 +1026,7 @@ export function ConversasViewInstagram() {
                 }`}
                 style={
                   selectedInstance === inst.handle
-                    ? { background: 'linear-gradient(135deg,#d62976 0%,#962fbf 100%)' }
+                    ? { background: 'linear-gradient(135deg,#d62976 0%,#962fbf 100%)', color: '#fff' }
                     : undefined
                 }
                 title={inst.display_name || inst.handle}
@@ -1104,7 +1162,7 @@ export function ConversasViewInstagram() {
       </div>
 
       {/* MAIN CHAT AREA */}
-      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full`}>
+      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full min-w-0 min-h-0`}>
         {hasNoAccounts ? (
           <InstagramEmptyState
             onRefresh={refreshInstances}
@@ -1112,16 +1170,16 @@ export function ConversasViewInstagram() {
             showConnectCta={!hasLegacyInstagramMessaging}
           />
         ) : !selectedConversation ? (
-          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px]"
+          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-6 sm:p-8 border-b-[6px]"
                style={{ borderColor: '#d62976' }}>
             <div className="max-w-[560px]">
               <div
-                className="w-16 h-16 mx-auto mb-6 rounded-2xl flex items-center justify-center shadow-md"
+                className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-5 sm:mb-6 rounded-2xl flex items-center justify-center shadow-md"
                 style={{ background: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)' }}
               >
-                <Instagram className="w-8 h-8 text-white" />
+                <Instagram className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
               </div>
-              <h2 className="text-3xl font-light text-[var(--cv-text)] mb-5">
+              <h2 className="text-2xl sm:text-3xl font-light text-[var(--cv-text)] mb-4 sm:mb-5">
                 Direct do Instagram
               </h2>
               <p className="text-[var(--cv-text-muted)] text-sm leading-6">
@@ -1132,13 +1190,17 @@ export function ConversasViewInstagram() {
         ) : (
           <>
             {/* CHAT HEADER */}
-            <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shadow-sm shrink-0 z-10 w-full">
-              <div className="flex items-center gap-3 overflow-hidden">
+            <div className="min-h-[56px] sm:min-h-[64px] bg-[var(--cv-panel)] px-2 sm:px-3 md:px-4 py-2 flex items-center justify-between gap-1.5 sm:gap-2 shadow-sm shrink-0 z-10 w-full border-b border-[var(--cv-border)] min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3 overflow-hidden min-w-0">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="md:hidden text-[var(--cv-icon)] mr-1"
-                  onClick={() => { setShowSidebar(true); setSelectedConversation(null); }}
+                  className="md:hidden text-[var(--cv-icon)] shrink-0 h-9 w-9"
+                  onClick={() => {
+                    setShowSidebar(true);
+                    setSelectedConversation(null);
+                    setLeadPanelOpen(false);
+                  }}
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -1158,11 +1220,16 @@ export function ConversasViewInstagram() {
                     />
                   ) : null}
                 </div>
-                <div className="flex flex-col overflow-hidden">
-                  <div className="flex items-center overflow-hidden gap-2">
-                    <span className="text-[var(--cv-text)] font-normal text-base truncate">
+                <div className="flex flex-col overflow-hidden min-w-0">
+                  <div className="flex items-center overflow-hidden gap-2 flex-wrap">
+                    <span className="text-[var(--cv-text)] font-semibold text-sm sm:text-base truncate">
                       {currentConversation?.displayName || selectedConversation}
                     </span>
+                    {currentConversation?.leadStage ? (
+                      <span className="hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-wide rounded-md px-1.5 py-0.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                        {currentConversation.leadStage}
+                      </span>
+                    ) : null}
                     <InstagramBadge />
                   </div>
                   {(() => {
@@ -1171,25 +1238,37 @@ export function ConversasViewInstagram() {
                     const label = raw.startsWith('@') ? raw : `@${raw}`;
                     return (
                       <p className="text-xs text-[var(--cv-text-muted)] truncate" title={label}>
-                        {label}
+                        {label} · Instagram Direct
                       </p>
                     );
                   })()}
                 </div>
               </div>
-              <div className="flex gap-1 items-center text-[var(--cv-icon)]">
+              <div className="flex gap-0.5 sm:gap-1 items-center text-[var(--cv-icon)] shrink-0 max-w-[50%] sm:max-w-none overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <ConversasChatHeaderActions
+                  onAssume={() => void handleAssumeConversation()}
+                  assumeDisabled={
+                    String(currentConversation?.labelSlug || '').toLowerCase() === 'humano' ||
+                    String(currentConversation?.leadStage || '').toLowerCase() === 'humano'
+                  }
+                  assumeLoading={assuming}
+                  onScheduleVisit={() => navigate('/agenda')}
+                  showLeadPanelToggle
+                  onToggleLeadPanel={() => setLeadPanelOpen((v) => !v)}
+                />
                 <ChatConversationTextSearchTrigger
                   messages={messages}
                   scrollRootRef={messagesScrollRef}
                   onActiveMatchChange={setChatSearchHighlightId}
                   onQueryChange={setInChatSearchQuery}
+                  triggerButtonClassName="hidden sm:inline-flex h-9 w-9 shrink-0 text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)]"
                 />
                 {headerConversation ? (
                   <ConversationActionsMenu
                     conversation={headerConversation}
                     onGenerateSummary={handleGenerateSummary}
                     onFollowUp={handleFollowUp}
-                    triggerClassName="text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)] h-9 w-9 p-0"
+                    triggerClassName="text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)] h-8 w-8 sm:h-9 sm:w-9 p-0"
                   />
                 ) : null}
               </div>
@@ -1198,7 +1277,7 @@ export function ConversasViewInstagram() {
             {/* MESSAGES */}
             <div
               ref={messagesScrollRef}
-              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar"
+              className="conversas-chat-area flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 custom-scrollbar min-h-0"
             >
               <div className="space-y-2 pb-2">
                 {loadingMessages ? (
@@ -1272,7 +1351,7 @@ export function ConversasViewInstagram() {
               onMessageInputChange={setMessageInput}
               onTextareaKeyDown={onTextareaKeyDown}
               onSendText={() => void sendText()}
-              placeholder="Enviar mensagem no Direct..."
+              placeholder="Escreva uma mensagem..."
               busy={busy || composerMedia.busy}
               sending={sending}
               recording={recording}
@@ -1288,6 +1367,25 @@ export function ConversasViewInstagram() {
           </>
         )}
       </div>
+
+      {selectedConversation ? (
+        <ConversasLeadPanel
+          open={leadPanelOpen}
+          onOpenChange={setLeadPanelOpen}
+          leadId={currentConversation?.leadId || null}
+          displayName={currentConversation?.displayName || selectedConversation}
+          phone={currentConversation?.leadPhone}
+          channelLabel="Instagram"
+          profilePicUrl={currentConversation?.profilePicUrlInstagram}
+          messageCount={messages.length || currentConversation?.messageCount}
+          labelStage={currentConversation?.leadStage}
+          onViewFicha={
+            currentConversation?.leadId
+              ? () => setViewContactLeadId(String(currentConversation.leadId))
+              : undefined
+          }
+        />
+      ) : null}
 
       {/* MEDIA PREVIEW */}
       <AnimatePresence>
@@ -1367,6 +1465,12 @@ export function ConversasViewInstagram() {
         isOpen={summaryModal.isOpen}
         onClose={() => setSummaryModal({ isOpen: false, data: null })}
         summaryData={summaryModal.data}
+      />
+
+      <LeadViewModal
+        isOpen={!!viewContactLeadId}
+        onClose={() => setViewContactLeadId(null)}
+        leadId={viewContactLeadId}
       />
     </div>
   );

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, Loader2, RotateCcw, Smartphone } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { PhoneWhatsAppSimulator } from '@/components/ai-test/PhoneWhatsAppSimulator';
+import { AiTestTopBar } from '@/components/ai-test/AiTestTopBar';
+import { AiTestToolbar } from '@/components/ai-test/AiTestToolbar';
+import { AiTestStatusBar } from '@/components/ai-test/AiTestStatusBar';
+import { AiTestChatCard } from '@/components/ai-test/AiTestChatCard';
+import { AiTestScenariosCard } from '@/components/ai-test/AiTestScenariosCard';
+import { type AiTestScenario } from '@/components/ai-test/helpers';
 import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
 import { useAiTestMessages } from '@/hooks/useAiTestMessages';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
@@ -16,6 +19,7 @@ import {
   sendAiTestMessage,
 } from '@/lib/aiTestSimulator';
 import { resolveWhatsappSendInstancia } from '@/lib/resolveWhatsappSendInstancia';
+import { safeRandomUUID } from '@/lib/safeRandomUUID';
 
 const ASSISTANT_REPLY_TIMEOUT_MS = 90_000;
 
@@ -27,6 +31,7 @@ export function AiTestView() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const awaitingReplyRef = useRef(false);
   const replyTimeoutRef = useRef<number | null>(null);
   const assistantCountAtSendRef = useRef(0);
@@ -87,6 +92,10 @@ export function AiTestView() {
 
   useEffect(() => () => clearReplyTimeout(), [clearReplyTimeout]);
 
+  const goConfigure = useCallback(() => {
+    window.location.assign('/ai-configuration');
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || !company?.id || !instancia || !sessionId || sending) return;
@@ -124,7 +133,18 @@ export function AiTestView() {
       toast.error(message);
       void reload();
     }
-  }, [company, input, instancia, sessionId, sending, messages, clearReplyTimeout, reload, appendMessage, startAssistantPoll]);
+  }, [
+    company,
+    input,
+    instancia,
+    sessionId,
+    sending,
+    messages,
+    clearReplyTimeout,
+    reload,
+    appendMessage,
+    startAssistantPoll,
+  ]);
 
   const handleClear = useCallback(async () => {
     if (!company?.id || clearing) return;
@@ -134,6 +154,7 @@ export function AiTestView() {
     clearReplyTimeout();
     setSending(false);
     setInput('');
+    setActiveScenarioId(null);
 
     try {
       if (previousSessionId) {
@@ -141,6 +162,7 @@ export function AiTestView() {
       }
       const nextSessionId = rotateAiTestSessionId(company.id);
       setSessionId(nextSessionId);
+      toast.success('Nova sessão de teste iniciada');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao limpar conversa de teste';
       toast.error(message);
@@ -149,106 +171,122 @@ export function AiTestView() {
     }
   }, [company?.id, sessionId, clearing, clearReplyTimeout]);
 
+  const handleCopySession = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      toast.success('Session ID copiado');
+    } catch {
+      toast.error('Não foi possível copiar o session ID');
+    }
+  }, [sessionId]);
+
+  const handleSaveScenario = useCallback(() => {
+    const text = input.trim() || messages.filter((m) => m.role === 'user').at(-1)?.content?.trim();
+    if (!text) {
+      toast.message('Digite ou envie uma mensagem do cliente antes de salvar o cenário.');
+      return;
+    }
+    try {
+      const key = `ai-test-saved-scenarios:${company?.id || 'local'}`;
+      const existingRaw = localStorage.getItem(key);
+      const existing = existingRaw ? (JSON.parse(existingRaw) as unknown[]) : [];
+      const list = Array.isArray(existing) ? existing : [];
+      list.unshift({
+        id: safeRandomUUID(),
+        prompt: text,
+        createdAt: new Date().toISOString(),
+      });
+      localStorage.setItem(key, JSON.stringify(list.slice(0, 20)));
+      toast.success('Cenário salvo localmente neste navegador');
+    } catch {
+      toast.message('Cenários customizados ainda não sincronizam com o servidor.');
+    }
+  }, [input, messages, company?.id]);
+
+  const handleScenario = useCallback((scenario: AiTestScenario) => {
+    setActiveScenarioId(scenario.id);
+    setInput(scenario.prompt);
+  }, []);
+
+  const handleSuggestion = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
   if (companyLoading || instancesLoading || (company?.id && !sessionId)) {
     return (
-      <div className="flex min-h-[50dvh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+      <div className="flex min-h-[50dvh] items-center justify-center bg-[#F7F5F0] dark:bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-700" />
       </div>
     );
   }
 
   if (!isManager) {
     return (
-      <div className="p-6 sm:p-8 text-center">
-        <div className="text-red-400 mb-2">Acesso restrito</div>
-        <p className="text-gray-400 text-sm">Apenas gestores podem testar a IA.</p>
+      <div className="p-6 sm:p-8 text-center bg-[#F7F5F0] dark:bg-background min-h-[40vh]">
+        <div className="text-red-600 mb-2 font-medium">Acesso restrito</div>
+        <p className="text-muted-foreground text-sm">Apenas gestores podem testar a IA.</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-5 py-4 sm:gap-6 sm:py-8">
-      <div className="w-full text-center">
-        <h1 className="flex items-center justify-center gap-2 text-xl font-semibold text-white sm:text-2xl">
-          <Smartphone className="h-6 w-6 shrink-0 text-emerald-400 sm:h-7 sm:w-7" />
-          Testar IA
-        </h1>
-        <p className="mx-auto mt-2 max-w-lg text-sm text-gray-400">
-          Simule uma conversa de WhatsApp. Cada sessão usa um{' '}
-          <span className="text-gray-300">session_id</span> UUID exclusivo; ao limpar, uma nova
-          sessão é criada e o histórico de teste é apagado do banco.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          <Badge
-            className={
-              aiEnabledInProduction
-                ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
-            }
-          >
-            {aiEnabledInProduction ? 'IA ativa em produção' : 'IA desativada em produção'}
-          </Badge>
-          {instancia ? (
-            <Badge variant="outline" className="border-gray-700 text-gray-400">
-              Instância: {instancia}
-            </Badge>
-          ) : (
-            <Badge className="border-red-500/30 bg-red-500/15 text-red-300">
-              Nenhuma instância WhatsApp disponível
-            </Badge>
-          )}
-          {sessionId ? (
-            <Badge variant="outline" className="max-w-full border-gray-700 text-gray-400">
-              <span className="truncate">Sessão: {sessionId}</span>
-            </Badge>
-          ) : null}
+    <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col min-w-0">
+      <div className="border-b border-border/70">
+        <div className="px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+          <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm px-3 py-2 space-y-2 sm:px-4 sm:py-3 sm:space-y-3 md:px-6 md:py-4 md:space-y-4">
+            <AiTestTopBar />
+            <AiTestToolbar
+              clearing={clearing}
+              onConfigure={goConfigure}
+              onNewSession={() => void handleClear()}
+              onSaveScenario={handleSaveScenario}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="flex w-full flex-wrap items-center justify-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="border-gray-700 text-gray-200"
-          onClick={() => window.location.assign('/ai-configuration')}
-        >
-          <ExternalLink className="mr-2 h-4 w-4" />
-          Configurar IA
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-gray-400 hover:text-gray-200"
-          onClick={() => void handleClear()}
-          disabled={clearing}
-        >
-          {clearing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RotateCcw className="mr-2 h-4 w-4" />
-          )}
-          Limpar conversa
-        </Button>
-      </div>
-
-      {initialLoading ? (
-        <div className="flex min-h-[420px] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
-        </div>
-      ) : (
-        <PhoneWhatsAppSimulator
-          companyName={companyName}
-          assistantName={assistantName}
-          messages={messages}
-          input={input}
-          loading={sending}
-          disabled={!canSend}
-          onInputChange={setInput}
-          onSend={() => void handleSend()}
+      <div className="p-3 sm:p-5 space-y-4 bg-[#F7F5F0] dark:bg-background">
+        <AiTestStatusBar
+          aiEnabled={aiEnabledInProduction}
+          instancia={instancia}
+          sessionId={sessionId}
+          onCopySession={() => void handleCopySession()}
         />
-      )}
+
+        {!instancia ? (
+          <div className="rounded-xl border border-amber-300/70 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            Nenhuma instância WhatsApp disponível. Configure uma conexão antes de enviar mensagens
+            de teste.
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.9fr)] gap-4 items-start">
+          {initialLoading ? (
+            <div className="rounded-2xl border border-border bg-card shadow-sm flex min-h-[420px] items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-emerald-700" />
+            </div>
+          ) : (
+            <AiTestChatCard
+              assistantName={assistantName}
+              companyName={companyName}
+              messages={messages}
+              input={input}
+              loading={sending}
+              disabled={!canSend}
+              onInputChange={setInput}
+              onSend={() => void handleSend()}
+              onRestart={() => void handleClear()}
+              restarting={clearing}
+              onSuggestion={handleSuggestion}
+            />
+          )}
+
+          <div className="space-y-4 min-w-0">
+            <AiTestScenariosCard activeId={activeScenarioId} onSelect={handleScenario} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

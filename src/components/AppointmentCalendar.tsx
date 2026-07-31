@@ -1,16 +1,52 @@
 import { useState, useEffect, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Calendar, Clock, User, MapPin, Edit, Trash2, CheckCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Clock, MapPin, CheckCircle, User } from "lucide-react";
 import { EditEventModal } from "./EditEventModal";
 import { CustomModal } from "./CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { invokeEdge } from "@/integrations/supabase/invoke";
+import { supabase } from "@/integrations/supabase/client";
+import { logAudit } from "@/lib/audit/logger";
+import { cn } from "@/lib/utils";
+import { normalizeStage } from "@/components/pipeline/helpers";
+import type { LeadStage } from "@/types/kanban";
+import { toast } from "sonner";
+import {
+  formatAgendaShortDate,
+  formatAgendaTime,
+  getAgentDotClass,
+  getStatusBadgeClasses,
+  getStatusLabel,
+  getTypeBadgeClasses,
+  getUpcomingEvents,
+  getStartOfWeek,
+  isConfirmedStatus,
+  isVisitedStatus,
+  type AgendaViewMode,
+} from "@/components/agenda/helpers";
+import { AgendaEventCard } from "@/components/agenda/AgendaEventCard";
+import { AgendaUpcomingList } from "@/components/agenda/AgendaUpcomingList";
 
 interface Appointment {
-  id: number;
+  id: number | string;
   date: Date;
   client: string;
   property: string;
@@ -19,6 +55,9 @@ interface Appointment {
   status: string;
   corretor?: string;
   channel?: string;
+  phone?: string;
+  calendarId?: string;
+  leadId?: string;
 }
 
 interface AppointmentCalendarProps {
@@ -26,25 +65,14 @@ interface AppointmentCalendarProps {
   onDateChange?: (date: Date) => void;
   onMonthChange?: (newMonth: Date) => void;
   onRefreshRequested?: () => void;
+  onEventStatusChange?: (eventId: number | string, status: string) => void;
   selectedDate?: Date;
   currentMonth?: Date;
   selectedAgenda?: string;
   selectedAgendaName?: string;
+  viewMode?: AgendaViewMode;
+  sortedAgentNames?: string[];
 }
-
-/** Uma cor por corretor na legenda / pontos do calendário (ordem alfabética dos nomes). */
-const CORRETOR_DOT_COLORS = [
-  'bg-pink-400',
-  'bg-indigo-400',
-  'bg-amber-400',
-  'bg-cyan-400',
-  'bg-rose-400',
-  'bg-violet-400',
-  'bg-teal-400',
-  'bg-orange-400',
-  'bg-lime-400',
-  'bg-sky-400',
-] as const;
 
 // Mock data para agendamentos (fallback)
 const mockAppointments: Appointment[] = [
@@ -105,10 +133,13 @@ export function AppointmentCalendar({
   onDateChange,
   onMonthChange,
   onRefreshRequested,
+  onEventStatusChange,
   selectedDate: externalSelectedDate,
   currentMonth: externalCurrentMonth,
   selectedAgenda = "Todos",
-  selectedAgendaName
+  selectedAgendaName,
+  viewMode = "month",
+  sortedAgentNames: externalSortedAgentNames,
 }: AppointmentCalendarProps) {
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalSelectedDate, setInternalSelectedDate] = useState(new Date());
@@ -124,6 +155,8 @@ export function AppointmentCalendar({
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedAppointmentForStatus, setSelectedAppointmentForStatus] = useState<Appointment | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
+  const [visitConfirmAppointment, setVisitConfirmAppointment] = useState<Appointment | null>(null);
+  const [visitConfirmLoading, setVisitConfirmLoading] = useState(false);
   
   // Estados para modais personalizados
   const [customModal, setCustomModal] = useState<{
@@ -184,8 +217,7 @@ export function AppointmentCalendar({
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
   ];
 
-  const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const dayNamesShort = ["D", "S", "T", "Q", "Q", "S", "S"];
+  const dayNames = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -221,10 +253,6 @@ export function AppointmentCalendar({
     return validAppointments.filter(apt => 
       apt.date.toDateString() === date.toDateString()
     );
-  };
-
-  const hasAppointments = (date: Date) => {
-    return getAppointmentsForDate(date).length > 0;
   };
 
   // Filtrar appointments válidos para evitar eventos fantasma (DUPLA PROTEÇÃO)
@@ -321,6 +349,7 @@ export function AppointmentCalendar({
   }
 
   const uniqueCorretoresSorted = useMemo(() => {
+    if (externalSortedAgentNames?.length) return externalSortedAgentNames;
     const names = new Set<string>();
     for (const apt of localAppointments) {
       if (!apt?.corretor?.trim()) continue;
@@ -329,13 +358,10 @@ export function AppointmentCalendar({
       names.add(apt.corretor.trim());
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-  }, [localAppointments]);
+  }, [localAppointments, externalSortedAgentNames]);
 
-  const getCorretorDotClass = (corretor: string) => {
-    const idx = uniqueCorretoresSorted.indexOf(corretor.trim());
-    const i = idx >= 0 ? idx : 0;
-    return CORRETOR_DOT_COLORS[i % CORRETOR_DOT_COLORS.length];
-  };
+  const getCorretorDotClass = (corretor: string) =>
+    getAgentDotClass(corretor, uniqueCorretoresSorted);
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
@@ -443,60 +469,66 @@ export function AppointmentCalendar({
   };
 
   // Função que executa a alteração de status
-  const executeStatusChange = async () => {
-    if (!selectedAppointmentForStatus) {
+  const executeStatusChange = async (appointmentOverride?: Appointment, statusOverride?: string) => {
+    const target = appointmentOverride || selectedAppointmentForStatus;
+    const nextStatus = statusOverride || newStatus;
+
+    if (!target) {
       console.error('❌ Nenhum evento selecionado para alteração de status');
       showAlert('❌ Erro', 'Nenhum evento selecionado. Tente novamente.', 'error');
       return;
     }
 
-    if (!newStatus) {
+    if (!nextStatus) {
       console.error('❌ Nenhum status novo selecionado');
       showAlert('❌ Erro', 'Selecione um novo status.', 'error');
       return;
     }
 
-    // 🎯 ALTERAÇÃO LOCAL IMEDIATA (Cache do navegador)
-    // Atualizar o status localmente primeiro para feedback imediato
     setLocalAppointments(prevAppointments => 
       prevAppointments.map(apt => 
-        apt.id === selectedAppointmentForStatus.id 
-          ? { ...apt, status: newStatus }
+        apt.id === target.id 
+          ? { ...apt, status: nextStatus }
           : apt
       )
     );
+    onEventStatusChange?.(target.id, nextStatus);
 
-    console.log("🔄 Status alterado localmente (cache):", {
-      evento_id: selectedAppointmentForStatus.id,
-      status_anterior: selectedAppointmentForStatus.status,
-      status_novo: newStatus,
-      cliente: selectedAppointmentForStatus.client
-    });
-
-    // Fechar modal imediatamente
-    setShowStatusModal(false);
-    setSelectedAppointmentForStatus(null);
-    setNewStatus('');
+    if (!appointmentOverride) {
+      setShowStatusModal(false);
+      setSelectedAppointmentForStatus(null);
+      setNewStatus('');
+    }
     
-    // Mostrar sucesso imediato
-    showAlert('✅ Sucesso', `Status alterado para "${newStatus}" localmente!`, 'success');
+    if (appointmentOverride) {
+      const successMsg =
+        nextStatus === 'Visitado'
+          ? 'Visita foi realizada com sucesso.'
+          : 'Evento confirmado com sucesso!';
+      showAlert(nextStatus === 'Visitado' ? 'Sucesso' : '✅ Sucesso', successMsg, 'success');
+    } else {
+      showAlert('✅ Sucesso', `Status alterado para "${nextStatus}" localmente!`, 'success');
+    }
 
-    // 📡 TENTATIVA DE SINCRONIZAÇÃO COM GOOGLE (em background)
     try {
-      const googleStatus = {
+      const visitMark = nextStatus === 'Visitado' || isVisitedStatus(nextStatus);
+      const googleStatus = visitMark
+        ? undefined
+        : ({
           'Aguardando confirmação': 'needsAction',
           'Confirmado': 'accepted', 
           'Cancelado': 'declined',
           'Recusado': 'declined',
           'Talvez': 'tentative'
-        }[newStatus] || 'needsAction';
+        }[nextStatus] || 'needsAction');
 
       const { data, error } = await invokeEdge<any, any>("google-calendar-api", {
         body: {
           action: "update_event_status",
-          calendar_id: (selectedAppointmentForStatus as any).calendarId || (selectedAgenda !== "Todos" ? selectedAgenda : undefined),
-          evento_id: String(selectedAppointmentForStatus.id),
-          response_status: googleStatus,
+          calendar_id: (target as any).calendarId || (selectedAgenda !== "Todos" ? selectedAgenda : undefined),
+          evento_id: String(target.id),
+          ...(googleStatus ? { response_status: googleStatus } : {}),
+          custom_status: nextStatus,
         },
       });
       if (!error && data?.success) {
@@ -508,14 +540,80 @@ export function AppointmentCalendar({
       
     } catch (error) {
       console.warn("⚠️ Falha na sincronização com Google (alteração mantida localmente):", error);
-      
-      // Não mostrar erro para o usuário, pois a alteração local já foi feita
-      // Apenas log silencioso para debug
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn("⏱️ Timeout na sincronização com webhook");
-      } else if (error instanceof TypeError && error.message.includes('fetch')) {
-        console.warn("🌐 Sem conexão com o webhook (modo offline)");
+    }
+  };
+
+  const handleQuickConfirm = (appointment: Appointment) => {
+    void executeStatusChange(appointment, 'Confirmado');
+  };
+
+  const handleQuickVisit = (appointment: Appointment) => {
+    setVisitConfirmAppointment(appointment);
+  };
+
+  const executeVisitConfirmed = async (appointment: Appointment) => {
+    setVisitConfirmLoading(true);
+    try {
+      await executeStatusChange(appointment, 'Visitado');
+
+      const leadId = appointment.leadId?.trim();
+      if (!leadId) {
+        toast.info('Visita registrada', {
+          description: 'Nenhum card vinculado a este evento no pipeline.',
+        });
+        return;
       }
+
+      const { data: lead, error: fetchError } = await supabase
+        .from('leads')
+        .select('stage')
+        .eq('id', leadId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (!lead) {
+        toast.info('Visita registrada', {
+          description: 'Nenhum card vinculado a este evento no pipeline.',
+        });
+        return;
+      }
+
+      if (normalizeStage(lead.stage) === 'visita realizada') {
+        return;
+      }
+
+      const newStage: LeadStage = 'Visita Realizada';
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({
+          stage: newStage,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', leadId);
+
+      if (updateError) throw updateError;
+
+      logAudit({
+        action: 'lead.stage_changed',
+        resource: 'lead',
+        resourceId: leadId,
+        meta: { newStage, source: 'agenda_visitado' },
+      });
+
+      toast.success('Lead atualizado', {
+        description: 'Card movido para Visita Realizada no pipeline.',
+      });
+    } catch (error) {
+      console.error('Erro ao mover lead para Visita Realizada:', error);
+      showAlert(
+        '❌ Erro',
+        'A visita foi registrada na agenda, mas não foi possível mover o card no pipeline. Tente arrastar manualmente.',
+        'error',
+      );
+    } finally {
+      setVisitConfirmLoading(false);
+      setVisitConfirmAppointment(null);
     }
   };
 
@@ -597,432 +695,281 @@ export function AppointmentCalendar({
 
   const days = getDaysInMonth(currentDate);
   const selectedAppointments = getAppointmentsForDate(selectedDate);
+  const confirmedCount = selectedAppointments.filter((a) => isConfirmedStatus(a.status)).length;
+  const upcomingEvents = getUpcomingEvents(
+    validAppointments.filter((a) => a.date.toDateString() !== selectedDate.toDateString()),
+    selectedDate,
+    5,
+  );
+
+  const weekStart = getStartOfWeek(selectedDate);
+  const renderEventCard = (appointment: Appointment) => (
+    <AgendaEventCard
+      key={appointment.id}
+      appointment={appointment}
+      sortedAgentNames={uniqueCorretoresSorted}
+      onConfirm={() => handleQuickConfirm(appointment)}
+      onMarkVisited={() => handleQuickVisit(appointment)}
+      onReschedule={() => {
+        setSelectedAppointmentToEdit(appointment);
+        setShowEditModal(true);
+      }}
+      onChangeStatus={() => handleChangeStatus(appointment)}
+      onDelete={() => handleDeleteEvent(appointment)}
+    />
+  );
+
+  const calendarSubtitle =
+    selectedAgenda === 'Todos'
+      ? `${validAppointments.length} eventos · todos os calendários`
+      : `${validAppointments.length} eventos · ${selectedAgendaName || 'calendário'}`;
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 min-w-0">
-      {/* Calendário Modernizado */}
-      <Card className="xl:col-span-2 min-w-0 overflow-hidden bg-card border-border shadow-lg">
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0 pb-4 sm:pb-6 border-b border-border px-3 sm:px-6 pt-4 sm:pt-6">
-          <CardTitle className="text-foreground flex items-center gap-3">
-            <div className="bg-blue-500/20 p-2 rounded-lg">
-              <Calendar className="h-6 w-6 text-blue-400" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xl font-semibold">Calendário</span>
-              <span className="text-sm font-normal text-muted-foreground">
-                {selectedAgenda === "Todos" 
-                  ? "📋 Todos os calendários" 
-                  : `Calendário: ${selectedAgendaName || selectedAgenda}`}
-              </span>
-            </div>
-          </CardTitle>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-foreground font-semibold">
-                {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {validAppointments.length} eventos
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigateMonth('prev')}
-                className="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-2"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigateMonth('next')}
-                className="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-2"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </Button>
-            </div>
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-4 sm:gap-5 min-w-0">
+      <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm min-w-0 overflow-hidden">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border px-4 py-4 sm:px-5 sm:py-5">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-semibold text-foreground capitalize">
+              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{calendarSubtitle}</p>
           </div>
-        </CardHeader>
-        <CardContent className="p-2 sm:p-4 md:p-6">
-          {/* Header dos dias da semana modernizado */}
-          <div className="grid grid-cols-7 gap-0.5 sm:gap-1 md:gap-2 mb-3 sm:mb-6">
-            {dayNames.map((day, i) => (
-              <div key={day} className="p-1.5 sm:p-3 text-center bg-muted/40 rounded-lg border border-border">
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide sm:hidden">{dayNamesShort[i]}</span>
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide hidden sm:inline">{day}</span>
-              </div>
-            ))}
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigateMonth('prev')}
+              className="h-8 w-8 rounded-lg border-border bg-background shadow-sm"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigateMonth('next')}
+              className="h-8 w-8 rounded-lg border-border bg-background shadow-sm"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
+        </div>
 
-          {/* Grade de dias modernizada */}
-          <div className="grid grid-cols-7 gap-0.5 sm:gap-1 md:gap-2">
-            {days.map((day, index) => {
-              // Se for célula vazia, renderizar apenas um espaço vazio elegante
-              if (day.isEmpty || !day.date) {
-                return (
-                  <div key={index} className="h-11 sm:h-14 md:h-16 bg-muted/20 rounded-lg border border-border"></div>
-                );
-              }
-
-              const isSelected = day.date.toDateString() === selectedDate.toDateString();
-              const isToday = day.date.toDateString() === new Date().toDateString();
-              const hasApts = hasAppointments(day.date);
-              const dayAppointments = getAppointmentsForDate(day.date);
-              const isPastDate = day.date < new Date(new Date().setHours(0, 0, 0, 0));
-              
-              return (
-                <button
-                  key={index}
-                  onClick={() => {
-                    setInternalSelectedDate(day.date);
-                    if (onDateChange) {
-                      onDateChange(day.date);
-                    }
-                  }}
-                  className={`
-                    group relative p-1 sm:p-2 md:p-3 h-11 sm:h-14 md:h-16 text-xs sm:text-sm rounded-xl transition-all duration-300 transform md:hover:scale-[1.03]
-                    border-2 shadow-sm hover:shadow-lg
-                    ${isSelected 
-                      ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400 shadow-blue-500/25 hover:shadow-blue-500/40' 
-                      : isToday
-                      ? 'bg-gradient-to-br from-violet-500/15 to-violet-600/25 border-violet-500/50 text-foreground font-bold dark:text-white hover:from-violet-500/25 hover:to-violet-600/35'
-                      : hasApts
-                      ? 'bg-gradient-to-br from-emerald-500/10 to-emerald-600/15 border-emerald-500/35 text-foreground hover:from-emerald-500/18 hover:to-emerald-600/22'
-                      : isPastDate
-                      ? 'bg-muted/40 border-border text-muted-foreground hover:bg-muted/60'
-                      : 'bg-card border-border text-foreground hover:bg-muted/80'
-                    }
-                  `}
-                >
-                  {/* Número do dia */}
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <span className={`text-base sm:text-lg font-semibold mb-0.5 sm:mb-1 ${
-                      isSelected ? 'text-white' :
-                      isToday ? 'text-foreground dark:text-white' :
-                      isPastDate ? 'text-muted-foreground' : 'text-foreground'
-                    }`}>
-                      {day.date.getDate()}
-                    </span>
-                    
-                    {/* Indicadores de eventos */}
-                    {hasApts && (
-                      <div className="flex flex-col items-center gap-1">
-                        {/* Contador de eventos */}
-                        <div className={`flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 rounded-full text-[10px] sm:text-xs font-bold ${
-                          isSelected 
-                            ? 'bg-white text-blue-600' 
-                            : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white'
-                        }`}>
-                          {dayAppointments.length}
-                        </div>
-                        
-                        {/* Indicadores por corretor quando "Todos" está selecionado */}
-                        {selectedAgenda === "Todos" && dayAppointments.length > 0 && uniqueCorretoresSorted.length > 0 && (
-                          <div className="hidden sm:flex gap-0.5">
-                            {uniqueCorretoresSorted.map((corretor) => {
-                              const corretorCount = dayAppointments.filter(
-                                (apt) => (apt.corretor || '').trim() === corretor
-                              ).length;
-                              if (corretorCount === 0) return null;
-
-                              return (
-                                <div
-                                  key={corretor}
-                                  className={`w-1.5 h-1.5 rounded-full ${getCorretorDotClass(corretor)}`}
-                                  title={`${corretorCount} evento(s) - ${corretor}`}
-                                />
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Indicador de hoje */}
-                  {isToday && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse shadow-lg"></div>
-                  )}
-                  
-                  {/* Borda de seleção animada */}
-                  {isSelected && (
-                    <div className="absolute inset-0 rounded-xl border-2 border-white/20 animate-pulse pointer-events-none"></div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Legenda dos indicadores */}
-          <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
-            <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-gradient-to-br from-purple-600/20 to-purple-700/30 border border-purple-500/50 rounded"></div>
-                <span className="text-muted-foreground">Hoje</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded"></div>
-                <span className="text-muted-foreground">Selecionado</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-gradient-to-br from-emerald-600/10 to-emerald-700/20 border border-emerald-500/30 rounded"></div>
-                <span className="text-muted-foreground">Com eventos</span>
-              </div>
-              {selectedAgenda === "Todos" &&
-                uniqueCorretoresSorted.map((corretor) => (
-                  <div key={corretor} className="flex items-center gap-2 max-w-[200px]">
-                    <div className={`w-2 h-2 shrink-0 rounded-full ${getCorretorDotClass(corretor)}`} />
-                    <span className="text-muted-foreground truncate" title={corretor}>
-                      {corretor}
-                    </span>
+        <div className="p-3 sm:p-4 md:p-5">
+          {viewMode === 'month' ? (
+            <>
+              <div className="grid grid-cols-7 gap-1 sm:gap-1.5 mb-2">
+                {dayNames.map((day) => (
+                  <div key={day} className="py-2 text-center text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {day}
                   </div>
                 ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
 
-      {/* Lista de Agendamentos do Dia Modernizada */}
-      <Card className="min-w-0 overflow-hidden bg-card border-border shadow-lg">
-        <CardHeader className="border-b border-border pb-4 px-3 sm:px-6 pt-4 sm:pt-6">
-          <CardTitle className="text-foreground flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="bg-purple-500/20 p-2 rounded-lg shrink-0">
-                <Clock className="h-6 w-6 text-purple-400" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xl font-semibold break-words">
-                  {selectedDate.toLocaleDateString('pt-BR', { 
-                    day: '2-digit', 
-                    month: 'long',
-                    year: 'numeric'
-                  })}
-                </span>
-                <span className="text-sm text-muted-foreground font-normal capitalize">
-                  {selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}
-                </span>
-              </div>
-            </div>
-            {selectedAppointments.length > 0 && (
-              <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
-                <span className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-full text-sm font-semibold border border-blue-500/30">
-                  {selectedAppointments.length} evento{selectedAppointments.length !== 1 ? 's' : ''}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {selectedAppointments.filter(a => a.status === 'confirmada' || a.status === 'Confirmado').length} confirmados
-                </span>
-              </div>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 space-y-3">
-          {selectedAppointments.length > 0 ? (
-            <>
-              <div className="mb-4 pb-2 border-b border-border">
-                <span className="text-sm text-muted-foreground">
-                  {selectedAppointments.length} {selectedAppointments.length === 1 ? 'compromisso' : 'compromissos'} agendados
-                </span>
-              </div>
-              
-              {selectedAppointments
-                .sort((a, b) => a.date.getTime() - b.date.getTime()) // Ordenar por horário
-                .map(appointment => (
-                <div
-                  key={appointment.id}
-                  className="group relative p-3 sm:p-5 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 hover:border-border transition-all duration-300 shadow-sm hover:shadow-md"
-                >
-                  {/* Linha vertical colorida à esquerda com gradiente */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${
-                    appointment.status === 'Confirmado' ? 'bg-gradient-to-b from-green-400 to-green-600' :
-                    appointment.status === 'Aguardando confirmação' ? 'bg-gradient-to-b from-yellow-400 to-yellow-600' :
-                    appointment.status === 'Cancelado' ? 'bg-gradient-to-b from-red-400 to-red-600' :
-                    appointment.status === 'Recusado' ? 'bg-gradient-to-b from-red-400 to-red-600' :
-                    appointment.status === 'Talvez' ? 'bg-gradient-to-b from-blue-400 to-blue-600' :
-                    appointment.status === 'Agendada' ? 'bg-gradient-to-b from-blue-400 to-blue-600' :
-                    // Compatibilidade com status antigos
-                    appointment.status === 'confirmada' ? 'bg-gradient-to-b from-green-400 to-green-600' :
-                    appointment.status === 'agendada' ? 'bg-gradient-to-b from-blue-400 to-blue-600' :
-                    appointment.status === 'cancelada' ? 'bg-gradient-to-b from-red-400 to-red-600' : 'bg-gradient-to-b from-gray-400 to-gray-600'
-                  }`}></div>
-                  
-                  {/* Header do evento com horário, tipo e corretor */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                      {/* Horário */}
-                      <div className="flex items-center gap-2 bg-background px-3 py-2 rounded-lg border border-border">
-                        <Clock className="h-4 w-4 text-blue-500" />
-                        <span className="text-foreground font-semibold text-lg">
-                          {formatTime(appointment.date)}
-                        </span>
-                      </div>
-                      
-                      {/* Tipo do evento */}
-                      <div className={`px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide ${
-                        appointment.type === 'Visita' ? 'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30' :
-                        appointment.type === 'Avaliação' ? 'bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30' :
-                        appointment.type === 'Apresentação' ? 'bg-orange-100 text-orange-700 border border-orange-300 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30' :
-                        appointment.type === 'Vistoria' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300 dark:bg-yellow-500/20 dark:text-yellow-300 dark:border-yellow-500/30' :
-                        'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30'
-                      }`}>
-                        {appointment.type}
-                      </div>
-                    </div>
-                    
-                    {/* Corretor - sempre no canto direito quando "Todos" estiver selecionado */}
-                    {selectedAgenda === "Todos" &&
-                      appointment.corretor &&
-                      appointment.corretor !== "Não informado" && (
-                      <div className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 dark:bg-gray-500/25 dark:text-gray-200 dark:border-gray-400/50 dark:hover:bg-gray-500/35">
-                        <span className="text-lg">👤</span>
-                        <span className="font-bold tracking-wide">{appointment.corretor}</span>
-                      </div>
-                    )}
-                  </div>
-                   
-                  {/* Nome do cliente */}
-                  <div className="mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <User className="h-4 w-4 text-emerald-400 shrink-0" />
-                      <span className="text-foreground font-medium text-base sm:text-lg break-words min-w-0">{appointment.client}</span>
-                      {/* Badge do canal de origem */}
-                      {(appointment as any).channel && (
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          (appointment as any).channel.toLowerCase() === 'whatsapp' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-                          (appointment as any).channel.toLowerCase() === 'instagram' ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30' :
-                          (appointment as any).channel.toLowerCase() === 'facebook' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                          'bg-gray-500/20 text-gray-400 border border-gray-500/30'
-                        }`}>
-                          {(appointment as any).channel.toLowerCase() === 'whatsapp' ? '📱 WhatsApp' :
-                           (appointment as any).channel.toLowerCase() === 'instagram' ? '📸 Instagram' :
-                           (appointment as any).channel.toLowerCase() === 'facebook' ? '👍 Facebook' :
-                           (appointment as any).channel}
-                        </span>
+              <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                {days.map((day, index) => {
+                  if (day.isEmpty || !day.date) {
+                    return <div key={index} className="aspect-square min-h-[2.75rem] sm:min-h-[3.25rem]" />;
+                  }
+
+                  const isSelected = day.date.toDateString() === selectedDate.toDateString();
+                  const isToday = day.date.toDateString() === new Date().toDateString();
+                  const dayAppointments = getAppointmentsForDate(day.date);
+                  const hasApts = dayAppointments.length > 0;
+                  const maxDots = 3;
+                  const dotCount = Math.min(dayAppointments.length, maxDots);
+                  const overflowCount = dayAppointments.length - maxDots;
+
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => {
+                        setInternalSelectedDate(day.date!);
+                        onDateChange?.(day.date!);
+                      }}
+                      className={cn(
+                        'relative aspect-square min-h-[2.75rem] sm:min-h-[3.25rem] rounded-lg sm:rounded-xl border text-left p-1.5 sm:p-2 transition-colors',
+                        isSelected
+                          ? 'btn-on-emerald bg-emerald-900 border-emerald-900 text-white dark:bg-emerald-950 dark:border-emerald-800'
+                          : isToday
+                            ? 'bg-emerald-50 border-emerald-200/80 dark:bg-emerald-950/20 dark:border-emerald-800/40'
+                            : 'bg-background border-border hover:bg-muted/40',
                       )}
-                    </div>
-                  </div>
-                   
-                  {/* Nome do imóvel */}
-                  <div className="mb-3">
-                    <span className="text-foreground font-medium text-base">
-                      {appointment.property}
-                    </span>
-                  </div>
-                   
-                  {/* Endereço */}
-                  <div className="mb-4">
-                    <div className="flex items-start gap-2">
-                      <MapPin className="h-4 w-4 text-amber-400 mt-1 flex-shrink-0" />
-                      <span className="text-muted-foreground text-sm break-words">
-                        {appointment.address}
+                    >
+                      <span
+                        className={cn(
+                          'text-sm sm:text-base font-semibold leading-none',
+                          isSelected ? 'text-white' : isToday ? 'text-emerald-900 dark:text-emerald-200' : 'text-foreground',
+                        )}
+                      >
+                        {day.date.getDate()}
+                      </span>
+                      {hasApts ? (
+                        <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-0.5">
+                          {Array.from({ length: dotCount }).map((_, dotIndex) => {
+                            const apt = dayAppointments[dotIndex];
+                            const dotClass = isSelected
+                              ? 'bg-white/90'
+                              : apt?.corretor
+                                ? getCorretorDotClass(apt.corretor)
+                                : 'bg-emerald-600';
+                            return (
+                              <span
+                                key={dotIndex}
+                                className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotClass)}
+                              />
+                            );
+                          })}
+                          {overflowCount > 0 ? (
+                            <span
+                              className={cn(
+                                'text-[9px] font-semibold tabular-nums leading-none',
+                                isSelected ? 'text-white/90' : 'text-muted-foreground',
+                              )}
+                            >
+                              +{overflowCount}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : viewMode === 'week' ? (
+            <div className="space-y-2">
+              {Array.from({ length: 7 }).map((_, i) => {
+                const day = new Date(weekStart);
+                day.setDate(day.getDate() + i);
+                const dayEvents = getAppointmentsForDate(day);
+                const isSelected = day.toDateString() === selectedDate.toDateString();
+                const isToday = day.toDateString() === new Date().toDateString();
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setInternalSelectedDate(day);
+                      onDateChange?.(day);
+                    }}
+                    className={cn(
+                      'w-full rounded-xl border px-3 py-2.5 text-left transition-colors',
+                      isSelected
+                        ? 'border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20'
+                        : 'border-border bg-background hover:bg-muted/40',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={cn('text-sm font-semibold capitalize', isToday && 'text-emerald-800 dark:text-emerald-300')}>
+                        {day.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {dayEvents.length} evento{dayEvents.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                  </div>
-                   
-                  {/* Status e Ações */}
-                  <div className="flex flex-wrap justify-between items-center gap-2">
-                    {/* Botões de Ação */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Botão de Alterar Status */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleChangeStatus(appointment);
-                        }}
-                        className="border-border bg-card text-foreground shadow-sm hover:bg-green-600 hover:text-white hover:border-green-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-green-600 dark:hover:text-white dark:hover:border-green-500 transition-all duration-200 flex items-center gap-2"
-                      >
-                        <CheckCircle className="h-3 w-3" />
-                        Status
-                      </Button>
-
-                      {/* Botão de Editar */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedAppointmentToEdit(appointment);
-                          setShowEditModal(true);
-                        }}
-                        className="border-border bg-card text-foreground shadow-sm hover:bg-orange-600 hover:text-white hover:border-orange-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-orange-600 dark:hover:text-white dark:hover:border-orange-500 transition-all duration-200 flex items-center gap-2"
-                      >
-                        <Edit className="h-3 w-3" />
-                        Editar
-                      </Button>
-
-                      {/* Botão de Deletar */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteEvent(appointment);
-                        }}
-                        className="border-border bg-card text-foreground shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 dark:bg-gray-800 dark:text-slate-200 dark:border-gray-600 dark:hover:bg-red-600 dark:hover:text-white dark:hover:border-red-500 transition-all duration-200 flex items-center gap-2"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        Deletar
-                      </Button>
-                    </div>
-
-                    {/* Status - Apenas ícone com tooltip */}
-                    <div 
-                      className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-xl font-semibold ${getStatusColor(appointment.status)} border ${
-                        appointment.status === 'Confirmado' ? 'border-green-400/30' :
-                        appointment.status === 'Aguardando confirmação' ? 'border-yellow-400/30' :
-                        appointment.status === 'Cancelado' ? 'border-red-400/30' :
-                        appointment.status === 'Recusado' ? 'border-red-400/30' :
-                        appointment.status === 'Talvez' ? 'border-blue-400/30' :
-                        appointment.status === 'Agendada' ? 'border-blue-400/30' :
-                        // Compatibilidade com status antigos
-                        appointment.status === 'confirmada' ? 'border-green-400/30' :
-                        appointment.status === 'agendada' ? 'border-blue-400/30' :
-                        appointment.status === 'cancelada' ? 'border-red-400/30' : 'border-gray-400/30'
-                      } hover:scale-110 transition-transform duration-200 cursor-help`}
-                      title={getStatusIcon(appointment.status).tooltip}
-                    >
-                      {getStatusIcon(appointment.status).icon}
-                    </div>
-                  </div>
-                  
-                  {/* Indicador de hover */}
-                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                </div>
-              ))}
-            </>
+                  </button>
+                );
+              })}
+            </div>
           ) : (
-            <div className="text-center py-16">
-              <div className="mb-6">
-                <div className="relative">
-                  <Calendar className="h-20 w-20 text-muted-foreground mx-auto opacity-30" />
-                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-                    <span className="text-2xl">✨</span>
-                  </div>
-                </div>
-              </div>
-              <h3 className="text-foreground font-semibold text-lg mb-3">Dia livre</h3>
-              <p className="text-muted-foreground text-base mb-6">
-                {selectedAgenda === "Todos" ? 
-                  "Nenhum corretor tem compromissos agendados para este dia" :
-                  `${selectedAgendaName || 'Calendário'} não tem compromissos agendados para este dia`
-                }
-              </p>
-              <div className="max-w-sm mx-auto p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/20">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">💡</span>
-                  <span className="text-blue-600 dark:text-blue-400 font-medium">Dica</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Clique em "Adicionar Evento" para agendar um novo compromisso
-                </p>
-              </div>
+            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+              {validAppointments.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Nenhum evento no período.</p>
+              ) : (
+                validAppointments
+                  .slice()
+                  .sort((a, b) => a.date.getTime() - b.date.getTime())
+                  .map((apt) => (
+                    <button
+                      key={apt.id}
+                      type="button"
+                      onClick={() => {
+                        setInternalSelectedDate(apt.date);
+                        onDateChange?.(apt.date);
+                      }}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-left hover:bg-muted/40"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {formatAgendaShortDate(apt.date)} · {formatAgendaTime(apt.date)}
+                        </span>
+                        <span className={cn('rounded-md border px-1.5 py-0.5 text-[10px] font-semibold', getStatusBadgeClasses(apt.status))}>
+                          {getStatusLabel(apt.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium text-foreground truncate">{apt.property}</p>
+                      <p className="text-xs text-muted-foreground truncate">{apt.client}</p>
+                    </button>
+                  ))
+              )}
             </div>
           )}
-        </CardContent>
-      </Card>
+
+          {viewMode === 'month' ? (
+            <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-900 dark:bg-emerald-800" />
+                Dia selecionado
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-100 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800/40" />
+                Hoje
+              </span>
+              {uniqueCorretoresSorted.map((corretor) => (
+                <span key={corretor} className="inline-flex items-center gap-1.5 max-w-[10rem]">
+                  <span className={cn('h-2 w-2 rounded-full shrink-0', getCorretorDotClass(corretor))} />
+                  <span className="truncate">{corretor}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm min-w-0 overflow-hidden flex flex-col">
+        <div className="border-b border-border px-4 py-4 sm:px-5 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground capitalize break-words">
+                {selectedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              </h2>
+              <p className="mt-0.5 text-sm text-muted-foreground capitalize">
+                {selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                {selectedAppointments.length} evento{selectedAppointments.length !== 1 ? 's' : ''}
+              </span>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {confirmedCount} confirmado{confirmedCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-5 flex-1 overflow-y-auto space-y-3">
+          {selectedAppointments.length > 0 ? (
+            selectedAppointments
+              .slice()
+              .sort((a, b) => a.date.getTime() - b.date.getTime())
+              .map(renderEventCard)
+          ) : (
+            <div className="py-10 text-center">
+              <Calendar className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
+              <h3 className="font-semibold text-foreground">Dia livre</h3>
+              <p className="mt-1 text-sm text-muted-foreground max-w-xs mx-auto">
+                {selectedAgenda === 'Todos'
+                  ? 'Nenhum compromisso agendado para este dia.'
+                  : `${selectedAgendaName || 'Calendário'} sem compromissos neste dia.`}
+              </p>
+            </div>
+          )}
+
+          <AgendaUpcomingList events={upcomingEvents} sortedAgentNames={uniqueCorretoresSorted} />
+        </div>
+      </div>
 
       {/* Modal de Edição de Evento */}
       <EditEventModal
@@ -1198,6 +1145,46 @@ export function AppointmentCalendar({
         onConfirm={customModal.onConfirm}
         confirmText={customModal.confirmText}
       />
+
+      <AlertDialog
+        open={!!visitConfirmAppointment}
+        onOpenChange={(open) => {
+          if (!open && !visitConfirmLoading) setVisitConfirmAppointment(null);
+        }}
+      >
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar visita?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Confirma que a visita com{' '}
+                  <span className="font-medium text-foreground">{visitConfirmAppointment?.client}</span>{' '}
+                  ao imóvel{' '}
+                  <span className="font-medium text-foreground">{visitConfirmAppointment?.property}</span>{' '}
+                  realmente aconteceu?
+                </p>
+                <p>O card do lead será movido para Visita Realizada no pipeline.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={visitConfirmLoading}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={visitConfirmLoading}
+              className="btn-on-emerald bg-emerald-800 text-white hover:bg-emerald-700 dark:bg-emerald-700"
+              onClick={(e) => {
+                e.preventDefault();
+                if (visitConfirmAppointment) {
+                  void executeVisitConfirmed(visitConfirmAppointment);
+                }
+              }}
+            >
+              {visitConfirmLoading ? 'Confirmando…' : 'Sim, visitado'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 

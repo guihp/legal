@@ -1,6 +1,6 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw, Megaphone, Share2, LayoutDashboard, Globe, Layers, KeyRound, Sun, Moon, Smartphone } from "lucide-react";
+import { Building2, BarChart3, Settings, Users, TrendingUp, Calendar, Wifi, LogOut, UserCheck, Database, ShieldCheck, Bot, MessageSquare, Globe, Layers, KeyRound, Sun, Moon, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -10,9 +10,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
@@ -112,12 +109,6 @@ const menuItems = [
 
 /** Subitens do menu Presença digital (site vitrine + LPs) */
 const digitalPresenceItems = [
-  {
-    title: 'Visão geral',
-    view: 'marketing' as const,
-    icon: LayoutDashboard,
-    permissionKey: 'menu_marketing',
-  },
   {
     title: 'Site vitrine',
     view: 'marketing-site' as const,
@@ -225,8 +216,6 @@ interface AppSidebarProps {
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission, forceRefreshPermissions } = usePermissions();
@@ -295,16 +284,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const toggleExpanded = (title: string) => {
-    setExpandedItems(prev =>
-      prev.includes(title)
-        ? prev.filter(item => item !== title)
-        : [...prev, title]
-    );
-  };
-
-  const isExpanded = (title: string) => expandedItems.includes(title);
-
   // Nome e role do usuário (prioriza perfil do banco)
   const displayName =
     (profile?.full_name && profile.full_name.trim())
@@ -316,13 +295,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     admin: 'Administrador',
     gestor: 'Gestor',
     corretor: 'Corretor',
-  };
-
-  const roleClassMap: Record<'admin' | 'gestor' | 'corretor' | 'super_admin', string> = {
-    super_admin: 'bg-orange-500/15 text-orange-300 border border-orange-500/30',
-    admin: 'bg-red-500/15 text-red-300 border border-red-500/30',
-    gestor: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
-    corretor: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
   };
 
   // Letra do avatar (primeira letra do nome ou email)
@@ -386,9 +358,28 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     return hasPermission(item.permissionKey);
   });
 
+  const navButtonClass = (active: boolean) =>
+    [
+      'rounded-lg text-[13px] font-medium transition-colors duration-150',
+      'text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent',
+      'dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-white/[0.06]',
+      active
+        ? [
+            'bg-emerald-100 text-emerald-900 hover:bg-emerald-100 hover:text-emerald-900',
+            'data-[active=true]:bg-emerald-100 data-[active=true]:text-emerald-900',
+            'dark:bg-emerald-950/80 dark:text-emerald-50 dark:hover:bg-emerald-950/90 dark:hover:text-emerald-50',
+            'dark:data-[active=true]:bg-emerald-950/80 dark:data-[active=true]:text-emerald-50',
+            'dark:shadow-[inset_0_0_0_1px_rgba(16,185,129,0.25)]',
+          ].join(' ')
+        : 'data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground/65 dark:data-[active=true]:text-zinc-400',
+    ].join(' ');
+
+  const sectionLabelClass =
+    'text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 dark:text-zinc-500 px-3 py-2 font-semibold';
+
   return (
-    <Sidebar className="border-r border-theme-primary bg-theme-secondary text-theme-primary">
-      <SidebarHeader className="px-4 py-7 border-b border-theme-primary bg-theme-secondary min-h-[132px] flex flex-col justify-center">
+    <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <SidebarHeader className="px-4 py-6 border-b border-sidebar-border bg-sidebar min-h-[120px] flex flex-col justify-center">
         <div className="flex flex-col items-center gap-3 w-full">
           {settings?.logo_url ? (
             <img
@@ -407,7 +398,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 height: `${sidebarLogoHeightPx}px`,
                 maxHeight: '140px',
                 width: '100%',
-                background: 'transparent'
+                background: 'transparent',
               }}
               className="flex items-center justify-center py-2"
             >
@@ -421,28 +412,17 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-3 bg-theme-secondary">
+      <SidebarContent className="px-2.5 bg-sidebar">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
-            Principal
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className={sectionLabelClass}>Operação</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {filteredMenuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     isActive={currentView === item.view}
-                    className={`
-                      text-theme-secondary hover:text-theme-primary transition-all duration-200
-                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
-                      ${currentView === item.view
-                        ? theme === 'dark'
-                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
-                        : ''
-                      }
-                    `}
+                    className={navButtonClass(currentView === item.view)}
                   >
                     <button
                       onClick={async () => {
@@ -455,8 +435,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
                                 company_id: profile.company_id,
-                                company_name: settings.display_name
-                              })
+                                company_name: settings.display_name,
+                              }),
                             });
                             console.log('✅ Webhook coletar-mensagens chamado com sucesso.');
                           } catch (error) {
@@ -489,8 +469,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                      <span className="truncate">{item.title}</span>
                     </button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -501,28 +481,17 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
         {filteredDigitalItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold flex items-center gap-2">
-              <Megaphone className="h-3.5 w-3.5 opacity-80" />
+            <SidebarGroupLabel className={`${sectionLabelClass} flex items-center gap-2`}>
               Presença digital
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
+              <SidebarMenu className="gap-0.5">
                 {filteredDigitalItems.map((item) => (
                   <SidebarMenuItem key={item.view}>
                     <SidebarMenuButton
                       asChild
                       isActive={currentView === item.view}
-                      className={`
-                      text-theme-secondary hover:text-theme-primary transition-all duration-200
-                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
-                      ${
-                        currentView === item.view
-                          ? theme === 'dark'
-                            ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                            : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
-                          : ''
-                      }
-                    `}
+                      className={navButtonClass(currentView === item.view)}
                     >
                       <button
                         type="button"
@@ -534,10 +503,10 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                           import('@/components/MarketingView');
                           import('@/components/MarketingLandingPagesView');
                         }}
-                        className="flex items-center gap-3 w-full px-3 py-2 pl-4"
+                        className="flex items-center gap-3 w-full px-3 py-2"
                       >
                         <item.icon className="h-4 w-4 shrink-0 opacity-90" />
-                        <span>{item.title}</span>
+                        <span className="truncate">{item.title}</span>
                       </button>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -548,26 +517,15 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         )}
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
-            Analytics
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className={sectionLabelClass}>Analytics</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {filteredAnalyticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     isActive={currentView === item.view}
-                    className={`
-                      text-theme-secondary hover:text-theme-primary transition-all duration-200
-                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
-                      ${currentView === item.view
-                        ? theme === 'dark'
-                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
-                        : ''
-                      }
-                    `}
+                    className={navButtonClass(currentView === item.view)}
                   >
                     <button
                       onClick={() => {
@@ -583,8 +541,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                      <span className="truncate">{item.title}</span>
                     </button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -594,26 +552,15 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-theme-muted text-xs uppercase tracking-wider px-3 py-2 font-semibold">
-            Outros
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className={sectionLabelClass}>Sistema</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {filteredSecondaryItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={('view' in item) && currentView === item.view}
-                    className={`
-                      text-theme-secondary hover:text-theme-primary transition-all duration-200
-                      ${theme === 'dark' ? 'hover:bg-gray-800/70' : 'hover:bg-gray-100'}
-                      ${('view' in item) && currentView === item.view
-                        ? theme === 'dark'
-                          ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500'
-                          : 'bg-gradient-to-r from-gray-900/5 to-gray-900/0 text-gray-900 border-l-2 border-gray-900/60 font-semibold'
-                        : ''
-                      }
-                    `}
+                    isActive={'view' in item && currentView === item.view}
+                    className={navButtonClass('view' in item && currentView === item.view)}
                   >
                     <button
                       onClick={() => {
@@ -624,8 +571,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                      <span className="truncate">{item.title}</span>
                     </button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -635,56 +582,46 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t border-theme-primary bg-theme-secondary">
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-theme-tertiary hover:opacity-90 transition-colors">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center overflow-hidden">
+      <SidebarFooter className="p-3 border-t border-sidebar-border bg-sidebar">
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-3 rounded-xl border border-sidebar-border bg-sidebar-accent/60 dark:bg-zinc-900/90 dark:border-zinc-800 px-3 py-2.5">
+            <div className="h-9 w-9 rounded-full bg-emerald-800 flex items-center justify-center overflow-hidden shrink-0">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-sm font-medium text-white">{avatarLetter}</span>
+                <span className="text-sm font-semibold text-emerald-50">{avatarLetter}</span>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-theme-primary truncate">{displayName}</p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <p className="text-xs text-theme-muted truncate max-w-[12rem]">{user?.email}</p>
-                {profile?.role && (
-                  <span
-                    className={`text-[10px] leading-4 px-2 py-0.5 rounded-full whitespace-nowrap ${roleClassMap[profile.role]}`}
-                    title={roleLabelMap[profile.role]}
-                  >
-                    {roleLabelMap[profile.role]}
-                  </span>
-                )}
-              </div>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
+              {profile?.role && (
+                <p
+                  className="text-[10px] uppercase tracking-wide text-sidebar-foreground/50 dark:text-zinc-500 truncate"
+                  title={roleLabelMap[profile.role]}
+                >
+                  {roleLabelMap[profile.role]}
+                </p>
+              )}
             </div>
           </div>
-          <div className="space-y-2">
-            <div className="px-1 text-[10px] text-theme-muted text-center" title="Versão da aplicação">
-              Versão 1.0.0
-            </div>
 
+          <div className="grid grid-cols-2 gap-2">
             <Button
               type="button"
               onClick={toggleTheme}
               variant="outline"
-              className={
-                'w-full gap-2 border-theme-primary transition-all ' +
-                (theme === 'dark'
-                  ? 'text-amber-100/95 hover:bg-amber-500/15 hover:border-amber-400/40 hover:text-amber-50'
-                  : 'text-slate-800 hover:bg-slate-100 hover:border-slate-400')
-              }
+              size="sm"
+              className="h-9 gap-1.5 border-sidebar-border bg-background/50 text-sidebar-foreground hover:bg-sidebar-accent dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             >
               {theme === 'dark' ? (
                 <>
-                  <Sun className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
-                  Modo claro
+                  <Sun className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
+                  <span className="truncate">Tema claro</span>
                 </>
               ) : (
                 <>
-                  <Moon className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
-                  Modo escuro
+                  <Moon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span className="truncate">Tema escuro</span>
                 </>
               )}
             </Button>
@@ -695,11 +632,16 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                 await supabase.auth.signOut();
               }}
               variant="outline"
-              className="w-full border-theme-primary text-red-400 hover:text-red-300 hover:bg-theme-tertiary"
+              size="sm"
+              className="h-9 gap-1.5 border-sidebar-border bg-background/50 text-destructive hover:bg-destructive/10 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-red-400/90 dark:hover:bg-red-950/40 dark:hover:text-red-300 dark:hover:border-red-900/50"
             >
-              <LogOut className="mr-2 h-4 w-4" />
-              Sair
+              <LogOut className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Sair</span>
             </Button>
+          </div>
+
+          <div className="px-1 text-[10px] text-sidebar-foreground/40 dark:text-zinc-600 text-center" title="Versão da aplicação">
+            v1.0.0
           </div>
         </div>
       </SidebarFooter>

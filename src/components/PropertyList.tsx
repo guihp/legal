@@ -35,15 +35,29 @@ import {
   AlertCircle,
   XCircle,
   ImagePlus,
-  X,
-  Link,
-  Loader2
+  X
 } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
+import { formatBRLInput, numberToBRLInput, parseBRLInput } from "@/lib/brlInput";
 import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useTheme } from "@/contexts/ThemeContext";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
+import { PipelineKpis } from "@/components/pipeline/PipelineKpis";
+import { PropertiesTopBar } from "@/components/properties/PropertiesTopBar";
+import { PropertiesToolbar } from "@/components/properties/PropertiesToolbar";
+import { PropertiesFilters } from "@/components/properties/PropertiesFilters";
+import { PropertiesAdvancedFilters } from "@/components/properties/PropertiesAdvancedFilters";
+import { PropertiesPropertyCard } from "@/components/properties/PropertiesPropertyCard";
+import { PropertiesPagination } from "@/components/properties/PropertiesPagination";
+import {
+  EMPTY_PROPERTIES_STATS,
+  buildPropertiesKpis,
+  buildPropertiesSubtitle,
+  type PropertiesFilterTab,
+  type PropertiesSortKey,
+  type PropertiesStats,
+} from "@/components/properties/helpers";
 
 // Lazy loaded components
 const PropertyDetailsPopup = lazy(() => import("@/components/PropertyDetailsPopup").then(m => ({ default: m.PropertyDetailsPopup })));
@@ -51,9 +65,9 @@ const PropertyEditForm = lazy(() => import("@/components/PropertyEditForm").then
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, downloadGoogleDriveImage, extractGoogleDriveFileId, captionFromFilename } from "@/utils/imageUtils";
+import { convertMultipleToJPEG, convertGoogleDriveUrl, handleImageErrorWithFallback, captionFromFilename } from "@/utils/imageUtils";
 import { subscribeImoveisChanges } from "@/lib/realtime/imoveisRealtimeBus";
 import { FEATURE_OPTIONS } from "@/constants/imovelFeatures";
 import { toast as sonnerToast } from "sonner";
@@ -344,37 +358,70 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   
   // Estatísticas do cabeçalho (baseadas em public.imoveisvivareal)
   const [statsLoading, setStatsLoading] = useState<boolean>(true);
-  const [stats, setStats] = useState<{ total: number; disponiveis: number; aluguel: number; venda: number }>({ total: 0, disponiveis: 0, aluguel: 0, venda: 0 });
+  const [stats, setStats] = useState<PropertiesStats>(EMPTY_PROPERTIES_STATS);
+  const [statusTab, setStatusTab] = useState<PropertiesFilterTab>('todos');
+  const [sortKey, setSortKey] = useState<PropertiesSortKey>('recentes');
+  const [refreshing, setRefreshing] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const fetchImoveisStats = async () => {
     try {
       setStatsLoading(true);
       const companyId = profile?.company_id;
-      const base = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }) as any;
-      const scoped = companyId ? base.eq('company_id', companyId) : base;
 
-      const totalResPromise = scoped as Promise<any>;
-      const dispResPromise = (companyId
-        ? (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('disponibilidade', 'disponivel')
-        : (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel')) as Promise<any>;
-      const aluguelResPromise = (supabase as any)
-        .from('imoveisvivareal')
-        .select('id', { count: 'exact', head: true })
-        .match(companyId ? { company_id: companyId } : {})
-        .in('modalidade', ['Rent', 'Sale/Rent']) as Promise<any>;
-      const vendaResPromise = (supabase as any)
-        .from('imoveisvivareal')
-        .select('id', { count: 'exact', head: true })
-        .match(companyId ? { company_id: companyId } : {})
-        .in('modalidade', ['For Sale', 'Sale/Rent']) as Promise<any>;
+      const countQuery = (apply?: (q: any) => any) => {
+        let q = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true });
+        if (companyId) q = q.eq('company_id', companyId);
+        if (apply) q = apply(q);
+        return q as Promise<any>;
+      };
 
-      const [totalRes, dispRes, aluguelRes, vendaRes] = await Promise.all([totalResPromise, dispResPromise, aluguelResPromise, vendaResPromise]);
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      let ticketQuery = (supabase as any).from('imoveisvivareal').select('preco').gt('preco', 0);
+      if (companyId) ticketQuery = ticketQuery.eq('company_id', companyId);
+
+      const [
+        totalRes,
+        dispRes,
+        indisRes,
+        reformaRes,
+        aluguelRes,
+        vendaRes,
+        mesRes,
+        ticketRes,
+      ] = await Promise.all([
+        countQuery(),
+        countQuery((q) => q.eq('disponibilidade', 'disponivel')),
+        countQuery((q) => q.eq('disponibilidade', 'indisponivel')),
+        countQuery((q) => q.eq('disponibilidade', 'reforma')),
+        countQuery((q) => q.in('modalidade', ['Rent', 'Sale/Rent'])),
+        countQuery((q) => q.in('modalidade', ['For Sale', 'Sale/Rent'])),
+        countQuery((q) => q.gte('created_at', monthStart.toISOString())),
+        ticketQuery as Promise<any>,
+      ]);
+
+      const prices: number[] = Array.isArray(ticketRes?.data)
+        ? ticketRes.data
+            .map((r: { preco?: number | null }) => Number(r.preco) || 0)
+            .filter((n: number) => n > 0)
+        : [];
+      const ticketMedio =
+        prices.length > 0
+          ? Math.round(prices.reduce((a: number, b: number) => a + b, 0) / prices.length)
+          : 0;
 
       setStats({
-        total: (totalRes && totalRes.count) ?? 0,
-        disponiveis: (dispRes && dispRes.count) ?? 0,
-        aluguel: (aluguelRes && aluguelRes.count) ?? 0,
-        venda: (vendaRes && vendaRes.count) ?? 0,
+        total: totalRes?.count ?? 0,
+        disponiveis: dispRes?.count ?? 0,
+        indisponiveis: indisRes?.count ?? 0,
+        reforma: reformaRes?.count ?? 0,
+        aluguel: aluguelRes?.count ?? 0,
+        venda: vendaRes?.count ?? 0,
+        ticketMedio,
+        cadastradosMes: mesRes?.count ?? 0,
       });
     } finally {
       setStatsLoading(false);
@@ -407,8 +454,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editExistingCaptions, setEditExistingCaptions] = useState<string[]>([]);
   const [editImageLightboxIndex, setEditImageLightboxIndex] = useState<number | null>(null);
   const lightboxTouchStartX = useRef<number | null>(null);
-  const [editGoogleDriveLink, setEditGoogleDriveLink] = useState('');
-  const [isEditDownloadingFromDrive, setIsEditDownloadingFromDrive] = useState(false);
   // Features (amenidades) selecionadas no modal de edição.
   // Gravadas em INGLÊS para casar com a tool `buscar_por_features` do agente n8n.
   const [editFeatures, setEditFeatures] = useState<string[]>([]);
@@ -475,23 +520,86 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         image_url: url,
         legenda: Array.isArray(i.imagens_legendas) ? (i.imagens_legendas[idx] ?? '') : '',
       })) as any,
-      // Campos extras (fora do tipo PropertyWithImages) para integração de disponibilidade
+      // Campos extras (fora do tipo PropertyWithImages) para ficha / disponibilidade
       ...(i.disponibilidade ? { disponibilidade: i.disponibilidade } : {}),
       ...(i.disponibilidade_observacao ? { disponibilidade_observacao: i.disponibilidade_observacao } : {}),
       ...(i.listing_id ? { listing_id: String(i.listing_id) } : {}),
       ...(i.modalidade ? { modalidade: i.modalidade } : {}),
       ...(i.tipo_imovel ? { tipo_imovel: i.tipo_imovel } : {}),
       ...(i.tipo_categoria ? { tipo_categoria: i.tipo_categoria } : {}),
+      ...(typeof i.suite === 'number' ? { suite: i.suite } : {}),
+      ...(typeof i.garagem === 'number' ? { garagem: i.garagem } : {}),
+      ...(typeof i.andar === 'number' ? { andar: i.andar } : {}),
+      ...(typeof i.ano_construcao === 'number' ? { ano_construcao: i.ano_construcao } : {}),
+      ...(i.bairro ? { bairro: i.bairro } : {}),
+      ...(i.endereco ? { endereco: i.endereco } : {}),
+      ...(i.numero ? { numero: i.numero } : {}),
+      ...(i.complemento ? { complemento: i.complemento } : {}),
+      ...(i.cep ? { cep: i.cep } : {}),
+      ...(i.company_id ? { company_id: i.company_id } : {}),
+      ...(i.accepts_partnership ? { accepts_partnership: i.accepts_partnership } : {}),
+      ...(i.partnership_notes ? { partnership_notes: i.partnership_notes } : {}),
       // Propaga features do banco para o modal de edição (text[] → string[]).
       ...(Array.isArray(i.features) ? { features: i.features } : {}),
       ...(Array.isArray(i.imagens_legendas) ? { imagens_legendas: i.imagens_legendas } : {}),
     } as unknown as PropertyWithImages;
   });
 
-  const isVivaRealMode = propertiesFromImoveis.length > 0;
-  const effectiveProperties: PropertyWithImages[] = isVivaRealMode ? propertiesFromImoveis : properties;
+  const isVivaRealMode = true; // dados vêm de imoveisvivareal (tabela properties legado não é usada)
+  const effectiveProperties: PropertyWithImages[] =
+    propertiesFromImoveis.length > 0 ? propertiesFromImoveis : properties;
 
   const loadingCombined = loading || loadingImoveis;
+
+  const tabCounts: Record<PropertiesFilterTab, number> = {
+    todos: stats.total,
+    disponiveis: stats.disponiveis,
+    venda: stats.venda,
+    aluguel: stats.aluguel,
+  };
+
+  const kpis = buildPropertiesKpis(stats);
+  const subtitle = buildPropertiesSubtitle(stats.total);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const handleStatusTabChange = useCallback(
+    (tab: PropertiesFilterTab) => {
+      setStatusTab(tab);
+      setPage(1);
+      setFilters((prev) => {
+        const next = { ...prev };
+        delete next.disponibilidade;
+        delete next.modalidade;
+        if (tab === 'disponiveis') next.disponibilidade = 'disponivel';
+        if (tab === 'venda') next.modalidade = ['For Sale', 'Sale/Rent'];
+        if (tab === 'aluguel') next.modalidade = ['Rent', 'Sale/Rent'];
+        return next;
+      });
+    },
+    [setFilters, setPage],
+  );
+
+  const handleSortChange = useCallback(
+    (key: PropertiesSortKey) => {
+      setSortKey(key);
+      setPage(1);
+      if (key === 'recentes') setOrderBy({ column: 'created_at', ascending: false });
+      else if (key === 'valor') setOrderBy({ column: 'preco', ascending: false });
+      else setOrderBy({ column: 'tamanho_m2', ascending: false });
+    },
+    [setOrderBy, setPage],
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchImoveisList(), fetchImoveisStats()]);
+    } finally {
+      setRefreshing(false);
+    }
+    // fetchImoveisStats depende de profile.company_id e é recriada a cada render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refetchImoveisList, profile?.company_id]);
 
   // Debug log apenas quando há mudanças significativas (evita loop)
   const prevPropertiesCount = useRef(effectiveProperties.length);
@@ -528,7 +636,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const startVivaRealEdit = (property: PropertyWithImages) => {
     setEditId(property.id);
-    setEditPreco(String(property.price || 0));
+    setEditPreco(numberToBRLInput(property.price || 0));
     setEditArea(String(property.area || 0));
     setEditQuartos(String(property.bedrooms || 0));
     setEditBanheiros(String(property.bathrooms || 0));
@@ -568,7 +676,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setEditImages([]);
     setEditPreviews([]);
     setEditNewCaptions([]);
-    setEditGoogleDriveLink('');
     setEditImageLightboxIndex(null);
 
     // Features atuais do imóvel (vêm propagadas pelo adapter `propertiesFromImoveis`).
@@ -615,48 +722,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     } catch (e) {
       console.error('Erro ao processar imagens:', e);
       sonnerToast.error('Falha ao processar imagens. Verifique se os arquivos são imagens válidas.');
-    }
-  };
-
-  const onAddEditGoogleDriveImage = async () => {
-    if (!editGoogleDriveLink.trim()) {
-      sonnerToast.warning('Cole um link do Google Drive válido.');
-      return;
-    }
-
-    // Verificar se é um link válido do Google Drive
-    const fileId = extractGoogleDriveFileId(editGoogleDriveLink);
-    if (!fileId) {
-      sonnerToast.error('Link inválido. Use um link de compartilhamento do Google Drive (ex: https://drive.google.com/file/d/ID/view)');
-      return;
-    }
-
-    const currentCount = editImages.length + editExistingImages.length;
-    if (currentCount >= MAX_IMAGES) {
-      sonnerToast.warning(`Você já atingiu o limite de ${MAX_IMAGES} imagens.`);
-      return;
-    }
-
-    setIsEditDownloadingFromDrive(true);
-    
-    try {
-      console.log(`📥 Baixando imagem do Google Drive: ${fileId}`);
-      sonnerToast.info('Baixando imagem do Google Drive...');
-      
-      const file = await downloadGoogleDriveImage(editGoogleDriveLink, 1024 * 1024, 5 * 1024 * 1024);
-      
-      setEditImages(prev => [...prev, file]);
-      setEditPreviews(prev => [...prev, URL.createObjectURL(file)]);
-      setEditNewCaptions((prev) => [...prev, '']);
-      setEditGoogleDriveLink(''); // Limpar o campo
-      
-      console.log(`✅ Imagem baixada e processada: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-      sonnerToast.success(`Imagem baixada com sucesso! (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-    } catch (e: any) {
-      console.error('Erro ao baixar imagem do Google Drive:', e);
-      sonnerToast.error(e.message || 'Falha ao baixar imagem. Verifique se o link está correto e público.');
-    } finally {
-      setIsEditDownloadingFromDrive(false);
     }
   };
 
@@ -767,7 +832,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       imageCaptions = imageUrls.map((_, i) => clampCaption(imageCaptions[i] ?? ''));
       
       const updates: any = {
-        preco: editPreco === "" ? null : Number(editPreco),
+        preco: parseBRLInput(editPreco),
         tamanho_m2: editArea === "" ? null : Number(editArea),
         quartos: editQuartos === "" ? null : Number(editQuartos),
         banheiros: editBanheiros === "" ? null : Number(editBanheiros),
@@ -796,7 +861,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       setEditNewCaptions([]);
       setEditExistingImages([]);
       setEditExistingCaptions([]);
-      setEditGoogleDriveLink('');
       setEditModalidade('');
       setEditFeatures([]);
       setEditImageLightboxIndex(null);
@@ -1122,9 +1186,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   }
 
   return (
-    <div className="min-h-0 relative overflow-hidden bg-background text-foreground">
-      {/* Background Effects — gated via ENABLE_DECORATIVE_FX (top do arquivo).
-          Lazy chunk PropertyListDecorations só baixa se ativado. */}
+    <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col">
       {ENABLE_DECORATIVE_FX && (
         <Suspense fallback={null}>
           <PropertyListDecorations
@@ -1134,892 +1196,224 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         </Suspense>
       )}
 
-      {/* Main Content */}
-      <div className="relative z-10 p-8">
-        {/* Header Section */}
-        <motion.div 
-          className="text-center mb-12"
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        >
-          <div className="relative inline-block">
-            <motion.h1 
-              className="text-6xl font-bold mb-4 text-slate-900 dark:text-transparent dark:bg-gradient-to-r dark:from-blue-400 dark:via-purple-400 dark:to-emerald-400 dark:bg-clip-text"
-              animate={{ 
-                backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"],
-              }}
-              transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
-              style={{ backgroundSize: "200% 200%" }}
-            >
-              Imóveis
-            </motion.h1>
-          </div>
-        </motion.div>
-
-        {/* Campo de Pesquisa ficará logo após a seção de filtros (renderizado mais abaixo) */}
-
-        {/* Stats Cards */}
-        <motion.div 
-          className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.6 }}
-        >
-          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm font-medium">Total</p>
-                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.total}</p>
-                </div>
-                <div className="bg-blue-500/20 p-3 rounded-full">
-                  <Building2 className="h-6 w-6 text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm font-medium">Disponíveis</p>
-                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.disponiveis}</p>
-                </div>
-                <div className="bg-emerald-500/20 p-3 rounded-full">
-                  <CheckCircle className="h-6 w-6 text-emerald-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm font-medium">Imóveis para Aluguel</p>
-                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.aluguel}</p>
-                </div>
-                <div className="bg-yellow-500/20 p-3 rounded-full">
-                  <Key className="h-6 w-6 text-yellow-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300 shadow-lg hover:shadow-xl">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm font-medium">Imóveis para Venda</p>
-                  <p className="text-3xl font-bold text-foreground">{statsLoading ? '—' : stats.venda}</p>
-                </div>
-                <div className="bg-purple-500/20 p-3 rounded-full">
-                  <Shield className="h-6 w-6 text-purple-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Controls Section (somente filtros) */}
-        <motion.div 
-          className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6, duration: 0.6 }}
-        >
-          <div className={`flex ${isFiltersOpen ? 'flex-col' : 'flex-col lg:flex-row'} gap-4 items-stretch lg:items-center`}>
-            {/* Search movido para abaixo dos filtros */}
-
-            {/* Campo de filtros minimalista com expansão vertical */}
-            <div className="w-full">
-              <div className="bg-gray-900/70 border border-gray-700/70 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" size="sm" className="bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800" onClick={() => setIsFiltersOpen(v => !v)}>
-                    <Filter className="h-4 w-4 mr-2" /> {isFiltersOpen ? 'Ocultar filtros' : 'Filtros'}
-                  </Button>
-                  <div className="ml-auto flex items-center gap-2">
-                    {/* Ordenação */}
-                    <div className="hidden md:flex items-center gap-1 mr-2">
-                      <span className="text-xs text-gray-400">Ordenar por</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='created_at' ? 'ring-1 ring-blue-500/50' : ''}`}
-                        onClick={() => setOrderBy({ column: 'created_at', ascending: !orderBy.ascending })}
-                        title="Data de Adição"
-                      >
-                        Data
-                        {orderBy.column==='created_at' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='preco' ? 'ring-1 ring-blue-500/50' : ''}`}
-                        onClick={() => setOrderBy({ column: 'preco', ascending: !orderBy.ascending })}
-                        title="Valor"
-                      >
-                        Valor
-                        {orderBy.column==='preco' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='tamanho_m2' ? 'ring-1 ring-blue-500/50' : ''}`}
-                        onClick={() => setOrderBy({ column: 'tamanho_m2', ascending: !orderBy.ascending })}
-                        title="Área m²"
-                      >
-                        Área m²
-                        {orderBy.column==='tamanho_m2' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
-                      </Button>
-                    </div>
-                    <span className="text-xs text-gray-400">Imóveis por Página</span>
-                    <Select value={String(pageSize)} onValueChange={(v) => { setPage(1); setPageSize(Number(v) as 12 | 24 | 50 | 100); }}>
-                      <SelectTrigger className="w-[100px] bg-gray-900/70 border-gray-600 text-white">
-                        <SelectValue placeholder="12" />
-                  </SelectTrigger>
-                      <SelectContent className="bg-gray-900 border-gray-700">
-                        <SelectItem value="12">12</SelectItem>
-                        <SelectItem value="24">24</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                        <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-                  </div>
-              </div>
-              
-                {isFiltersOpen && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
-                    {/* 1ª linha: ID do Imóvel - Categoria - Modalidade */}
-                    <Input placeholder="ID do Imóvel" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.listingId || ''}
-                      onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, listingId: e.target.value || undefined })); }} />
-                    {/* Categoria (Residencial/Comercial) */}
-                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
-                      <div className="text-xs text-gray-400 mb-2">Categoria</div>
-                      <div className="flex gap-4 items-center">
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('Residential')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('Residential'); else current.delete('Residential');
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Residencial
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('Commercial')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('Commercial'); else current.delete('Commercial');
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Comercial
-                        </label>
-                      </div>
-                    </div>
-                    {/* Modalidade (Aluguel/Venda) */}
-                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
-                      <div className="text-xs text-gray-400 mb-2">Modalidade</div>
-                      <div className="flex gap-4 items-center">
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('Rent')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('Rent'); else current.delete('Rent');
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Aluguel
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('For Sale')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('For Sale'); else current.delete('For Sale');
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Venda
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* 1ª linha (abaixo): Preço mín/máx – ocupa uma coluna inteira */}
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Preço mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Preço máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Área mín. (m²)" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, tamanho: { ...(p.tamanho||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Área máx. (m²)" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, tamanho: { ...(p.tamanho||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Quartos mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, quartos: { ...(p.quartos||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Quartos máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, quartos: { ...(p.quartos||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Banheiros mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, banheiros: { ...(p.banheiros||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Banheiros máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, banheiros: { ...(p.banheiros||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Suítes mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, suite: { ...(p.suite||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Suítes máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, suite: { ...(p.suite||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Garagens mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, garagem: { ...(p.garagem||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Garagens máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, garagem: { ...(p.garagem||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Andar mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, andar: { ...(p.andar||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Andar máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, andar: { ...(p.andar||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
-                      <Input type="number" placeholder="Ano mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, anoConstrucao: { ...(p.anoConstrucao||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
-                      <Input type="number" placeholder="Ano máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, anoConstrucao: { ...(p.anoConstrucao||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-                    </div>
-
-                    <div className="relative min-w-[200px]">
-                      <Input placeholder="Cidade" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cidade || ''}
-                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, cidade: v || undefined })); setPage(1); setCitySuggestions(await suggestCities(v)); setNeighborhoodSuggestions([]); }} />
-                      {citySuggestions.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                          {citySuggestions.map((c) => (
-                            <div key={c} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, cidade: c })); setCitySuggestions([]); }}>
-                              {c}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="relative min-w-[200px]">
-                      <Input placeholder="Bairro" disabled={!filters.cidade} className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.bairro || ''}
-                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, bairro: v || undefined })); setPage(1); setNeighborhoodSuggestions(await suggestNeighborhoods(filters.cidade || '', v)); }} />
-                      {neighborhoodSuggestions.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                          {neighborhoodSuggestions.map((b) => (
-                            <div key={b} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, bairro: b })); setNeighborhoodSuggestions([]); }}>
-                              {b}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="relative min-w-[200px]">
-                      <Input placeholder="Endereço" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.endereco || ''}
-                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, endereco: v || undefined })); setPage(1); setAddressSuggestions(await suggestAddresses(v)); }} />
-                      {addressSuggestions.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                          {addressSuggestions.map((a) => (
-                            <div key={a} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, endereco: a })); setAddressSuggestions([]); }}>
-                              {a}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <Input placeholder="CEP" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cep || ''}
-                      onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, cep: e.target.value || undefined })); }} />
-
-                    {/* Linha de ações dos filtros (vazia para ocupar colunas do grid) */}
-                    <div className="md:col-span-2 xl:col-span-3 flex items-center justify-end gap-2 mt-1">
-                      <Button
-                        variant="ghost"
-                        className="text-gray-300 hover:text-white"
-                        onClick={() => {
-                          setPage(1);
-                          setFilters({ search: filters.search });
-                          setCitySuggestions([]);
-                          setNeighborhoodSuggestions([]);
-                          setAddressSuggestions([]);
-                        }}
-                      >
-                        Limpar
-                      </Button>
-                      <Button
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                        onClick={() => {
-                          setPage(1);
-                          refetchImoveisList();
-                        }}
-                      >
-                        Aplicar Filtros
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Ações (empilhar quando filtros abertos) */}
-            <div className={isFiltersOpen ? "flex flex-col gap-2 w-full md:w-auto" : "flex gap-3"}>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              {!isCorretor && (
-              <Button 
-                onClick={onAddNew} 
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Adicionar Imóvel
-              </Button>
-            )}
-            </motion.div>
-            </div>
-
-            {/* Results Count */}
-            <div className="text-sm text-gray-400 whitespace-nowrap">
-              <span className="text-blue-400 font-semibold">{filteredProperties.length}</span> de{' '}
-              <span className="text-emerald-400 font-semibold">{effectiveProperties.length}</span> imóveis
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Campo de Pesquisa — imediatamente após a seção de filtros */}
-        <div className="relative z-10 mb-8">
-          <div className="relative bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Pesquisar imóveis..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20 w-full"
+      <div className="relative z-10 flex flex-col w-full">
+        <div className="border-b border-border/70">
+          <div className="px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+            <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm px-3 py-2 space-y-2 sm:px-4 sm:py-3 sm:space-y-3 md:px-6 md:py-4 md:space-y-4">
+              <PropertiesTopBar onRefresh={handleRefresh} refreshing={refreshing} />
+              <PropertiesToolbar
+                subtitle={statsLoading ? 'Portfólio ativo' : subtitle}
+                canAdd={!isCorretor}
+                onAdd={onAddNew}
+                onRefresh={handleRefresh}
+                refreshing={refreshing}
               />
+              <PipelineKpis items={statsLoading ? [] : kpis} denseScroll />
             </div>
-            {searchSuggestions.length > 0 && (
-              <div className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                {searchSuggestions.map((item) => (
-                  <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
-                    setSearchTerm(item);
-                    setFilters(prev => ({ ...prev, search: item }));
-                    setSearchSuggestions([]);
-                  }}>
-                    {item}
-                  </div>
-                ))}
-              </div>
-            )}
+          </div>
+
+          <div className="border-t border-border/70 px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+            <PropertiesFilters
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchSuggestions={searchSuggestions}
+              onPickSuggestion={(item) => {
+                setSearchTerm(item);
+                setFilters((prev) => ({ ...prev, search: item }));
+                setSearchSuggestions([]);
+              }}
+              selectedTab={statusTab}
+              onTabChange={handleStatusTabChange}
+              counts={tabCounts}
+              sortKey={sortKey}
+              onSortChange={handleSortChange}
+              advancedOpen={isFiltersOpen}
+              onToggleAdvanced={() => setIsFiltersOpen((v) => !v)}
+              advancedPanel={
+                <PropertiesAdvancedFilters
+                  filters={filters}
+                  setFilters={setFilters}
+                  setPage={setPage}
+                  citySuggestions={citySuggestions}
+                  neighborhoodSuggestions={neighborhoodSuggestions}
+                  addressSuggestions={addressSuggestions}
+                  onCityChange={async (v) => {
+                    setFilters((prev) => ({ ...prev, cidade: v || undefined }));
+                    setPage(1);
+                    setCitySuggestions(await suggestCities(v));
+                    setNeighborhoodSuggestions([]);
+                  }}
+                  onNeighborhoodChange={async (v) => {
+                    setFilters((prev) => ({ ...prev, bairro: v || undefined }));
+                    setPage(1);
+                    setNeighborhoodSuggestions(await suggestNeighborhoods(filters.cidade || '', v));
+                  }}
+                  onAddressChange={async (v) => {
+                    setFilters((prev) => ({ ...prev, endereco: v || undefined }));
+                    setPage(1);
+                    setAddressSuggestions(await suggestAddresses(v));
+                  }}
+                  onClearCitySuggestions={() => setCitySuggestions([])}
+                  onClearNeighborhoodSuggestions={() => setNeighborhoodSuggestions([])}
+                  onClearAddressSuggestions={() => setAddressSuggestions([])}
+                  onClear={() => {
+                    setPage(1);
+                    setFilters({
+                      search: filters.search,
+                      disponibilidade: filters.disponibilidade,
+                      modalidade: filters.modalidade,
+                    });
+                    setCitySuggestions([]);
+                    setNeighborhoodSuggestions([]);
+                    setAddressSuggestions([]);
+                  }}
+                  onApply={() => {
+                    setPage(1);
+                    refetchImoveisList();
+                  }}
+                />
+              }
+            />
           </div>
         </div>
 
-        {/* Loading State */}
-        {loadingCombined && (
-          <motion.div 
-            className="space-y-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <div className="text-center py-12">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="inline-block"
-              >
-                <Building2 className="h-12 w-12 text-blue-400 mb-4" />
-              </motion.div>
-              <h3 className="text-xl font-semibold text-white mb-2">Carregando Imóveis</h3>
-              <p className="text-gray-400">Buscando as melhores oportunidades...</p>
-            </div>
-            
-            {/* Loading Placeholders */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="p-3 sm:p-5 space-y-4 bg-[#F7F5F0] dark:bg-background">
+          {loadingCombined && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, index) => (
-                <motion.div
+                <div
                   key={index}
-                  className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm"
                 >
-                  <div className="h-48 bg-gradient-to-br from-gray-700 to-gray-800 animate-pulse" />
+                  <div className="h-48 bg-muted animate-pulse" />
                   <div className="p-4 space-y-3">
-                    <div className="h-4 bg-gray-700 rounded animate-pulse" />
-                    <div className="h-3 bg-gray-700 rounded w-2/3 animate-pulse" />
-                    <div className="flex gap-2">
-                      <div className="h-8 bg-gray-700 rounded flex-1 animate-pulse" />
-                      <div className="h-8 bg-gray-700 rounded flex-1 animate-pulse" />
-                    </div>
+                    <div className="h-4 bg-muted rounded animate-pulse" />
+                    <div className="h-3 bg-muted rounded w-2/3 animate-pulse" />
+                    <div className="h-16 bg-muted rounded animate-pulse" />
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
-          </motion.div>
-        )}
+          )}
 
-        {/* Properties Grid */}
-        {!loadingCombined && (
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8, duration: 0.8 }}
-          >
-            <AnimatePresence>
-              {filteredProperties.slice(0, visibleCount).map((property, index) => (
-                <motion.div
+          {!loadingCombined && filteredProperties.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredProperties.slice(0, visibleCount).map((property) => (
+                <PropertiesPropertyCard
                   key={property.id}
-                  initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -50, scale: 0.9 }}
-                  transition={{
-                    // Cap em 10 cards no cascade: antes index*0.1 fazia o 30º card
-                    // esperar 3s. Agora máximo 500ms pro último card visível.
-                    delay: Math.min(index, 10) * 0.05,
-                    duration: 0.4,
-                    type: "spring",
-                    stiffness: 100
+                  property={property}
+                  imageIndex={getCurrentImageIndex(property.id)}
+                  isCorretor={isCorretor}
+                  onPrevImage={() =>
+                    handlePreviousImage(property.id, property.property_images?.length || 0)
+                  }
+                  onNextImage={() =>
+                    handleNextImage(property.id, property.property_images?.length || 0)
+                  }
+                  onOpenGallery={() =>
+                    handleOpenImageGallery(property, getCurrentImageIndex(property.id))
+                  }
+                  onView={() => handleViewDetails(property)}
+                  onEdit={() =>
+                    isVivaRealMode ? startVivaRealEdit(property) : handleEditProperty(property)
+                  }
+                  onAvailability={() => {
+                    setAvailabilityTarget(property);
+                    setAvailabilityValue(
+                      ((property as any).disponibilidade || 'disponivel') as any,
+                    );
+                    setAvailabilityNote('');
+                    setAvailabilityDialogOpen(true);
                   }}
-                  className="group"
-                >
-                  <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300 shadow-lg hover:shadow-xl overflow-hidden">
-                    <CardHeader className="p-0 relative">
-                      <div className="relative h-56 bg-gray-700 rounded-t-xl flex items-center justify-center group overflow-hidden">
-                        {property.property_images && property.property_images.length > 0 ? (
-                          <>
-                            <div 
-                              className="w-full h-full cursor-pointer relative"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                console.log('🖱️ Clique na imagem detectado!', { property: property.title, imageIndex: getCurrentImageIndex(property.id) });
-                                handleOpenImageGallery(property, getCurrentImageIndex(property.id));
-                              }}
-                            >
-                              <img 
-                                src={convertGoogleDriveUrl(property.property_images[getCurrentImageIndex(property.id)].image_url, 'thumbnail')} 
-                                alt={property.title}
-                                loading="lazy"
-                                decoding="async"
-                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                                draggable={false}
-                                onError={(e) => {
-                                  const originalUrl = property.property_images[getCurrentImageIndex(property.id)].image_url;
-                                  handleImageErrorWithFallback(e, originalUrl, '/placeholder-property.jpg');
-                                }}
-                              />
-                            </div>
-                            
-                            {/* Image Navigation - only shows if more than 1 image */}
-                            {property.property_images.length > 1 && (
-                              <>
-                                <motion.button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    handlePreviousImage(property.id, property.property_images.length);
-                                  }}
-                                  className="absolute left-3 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                >
-                                  <ChevronLeft className="h-4 w-4" />
-                                </motion.button>
-                                
-                                <motion.button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    handleNextImage(property.id, property.property_images.length);
-                                  }}
-                                  className="absolute right-3 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                >
-                                  <ChevronRight className="h-4 w-4" />
-                                </motion.button>
-                                
-                                {/* Page Indicators */}
-                                <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex gap-1 z-10">
-                                  {property.property_images.map((_, imgIndex) => (
-                                    <motion.button
-                                      key={imgIndex}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        setCurrentImageIndex(prev => ({
-                                          ...prev,
-                                          [property.id]: imgIndex
-                                        }));
-                                      }}
-                                      className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                                        getCurrentImageIndex(property.id) === imgIndex 
-                                          ? 'bg-white shadow-lg' 
-                                          : 'bg-white/50 hover:bg-white/70'
-                                      }`}
-                                      whileHover={{ scale: 1.2 }}
-                                      whileTap={{ scale: 0.8 }}
-                                    />
-                                  ))}
-                                </div>
-                                
-                                {/* Image Counter */}
-                                <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
-                                  {getCurrentImageIndex(property.id) + 1}/{property.property_images.length}
-                                </div>
-                              </>
-                            )}
-
-                            {/* Overlay Gradient */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-gray-500">
-                            <Building2 className="h-16 w-16 mb-2" />
-                            <span className="text-sm">Sem imagem</span>
-                          </div>
-                        )}
-
-                        {/* Disponibilidade - Top Left (única etiqueta) */}
-                        <div className="absolute top-3 left-3 z-20">
-                          {getAvailabilityBadge((property as any).disponibilidade)}
-                        </div>
-
-
-
-                        {/* Type Badge - Top Right (if no images) */}
-                        {(!property.property_images || property.property_images.length === 0) && (
-                          <div className="absolute top-3 right-3">
-                            <Badge variant="outline" className={getTypeColor(property.type)}>
-                              {getTypeLabel(property.type)}
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="p-6">
-                      {/* Title and Price */}
-                      <div className="flex items-start justify-between mb-3">
-                        <motion.div 
-                          className="flex-1"
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.2 }}
-                        >
-                          {/* ID Listing */}
-                          <div className="text-base mb-2"><span className="text-white font-semibold">ID:</span> <span className="text-emerald-400 font-semibold">{(property as any).listing_id || '-'}</span></div>
-                          {/* Etiquetas: modalidade, tipo_imovel, tipo_categoria */}
-                          <div className="flex gap-2 flex-wrap mb-2">
-                            {(property as any).tipo_imovel && (
-                              <Badge variant="outline" className="bg-violet-500/20 text-violet-300 border-violet-400/50">
-                                {translateTipoImovel((property as any).tipo_imovel)}
-                              </Badge>
-                            )}
-                            {(property as any).tipo_categoria && (
-                              <Badge variant="outline" className="bg-orange-500/20 text-orange-300 border-orange-400/50">
-                                {(property as any).tipo_categoria === 'Residential' ? 'Residencial' : (property as any).tipo_categoria === 'Commercial' ? 'Comercial' : (property as any).tipo_categoria}
-                              </Badge>
-                            )}
-                          </div>
-                        </motion.div>
-                        
-                        <motion.div 
-                          className="text-right"
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.3 }}
-                        >
-                          <div className="text-emerald-400 mb-1">
-                            <span className="text-2xl font-bold">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price || 0)}
-                            </span>
-                          </div>
-                          {/* Etiqueta da Modalidade logo abaixo do preço (mantém conforme requisito anterior) */}
-                          {(property as any).modalidade && (
-                            <div>
-                              <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-400/30">
-                                {(property as any).modalidade === 'For Sale' ? 'Venda' : (property as any).modalidade === 'Rent' ? 'Aluguel' : 'Venda/Aluguel'}
-                              </Badge>
-                            </div>
-                          )}
-                        </motion.div>
-                      </div>
-                      
-                      {/* Address */}
-                      <motion.div 
-                        className="text-sm mb-4"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
-                      >
-                        {property.address ? (
-                          <a
-                            href={`https://www.google.com/maps?q=${encodeURIComponent(property.address)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center text-gray-400 hover:text-blue-400 cursor-pointer"
-                            title="Abrir no Google Maps"
-                          >
-                            <MapPin className="h-4 w-4 mr-2 text-blue-400" />
-                            <span className="line-clamp-1">{property.address}</span>
-                          </a>
-                        ) : (
-                          <div className="flex items-center text-gray-400">
-                            <MapPin className="h-4 w-4 mr-2 text-blue-400" />
-                            <span className="line-clamp-1">{property.address}</span>
-                          </div>
-                        )}
-                      </motion.div>
-
-                      {/* Property Details */}
-                      <motion.div 
-                        className="flex items-center gap-6 text-sm text-gray-400 mb-4"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.5 }}
-                      >
-                        <div className="flex items-center">
-                          <Square className="h-4 w-4 mr-1 text-purple-400" />
-                          <span>{property.area}m²</span>
-                        </div>
-                        {property.bedrooms && (
-                          <div className="flex items-center">
-                            <Bed className="h-4 w-4 mr-1 text-blue-400" />
-                            <span>{property.bedrooms}</span>
-                          </div>
-                        )}
-                        {property.bathrooms && (
-                          <div className="flex items-center">
-                            <Bath className="h-4 w-4 mr-1 text-emerald-400" />
-                            <span>{property.bathrooms}</span>
-                          </div>
-                        )}
-                      </motion.div>
-
-                      {/* Description */}
-                      <motion.p 
-                        className="text-sm text-gray-400 line-clamp-2 mb-6"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.6 }}
-                      >
-                        {property.description || "Sem descrição disponível"}
-                      </motion.p>
-
-                      {/* Action Buttons */}
-                      <motion.div 
-                        className="flex flex-wrap gap-2"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.7 }}
-                      >
-                        <motion.div className="flex-1 min-w-[110px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="w-full bg-blue-700 border-blue-600 text-blue-100 hover:bg-blue-600 hover:text-white transition-all duration-200"
-                            onClick={() => handleViewDetails(property)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver
-                          </Button>
-                        </motion.div>
-                        
-                        {!isCorretor && (
-                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="w-full bg-gray-700 border-gray-600 text-gray-100 hover:bg-gray-600 hover:text-white transition-all duration-200"
-                            onClick={() => (isVivaRealMode ? startVivaRealEdit(property) : handleEditProperty(property))}
-                          >
-                            <Edit className="h-4 w-4 mr-1" />
-                            Editar
-                          </Button>
-                        </motion.div>
-                        )}
-
-                        {/* Alterar disponibilidade */}
-                        <motion.div className="flex-1 min-w-[140px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <Button 
-                            variant="outline"
-                            size="sm"
-                            className="w-full bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600 hover:text-white transition-all duration-200"
-                            onClick={() => {
-                              setAvailabilityTarget(property);
-                              setAvailabilityValue(((property as any).disponibilidade || 'disponivel') as any);
-                              setAvailabilityNote('');
-                              setAvailabilityDialogOpen(true);
-                            }}
-                          >
-                            <Shield className="h-4 w-4 mr-1" />
-                            Disponibilidade
-                          </Button>
-                        </motion.div>
-                        
-                        <AlertDialog>
-                          {!isCorretor && (
-                          <AlertDialogTrigger asChild>
-                            <motion.div className="flex-none" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="bg-red-700 border-red-600 text-red-100 hover:bg-red-600 hover:text-white transition-all duration-200 w-9 h-9 p-0"
-                                onClick={() => setDeletingProperty(property)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </motion.div>
-                          </AlertDialogTrigger>
-                          )}
-                          <AlertDialogContent className="bg-gray-800 border-gray-700">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="text-white">Confirmar Exclusão</AlertDialogTitle>
-                              <AlertDialogDescription className="text-gray-300">
-                                Tem certeza que deseja deletar o imóvel "{property.title}"? 
-                                Esta ação não pode ser desfeita e todas as imagens associadas também serão removidas.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="border-gray-600 text-red-400 hover:bg-gray-700 hover:text-red-300">
-                                Cancelar
-                              </AlertDialogCancel>
-                              <AlertDialogAction 
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                                onClick={() => (isVivaRealMode ? handleDeleteVivaReal(property) : handleDeleteProperty(property))}
-                              >
-                                Deletar
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </motion.div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                  onRequestDelete={() => {
+                    setDeletingProperty(property);
+                    setDeleteDialogOpen(true);
+                  }}
+                />
               ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        {/* Botão de carregar mais (fallback) */}
-        {!loadingCombined && visibleCount < filteredProperties.length && (
-          <div className="mt-8 flex justify-center">
-            <Button
-              variant="outline"
-              className="bg-gray-900/50 border-gray-600 text-white"
-              onClick={() => setVisibleCount((v) => Math.min(v + 24, filteredProperties.length))}
-            >
-              Carregar mais
-            </Button>
-          </div>
-        )}
-
-        {/* Paginação */}
-        {!loadingCombined && total > 0 && (
-          <div className="flex items-center justify-between mt-8">
-            <div className="text-sm text-gray-400">
-              Página <span className="text-white font-semibold">{page}</span> de{' '}
-              <span className="text-white font-semibold">{Math.max(1, Math.ceil(total / pageSize))}</span>
-              <span className="ml-2 text-gray-500">({total} imóveis)</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" className="bg-gray-900/50 border-gray-600 text-white" disabled={page <= 1} onClick={() => setPage(Math.max(1, page - 1))}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="hidden sm:flex items-center gap-1">
-                {(() => {
-                  const totalPages = Math.ceil(total / pageSize);
-                  const window = 7;
-                  const half = Math.floor(window / 2);
-                  let start = Math.max(1, page - half);
-                  const end = Math.min(totalPages, start + window - 1);
-                  start = Math.max(1, end - window + 1);
-                  const pages = [] as number[];
-                  for (let p = start; p <= end; p++) pages.push(p);
-                  return pages.map((p) => (
-                    <Button key={p} size="sm" variant={p === page ? 'default' : 'outline'} className={p === page ? 'bg-blue-600 text-white' : 'bg-gray-900/50 border-gray-600 text-white'} onClick={() => setPage(p)}>
-                      {p}
-                    </Button>
-                  ));
-                })()}
-              </div>
-              <Button variant="outline" className="bg-gray-900/50 border-gray-600 text-white" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(page + 1)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Empty State */}
-        {!loading && filteredProperties.length === 0 && (
-          <motion.div 
-            className="text-center py-16"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-          >
-            <motion.div
-              animate={{ 
-                y: [-10, 10, -10],
-                rotate: [0, 5, -5, 0]
-              }}
-              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-              className="inline-block mb-6"
-            >
-              <Building2 className="h-20 w-20 text-gray-600 mx-auto" />
-            </motion.div>
-            
-            <h3 className="text-2xl font-bold text-gray-300 mb-3">
-              {properties.length === 0 ? 'Nenhum imóvel cadastrado' : 'Nenhum imóvel encontrado'}
-            </h3>
-            
-            <p className="text-gray-500 mb-8 max-w-md mx-auto">
-              {properties.length === 0 
-                ? 'Comece adicionando seu primeiro imóvel ao sistema e construa seu portfólio imobiliário.'
-                : 'Não há imóveis que correspondam aos filtros selecionados. Tente ajustar os critérios de busca.'
-              }
-            </p>
-            
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Button 
-                onClick={onAddNew} 
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
+          {!loadingCombined && visibleCount < filteredProperties.length && (
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                className="rounded-xl border-border bg-card"
+                onClick={() => setVisibleCount((v) => Math.min(v + 24, filteredProperties.length))}
               >
-                <Plus className="h-4 w-4 mr-2" />
-                {properties.length === 0 ? 'Adicionar Primeiro Imóvel' : 'Adicionar Imóvel'}
+                Carregar mais
               </Button>
-            </motion.div>
-          </motion.div>
-        )}
+            </div>
+          )}
+
+          {!loadingCombined && (
+            <PropertiesPagination
+              shown={Math.min(visibleCount, filteredProperties.length)}
+              total={total}
+              page={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
+          )}
+
+          {!loadingCombined && filteredProperties.length === 0 && (
+            <div className="text-center py-16 rounded-2xl border border-border bg-card shadow-sm">
+              <Building2 className="h-14 w-14 text-muted-foreground/50 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                {total === 0 ? 'Nenhum imóvel cadastrado' : 'Nenhum imóvel encontrado'}
+              </h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto text-sm">
+                {total === 0
+                  ? 'Comece adicionando seu primeiro imóvel ao portfólio.'
+                  : 'Não há imóveis que correspondam aos filtros selecionados.'}
+              </p>
+              {!isCorretor && (
+                <Button
+                  onClick={onAddNew}
+                  className="btn-on-emerald rounded-xl bg-emerald-800 text-white hover:bg-emerald-700"
+                  style={{ color: '#ffffff' }}
+                >
+                  <Plus className="h-4 w-4 mr-2" style={{ color: '#ffffff' }} />
+                  {total === 0 ? 'Adicionar primeiro imóvel' : 'Adicionar imóvel'}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja deletar o imóvel &quot;{deletingProperty?.title}&quot;? Esta
+              ação não pode ser desfeita e todas as imagens associadas também serão removidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeletingProperty(null);
+                setDeleteDialogOpen(false);
+              }}
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!deletingProperty) return;
+                if (isVivaRealMode) handleDeleteVivaReal(deletingProperty);
+                else handleDeleteProperty(deletingProperty);
+                setDeleteDialogOpen(false);
+              }}
+            >
+              Deletar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modals */}
       <Suspense fallback={null}>
@@ -2027,54 +1421,49 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           property={selectedProperty}
           open={isDetailsOpen}
           onClose={handleCloseDetails}
+          onEdit={
+            selectedProperty
+              ? () => {
+                  const p = selectedProperty;
+                  handleCloseDetails();
+                  if (isVivaRealMode) startVivaRealEdit(p);
+                  else handleEditProperty(p);
+                }
+              : undefined
+          }
         />
       </Suspense>
 
       {/* Modal de Alteração de Disponibilidade */}
       <Dialog open={availabilityDialogOpen} onOpenChange={setAvailabilityDialogOpen}>
-        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl">Alterar disponibilidade</DialogTitle>
-
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="flex gap-3 flex-col">
               <Select value={availabilityValue} onValueChange={(v: any) => setAvailabilityValue(v as any)}>
-                <SelectTrigger className="w-48 bg-gray-700/50 border-gray-600 text-white hover:bg-gray-700/70">
+                <SelectTrigger className="w-48">
                   <SelectValue placeholder="Disponibilidade" />
                 </SelectTrigger>
-                <SelectContent 
-                  className="bg-gray-900 border-gray-600 text-white" 
-                  style={{ zIndex: 9999 }}
-                  position="popper" 
-                  sideOffset={5}>
-                  <SelectItem 
-                    value="disponivel"
-                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
-                    Disponível
-                  </SelectItem>
-                  <SelectItem 
-                    value="indisponivel"
-                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
-                    Indisponível
-                  </SelectItem>
-                  <SelectItem 
-                    value="reforma"
-                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
-                    Reforma
-                  </SelectItem>
+                <SelectContent position="popper" sideOffset={5}>
+                  <SelectItem value="disponivel">Disponível</SelectItem>
+                  <SelectItem value="indisponivel">Indisponível</SelectItem>
+                  <SelectItem value="reforma">Reforma</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs italic text-gray-400">Se marcar como Indisponível ou Reforma, descreva o motivo na observação.</p>
+              <p className="text-xs italic text-muted-foreground">
+                Se marcar como Indisponível ou Reforma, descreva o motivo na observação.
+              </p>
             </div>
 
             <div>
-              <label className="text-sm text-gray-300">Observação</label>
+              <label className="text-sm text-muted-foreground">Observação</label>
               <Textarea
                 value={availabilityNote}
                 onChange={(e) => setAvailabilityNote(e.target.value)}
-                className="mt-1 bg-gray-800 border-gray-700 text-white"
+                className="mt-1"
                 placeholder="Descreva o motivo quando marcar Indisponível ou Reforma"
               />
             </div>
@@ -2082,12 +1471,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             <div className="flex gap-3 justify-end">
               <Button
                 variant="outline"
-                className="border-gray-600 text-red-500 hover:bg-gray-800"
+                className="rounded-xl"
                 onClick={() => setAvailabilityDialogOpen(false)}
               >
                 Cancelar
               </Button>
               <Button
+                className="btn-on-emerald rounded-xl bg-emerald-800 text-white hover:bg-emerald-700"
+                style={{ color: '#ffffff' }}
                 onClick={async () => {
                   try {
                     if (!availabilityTarget) return;
@@ -2124,7 +1515,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                     toast({ title: 'Erro ao atualizar', description: err.message || 'Tente novamente', variant: 'destructive' });
                   }
                 }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 Salvar
               </Button>
@@ -2165,7 +1555,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             document.body
           )}
         <DialogContent
-          className="bg-gray-900 border border-gray-700 text-white sm:max-w-2xl max-h-[min(90dvh,880px)] w-[min(92vw,42rem)] overflow-y-auto overflow-x-hidden"
+          className="gap-0 overflow-hidden p-0 bg-background border-border text-foreground sm:max-w-2xl max-h-[min(90dvh,880px)] w-[min(92vw,42rem)] sm:rounded-2xl flex flex-col"
           /* Lightbox está fora deste nó (portal). Sem preventDefault, o DismissableLayer trata clique/foco na galeria como “fora” e fecha o modal. Não use position:relative aqui — sobrescreve o fixed do dialog.tsx e desloca o popup no fluxo da página. */
           onPointerDownOutside={(e) => {
             if (editImageLightboxIndex !== null) e.preventDefault();
@@ -2183,41 +1573,80 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             }
           }}
         >
-          <DialogHeader>
-            <DialogTitle className="text-xl">Editar Imóvel (VivaReal)</DialogTitle>
-            <DialogDescription className="text-gray-300">
-              Atualize os campos básicos e adicione/remova imagens.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+          {/* Header — dark forest (mesmo idioma visual da Ver ficha) */}
+          <div
+            className="flex-shrink-0 px-5 sm:px-6 py-4 sm:py-5"
+            style={{ backgroundColor: '#1a2e24' }}
+          >
+            <DialogHeader className="space-y-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <DialogTitle
+                    className="text-lg sm:text-xl font-semibold leading-snug"
+                    style={{ color: '#ffffff' }}
+                  >
+                    Editar Imóvel (VivaReal)
+                  </DialogTitle>
+                  <DialogDescription className="mt-1.5 text-sm" style={{ color: '#a3a3a3' }}>
+                    Atualize os campos básicos e adicione/remova imagens.
+                  </DialogDescription>
+                </div>
+                <DialogClose asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-lg hover:bg-white/10 shrink-0"
+                    aria-label="Fechar"
+                    style={{ color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.25)' }}
+                    onClick={() => {
+                      setIsVivaRealEditOpen(false);
+                      setEditImageLightboxIndex(null);
+                    }}
+                  >
+                    <X className="h-4 w-4" style={{ color: '#ffffff' }} />
+                  </Button>
+                </DialogClose>
+              </div>
+            </DialogHeader>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden space-y-4 px-5 sm:px-6 py-5 bg-background">
             <div>
-              <label className="text-sm text-gray-300">Preço (R$)</label>
-              <Input value={editPreco} onChange={(e) => setEditPreco(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+              <label className="text-sm text-muted-foreground">Preço (R$)</label>
+              <Input
+                inputMode="numeric"
+                value={editPreco}
+                onChange={(e) => setEditPreco(formatBRLInput(e.target.value))}
+                placeholder="R$ 0,00"
+                className="mt-1 bg-background border-border text-foreground"
+              />
+           
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-gray-300">Área (m²)</label>
-                <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+                <label className="text-sm text-muted-foreground">Área (m²)</label>
+                <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} className="mt-1 bg-background border-border text-foreground" />
               </div>
               <div>
-                <label className="text-sm text-gray-300">Quartos</label>
-                <Input value={editQuartos} onChange={(e) => setEditQuartos(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+                <label className="text-sm text-muted-foreground">Quartos</label>
+                <Input value={editQuartos} onChange={(e) => setEditQuartos(e.target.value)} className="mt-1 bg-background border-border text-foreground" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-gray-300">Banheiros</label>
-                <Input value={editBanheiros} onChange={(e) => setEditBanheiros(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+                <label className="text-sm text-muted-foreground">Banheiros</label>
+                <Input value={editBanheiros} onChange={(e) => setEditBanheiros(e.target.value)} className="mt-1 bg-background border-border text-foreground" />
               </div>
               <div>
-                <label className="text-sm text-gray-300">Modalidade</label>
+                <label className="text-sm text-muted-foreground">Modalidade</label>
                 <Select value={editModalidade} onValueChange={setEditModalidade}>
-                  <SelectTrigger className="mt-1 bg-gray-800 border-gray-700 text-white">
+                  <SelectTrigger className="mt-1 bg-background border-border text-foreground">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                  <SelectContent className="bg-background border-border text-foreground">
                     {MODALIDADE_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-800">
+                      <SelectItem key={opt.value} value={opt.value} className="text-foreground focus:bg-emerald-50 focus:text-emerald-900 dark:focus:bg-emerald-950/40 dark:focus:text-emerald-100">
                         {opt.label}
                       </SelectItem>
                     ))}
@@ -2226,14 +1655,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               </div>
             </div>
             <div>
-              <label className="text-sm text-gray-300">Descrição</label>
-              <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md p-2 text-gray-200 min-h-[100px]"></textarea>
+              <label className="text-sm text-muted-foreground">Descrição</label>
+              <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-background border border-border rounded-md p-2 text-foreground min-h-[100px]"></textarea>
             </div>
 
             {/* Características / amenidades — gravadas em INGLÊS para casar com a tool
                 `buscar_por_features` do agente n8n (ver src/constants/imovelFeatures.ts). */}
             <div>
-              <label className="text-sm text-gray-300 font-medium">Características</label>
+              <label className="text-sm text-muted-foreground font-medium">Características</label>
               <div className="mt-2 flex flex-wrap gap-2">
                 {FEATURE_OPTIONS.map((opt) => {
                   const active = editFeatures.includes(opt.value);
@@ -2245,8 +1674,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                       className={
                         'px-3 py-1.5 rounded-full text-sm border transition-colors ' +
                         (active
-                          ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
-                          : 'bg-gray-800 border-gray-700 text-gray-200 hover:bg-gray-700')
+                          ? 'btn-on-emerald bg-emerald-800 border-emerald-700 text-white hover:bg-emerald-700'
+                          : 'bg-muted/40 border-border text-muted-foreground hover:bg-muted hover:text-foreground')
                       }
                       aria-pressed={active}
                     >
@@ -2255,7 +1684,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                   );
                 })}
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 {editFeatures.length === 0
                   ? 'Nenhuma característica selecionada'
                   : `${editFeatures.length} selecionada${editFeatures.length > 1 ? 's' : ''}`}
@@ -2272,42 +1701,19 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
              * 20260509120000_imoveisvivareal_imagens_legendas.sql
              * =====================================================================================
              */}
-            {/* Seção de Imagens */}
-            <div
-              className={
-                'space-y-4 rounded-xl border p-3 sm:p-4 ' +
-                (isDarkGallery
-                  ? 'border-zinc-700/60 bg-zinc-900/40'
-                  : 'border-zinc-500/50 bg-white/[0.07] ring-1 ring-white/10')
-              }
-            >
+            {/* Seção de Imagens — chrome light-friendly (corpo cream) */}
+            <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-3 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <label
-                    className={
-                      'text-sm font-medium ' + (isDarkGallery ? 'text-zinc-100' : 'text-white')
-                    }
-                  >
+                  <label className="text-sm font-medium text-foreground">
                     Imagens (até {MAX_IMAGES})
                   </label>
-                  <p
-                    className={
-                      'mt-1 max-w-xl text-xs leading-relaxed ' +
-                      (isDarkGallery ? 'text-zinc-400' : 'text-zinc-200/90')
-                    }
-                  >
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
                     Toque ou clique na foto para ampliar. Use as setas ou deslize no celular. Abaixo da imagem você
                     pode escrever uma descrição curta (opcional, até {IMAGE_CAPTION_MAX} caracteres).
                   </p>
                 </div>
-                <span
-                  className={
-                    'shrink-0 self-start rounded-full border px-3 py-1 text-xs font-medium tabular-nums ' +
-                    (isDarkGallery
-                      ? 'border-zinc-600 bg-zinc-800/80 text-zinc-200'
-                      : 'border-zinc-400/70 bg-zinc-800/60 text-zinc-50')
-                  }
-                >
+                <span className="shrink-0 self-start rounded-full border border-border bg-background px-3 py-1 text-xs font-medium tabular-nums text-muted-foreground">
                   {editExistingImages.length + editImages.length}/{MAX_IMAGES}
                 </span>
               </div>
@@ -2315,19 +1721,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               {/* Imagens existentes */}
               {editExistingImages.length > 0 && (
                 <div className="space-y-2">
-                  <p
-                    className={
-                      'text-xs font-medium uppercase tracking-wide ' +
-                      (isDarkGallery ? 'text-zinc-500' : 'text-zinc-300')
-                    }
-                  >
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Já no imóvel
                   </p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
                     {editExistingImages.map((url, idx) => (
                       <div
                         key={`existing-${idx}`}
-                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-zinc-600/80 bg-zinc-950/60 shadow-md ring-0 transition-all duration-200 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70"
+                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-muted shadow-sm transition-all duration-200 hover:border-emerald-500/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70"
                         role="button"
                         tabIndex={0}
                         onClick={() => setEditImageLightboxIndex(idx)}
@@ -2347,22 +1748,22 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               handleImageErrorWithFallback(e, url, '/placeholder-property.jpg');
                             }}
                           />
-                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20 opacity-90 transition-opacity group-hover:opacity-100" />
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10 opacity-80 transition-opacity group-hover:opacity-100" />
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                            <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                            <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm" style={{ color: '#ffffff' }}>
+                              <Eye className="h-3.5 w-3.5" aria-hidden style={{ color: '#ffffff' }} />
                               Ver
                             </span>
                           </div>
-                          <span className="pointer-events-none absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-black/55 px-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+                          <span className="pointer-events-none absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-black/55 px-1.5 text-[11px] font-semibold backdrop-blur-sm" style={{ color: '#ffffff' }}>
                             {idx + 1}
                           </span>
                         </div>
-                        <div className="border-t border-zinc-700/50 bg-zinc-900/80 px-2 py-1.5">
+                        <div className="border-t border-border bg-background/80 px-2 py-1.5">
                           {(editExistingCaptions[idx] || '').length > 0 ? (
-                            <p className="line-clamp-2 text-[11px] leading-snug text-zinc-400">{editExistingCaptions[idx]}</p>
+                            <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{editExistingCaptions[idx]}</p>
                           ) : (
-                            <p className="text-[11px] text-zinc-600">Sem descrição</p>
+                            <p className="text-[11px] text-muted-foreground/60">Sem descrição</p>
                           )}
                         </div>
                         <button
@@ -2371,10 +1772,11 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             e.stopPropagation();
                             removeExistingImage(idx);
                           }}
-                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          style={{ color: '#ffffff' }}
                           aria-label="Remover imagem"
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-4 w-4" style={{ color: '#ffffff' }} />
                         </button>
                       </div>
                     ))}
@@ -2385,19 +1787,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               {/* Novas imagens */}
               {editPreviews.length > 0 && (
                 <div className="space-y-2">
-                  <p
-                    className={
-                      'text-xs font-medium uppercase tracking-wide ' +
-                      (isDarkGallery ? 'text-emerald-500/90' : 'text-emerald-300')
-                    }
-                  >
+                  <p className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                     Novas (ainda não salvas)
                   </p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
                     {editPreviews.map((preview, idx) => (
                       <div
                         key={`new-${idx}`}
-                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-emerald-600/50 bg-emerald-950/20 shadow-md ring-0 transition-all duration-200 hover:border-emerald-400/60 hover:shadow-lg hover:shadow-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
+                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-emerald-300/70 bg-emerald-50/50 dark:border-emerald-600/50 dark:bg-emerald-950/20 shadow-sm transition-all duration-200 hover:border-emerald-500 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
                         role="button"
                         tabIndex={0}
                         onClick={() => setEditImageLightboxIndex(editExistingImages.length + idx)}
@@ -2414,22 +1811,22 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             alt={`Nova imagem ${idx + 1}`}
                             className="absolute inset-0 h-full w-full object-cover pointer-events-none"
                           />
-                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-emerald-950/80 via-transparent to-black/15 opacity-90" />
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-emerald-950/50 via-transparent to-black/10 opacity-80" />
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                            <span className="flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                            <span className="flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm" style={{ color: '#ffffff' }}>
+                              <Eye className="h-3.5 w-3.5" aria-hidden style={{ color: '#ffffff' }} />
                               Ver
                             </span>
                           </div>
-                          <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow">
+                          <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-emerald-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow" style={{ color: '#ffffff' }}>
                             Novo
                           </span>
                         </div>
-                        <div className="border-t border-emerald-800/40 bg-emerald-950/30 px-2 py-1.5">
+                        <div className="border-t border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/80 dark:bg-emerald-950/30 px-2 py-1.5">
                           {(editNewCaptions[idx] || '').length > 0 ? (
-                            <p className="line-clamp-2 text-[11px] leading-snug text-emerald-100/90">{editNewCaptions[idx]}</p>
+                            <p className="line-clamp-2 text-[11px] leading-snug text-emerald-900/80 dark:text-emerald-100/90">{editNewCaptions[idx]}</p>
                           ) : (
-                            <p className="text-[11px] text-emerald-700/90">Sem descrição</p>
+                            <p className="text-[11px] text-emerald-700/70 dark:text-emerald-700/90">Sem descrição</p>
                           )}
                         </div>
                         <button
@@ -2438,98 +1835,53 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             e.stopPropagation();
                             removeEditImage(idx);
                           }}
-                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600/95 shadow-lg ring-1 ring-black/20 transition-transform hover:scale-105 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                          style={{ color: '#ffffff' }}
                           aria-label="Remover imagem"
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-4 w-4" style={{ color: '#ffffff' }} />
                         </button>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              
+
               {/* Botão para adicionar imagens do computador */}
-              <label
-                className={
-                  'inline-flex h-11 w-fit cursor-pointer items-center gap-2 rounded-lg border px-4 text-sm font-semibold shadow-sm transition ' +
-                  (isDarkGallery
-                    ? 'border-zinc-500 bg-zinc-950/70 text-zinc-100 hover:border-emerald-500/50 hover:bg-zinc-800/90'
-                    : 'border-emerald-400/70 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300 hover:bg-emerald-500/25')
-                }
-              >
-                <ImagePlus
-                  className={'h-4 w-4 shrink-0 ' + (isDarkGallery ? 'text-emerald-400' : 'text-emerald-300')}
-                  aria-hidden
-                />
+              <label className="inline-flex h-11 w-fit cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition hover:border-emerald-500/50 hover:bg-muted">
+                <ImagePlus className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
                 <span>Do computador</span>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  multiple 
-                  className="hidden" 
-                  onChange={(e) => onSelectEditImages(e.target.files)} 
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => onSelectEditImages(e.target.files)}
                 />
               </label>
-
-              {/* Upload via Google Drive Link */}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                <div className="relative min-w-0 flex-1">
-                  <Link
-                    className={
-                      'absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 ' +
-                      (isDarkGallery ? 'text-zinc-500' : 'text-zinc-400')
-                    }
-                  />
-                  <Input
-                    placeholder="Cole o link do Google Drive aqui..."
-                    value={editGoogleDriveLink}
-                    onChange={(e) => setEditGoogleDriveLink(e.target.value)}
-                    className={
-                      'h-11 pl-10 ' +
-                      (isDarkGallery
-                        ? 'bg-zinc-950/60 border-zinc-600 text-white placeholder:text-zinc-500'
-                        : 'border-zinc-500 bg-white/10 text-white placeholder:text-zinc-300')
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        onAddEditGoogleDriveImage();
-                      }
-                    }}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  onClick={onAddEditGoogleDriveImage}
-                  disabled={isEditDownloadingFromDrive || !editGoogleDriveLink.trim()}
-                  className="h-11 shrink-0 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 sm:w-auto sm:min-w-[7.5rem]"
-                >
-                  {isEditDownloadingFromDrive ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Baixando...
-                    </>
-                  ) : (
-                    'Adicionar'
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs text-gray-500">
-                Suporta links do formato: https://drive.google.com/file/d/ID/view
-              </p>
             </div>
-            
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300" onClick={() => {
-                setIsVivaRealEditOpen(false);
-                setEditImages([]);
-                setEditPreviews([]);
-                setEditNewCaptions([]);
-                setEditGoogleDriveLink('');
-                setEditImageLightboxIndex(null);
-              }}>Cancelar</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={submitVivaRealEdit}>Salvar</Button>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border mt-2">
+              <Button
+                variant="outline"
+                className="border-border text-foreground hover:bg-muted"
+                onClick={() => {
+                  setIsVivaRealEditOpen(false);
+                  setEditImages([]);
+                  setEditPreviews([]);
+                  setEditNewCaptions([]);
+                  setEditImageLightboxIndex(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="btn-on-emerald bg-emerald-800 hover:bg-emerald-700"
+                style={{ color: '#ffffff' }}
+                onClick={submitVivaRealEdit}
+              >
+                Salvar
+              </Button>
             </div>
           </div>
         </DialogContent>

@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { SimulatorMessage } from '@/components/ai-test/PhoneWhatsAppSimulator';
+import type { SimulatorMessage } from '@/components/ai-test/helpers';
+import { safeRandomUUID } from '@/lib/safeRandomUUID';
 import {
   buildWhatsappEnviarMensagemBody,
   postWhatsappEnviarMensagem,
@@ -32,7 +33,7 @@ function sessionStorageKey(companyId: string) {
 
 /** Novo session_id UUID para cada conversa de teste. */
 export function createAiTestSessionId(): string {
-  return crypto.randomUUID();
+  return safeRandomUUID();
 }
 
 export function loadStoredAiTestSessionId(companyId: string): string | null {

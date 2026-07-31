@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { Loader2, SendHorizontal, Bot, User as UserIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRandomUUID } from "@/lib/safeRandomUUID";
 
 type ChatMessage = {
   id: string;
@@ -88,7 +89,7 @@ export function InquilinatoView() {
       }));
       if (mapped.length === 0) {
         mapped.push({
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           role: "assistant",
           content:
             "Olá! Eu sou o assistente da Lei do Inquilinato. Envie sua dúvida e responderei com base no endpoint integrado.",
@@ -109,7 +110,7 @@ export function InquilinatoView() {
     if (!canSend) return;
     const content = input.trim();
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: safeRandomUUID(),
       role: "user",
       content,
       createdAt: Date.now(),
@@ -185,7 +186,7 @@ export function InquilinatoView() {
       }
 
       const assistantMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: safeRandomUUID(),
         role: "assistant",
         content: assistantText || "Sem conteúdo na resposta.",
         createdAt: Date.now(),
@@ -211,7 +212,7 @@ export function InquilinatoView() {
       }
     } catch (err: any) {
       const errorMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: safeRandomUUID(),
         role: "assistant",
         content: `Ocorreu um erro ao consultar o serviço: ${
           err?.message || "erro desconhecido"
@@ -270,7 +271,7 @@ export function InquilinatoView() {
                 ]);
                 setMessages([
                   {
-                    id: crypto.randomUUID(),
+                    id: safeRandomUUID(),
                     role: "assistant",
                     content: "Nova conversa iniciada. Envie sua dúvida sobre a Lei do Inquilinato.",
                     createdAt: Date.now(),

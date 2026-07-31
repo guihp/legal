@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { MessageCircle, Instagram } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ConversasViewPremium } from './ConversasViewPremium';
 import { ConversasViewInstagram } from './ConversasViewInstagram';
+import { ConversasTopBar, type ChannelStats } from '@/components/conversas/ConversasTopBar';
 
 export type ConversaChannel = 'whatsapp' | 'instagram';
 
@@ -23,6 +23,10 @@ export function ConversasPage() {
     }
   });
 
+  const [whatsappStats, setWhatsappStats] = useState<ChannelStats>({ total: 0, unread: 0 });
+  const [instagramStats, setInstagramStats] = useState<ChannelStats>({ total: 0, unread: 0 });
+  const [settingsRequest, setSettingsRequest] = useState(0);
+
   useEffect(() => {
     try {
       localStorage.setItem(CHANNEL_STORAGE_KEY, channel);
@@ -31,57 +35,42 @@ export function ConversasPage() {
     }
   }, [channel]);
 
+  const onWhatsappStats = useCallback((stats: ChannelStats) => {
+    setWhatsappStats(stats);
+  }, []);
+
+  const onInstagramStats = useCallback((stats: ChannelStats) => {
+    setInstagramStats(stats);
+  }, []);
+
   return (
-    <div className="flex flex-col h-full">
-      {/* CHANNEL TABS */}
-      <div
-        role="tablist"
-        aria-label="Canais de conversa"
-        className="flex items-center gap-1 p-1 mb-3 rounded-2xl bg-[var(--cv-panel-muted,rgba(0,0,0,0.04))] w-fit self-start shadow-sm border border-[var(--cv-border,rgba(0,0,0,0.08))]"
-      >
-        <button
-          role="tab"
-          aria-selected={channel === 'whatsapp'}
-          type="button"
-          onClick={() => setChannel('whatsapp')}
-          className={[
-            'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200',
-            channel === 'whatsapp'
-              ? 'bg-[#25D366] text-white shadow-md'
-              : 'text-[var(--cv-text-muted,#6b7280)] hover:bg-[var(--cv-hover,rgba(0,0,0,0.04))] hover:text-[var(--cv-text,#111827)]',
-          ].join(' ')}
-          title="Conversas do WhatsApp"
-        >
-          <MessageCircle className="w-4 h-4" />
-          <span>WhatsApp</span>
-        </button>
+    <div
+      className={[
+        'flex flex-col min-h-0 min-w-0 overflow-x-hidden',
+        // Header (~3.5–4.5rem) + main padding (tighter on conversas) + top bar margin
+        'h-[calc(100dvh-5.25rem)] sm:h-[calc(100dvh-6rem)] md:h-[calc(100dvh-7rem)]',
+      ].join(' ')}
+    >
+      <ConversasTopBar
+        channel={channel}
+        onChannelChange={setChannel}
+        whatsappStats={whatsappStats}
+        instagramStats={instagramStats}
+        onOpenSettings={() => setSettingsRequest((n) => n + 1)}
+      />
 
-        <button
-          role="tab"
-          aria-selected={channel === 'instagram'}
-          type="button"
-          onClick={() => setChannel('instagram')}
-          className={[
-            'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200',
-            channel === 'instagram'
-              ? 'text-white shadow-md'
-              : 'text-[var(--cv-text-muted,#6b7280)] hover:bg-[var(--cv-hover,rgba(0,0,0,0.04))] hover:text-[var(--cv-text,#111827)]',
-          ].join(' ')}
-          style={
-            channel === 'instagram'
-              ? { background: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)' }
-              : undefined
-          }
-          title="Conversas do Instagram Direct"
-        >
-          <Instagram className="w-4 h-4" />
-          <span>Instagram</span>
-        </button>
-      </div>
-
-      {/* CONTENT */}
-      <div className="flex-1 min-h-0">
-        {channel === 'whatsapp' ? <ConversasViewPremium /> : <ConversasViewInstagram />}
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        {channel === 'whatsapp' ? (
+          <ConversasViewPremium
+            onInboxStats={onWhatsappStats}
+            openTemplatesRequest={settingsRequest}
+          />
+        ) : (
+          <ConversasViewInstagram
+            onInboxStats={onInstagramStats}
+            openTemplatesRequest={settingsRequest}
+          />
+        )}
       </div>
     </div>
   );

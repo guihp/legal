@@ -195,6 +195,9 @@ const Index = () => {
             properties={[]}
             loading={false}
             onNavigateToAgenda={() => changeView("agenda", "dashboard-button")}
+            onNavigateToReports={() => changeView("reports", "dashboard-button")}
+            onNavigateToPipeline={() => changeView("clients", "dashboard-button")}
+            onNavigateToUsers={() => changeView("users", "dashboard-button")}
           />
         );
       case "reports":
@@ -263,18 +266,7 @@ const Index = () => {
       case "conversas":
         return <ConversasView />;
       case "marketing":
-        if (planTier[companyPlan] < 3) {
-          return <PlanBlockedScreen feature="Presença Digital" requiredPlan="Professional" />;
-        }
-        if (!hasPermission('menu_marketing')) {
-          return (
-            <div className="p-8 text-center">
-              <div className="text-red-400 mb-4">Acesso Negado</div>
-              <p className="text-gray-400 text-sm">Você não tem permissão para o módulo Presença digital.</p>
-            </div>
-          );
-        }
-        return <MarketingView section="overview" />;
+        // Alias legado: /marketing → Site vitrine (visão geral removida)
       case "marketing-site":
         if (planTier[companyPlan] < 3) {
           return <PlanBlockedScreen feature="Site Vitrine" requiredPlan="Professional" />;
@@ -381,7 +373,16 @@ const Index = () => {
         if (!VALID_VIEWS.includes(currentView as string)) {
           return <NotFound />;
         }
-        return <DashboardContent properties={[]} loading={false} onNavigateToAgenda={() => changeView("agenda", "default-fallback")} />;
+        return (
+          <DashboardContent
+            properties={[]}
+            loading={false}
+            onNavigateToAgenda={() => changeView("agenda", "default-fallback")}
+            onNavigateToReports={() => changeView("reports", "default-fallback")}
+            onNavigateToPipeline={() => changeView("clients", "default-fallback")}
+            onNavigateToUsers={() => changeView("users", "default-fallback")}
+          />
+        );
     }
   };
 
@@ -395,7 +396,16 @@ const Index = () => {
           />
           <div className="flex-1 min-w-0">
             <DashboardHeader />
-            <main className="p-3 sm:p-4 md:p-6 overflow-x-hidden overflow-y-visible">
+            <main
+              className={
+                currentView === "conversas"
+                  ? "p-1.5 sm:p-2 md:p-4 overflow-x-hidden overflow-y-visible"
+                  : currentView === "clients"
+                    ? // Pipeline Kanban needs a nested horizontal scrollport; overflow-x-hidden here clips it on mobile.
+                      "p-3 sm:p-4 md:p-6 overflow-x-visible overflow-y-visible min-w-0"
+                    : "p-3 sm:p-4 md:p-6 overflow-x-hidden overflow-y-visible"
+              }
+            >
               <Suspense fallback={
                 <div className="flex items-center justify-center p-8">
                   <div className="text-center">

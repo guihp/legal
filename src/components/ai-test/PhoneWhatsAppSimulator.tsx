@@ -5,16 +5,9 @@ import { Button } from '@/components/ui/button';
 import { ChatImageGrid } from '@/components/ChatImageGrid';
 import { IPhone17ProMaxFrame, IOSStatusBar } from '@/components/ai-test/IPhone17ProMaxFrame';
 import { cn } from '@/lib/utils';
+import type { SimulatorMessage } from '@/components/ai-test/helpers';
 
-export type SimulatorMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  messageType?: 'text' | 'image';
-  mediaUrl?: string;
-  sentAt?: string;
-  pending?: boolean;
-};
+export type { SimulatorMessage };
 
 function formatMessageTime(sentAt?: string): string {
   if (!sentAt) {

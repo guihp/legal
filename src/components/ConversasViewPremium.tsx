@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useIsXlUp } from '@/hooks/useMediaQuery';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -119,6 +120,16 @@ import { useChatTemplates } from '@/hooks/useChatTemplates';
 import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
 import { resolveWhatsappSendInstancia } from '@/lib/resolveWhatsappSendInstancia';
 import { formatConversationListTime, conversationDayKey, formatChatDaySeparator } from '@/lib/formatConversationListTime';
+import { useNavigate } from 'react-router-dom';
+import {
+  ConversasInboxFilters,
+  matchesInboxFilter,
+  type InboxFilterId,
+} from '@/components/conversas/ConversasInboxFilters';
+import { ConversasLeadPanel } from '@/components/conversas/ConversasLeadPanel';
+import { ConversasChatHeaderActions } from '@/components/conversas/ConversasChatHeaderActions';
+import { ConversasQuickActions } from '@/components/conversas/ConversasQuickActions';
+import type { ChannelStats } from '@/components/conversas/ConversasTopBar';
 
 if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
@@ -679,21 +690,32 @@ function MessageBubble({
   );
 }
 
-interface ConversasViewPremiumProps { }
+interface ConversasViewPremiumProps {
+  onInboxStats?: (stats: ChannelStats) => void;
+  openTemplatesRequest?: number;
+}
 
-export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
+export function ConversasViewPremium({
+  onInboxStats,
+  openTemplatesRequest = 0,
+}: ConversasViewPremiumProps) {
   const { profile } = useUserProfile();
   const { labels: aiCatalogLabels } = useCompanyAiLabels();
   const { isOfficialApi } = useCompanyApiMode();
   const { toast } = useToast();
   const controls = useAnimation();
   const isMobile = useIsMobile();
+  const isXlUp = useIsXlUp();
+  const navigate = useNavigate();
 
   // Estados
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<InboxFilterId>('all');
+  const [leadPanelOpen, setLeadPanelOpen] = useState(false);
+  const [assuming, setAssuming] = useState(false);
   const [summaryModal, setSummaryModal] = useState<{ isOpen: boolean; data: any }>({
     isOpen: false,
     data: null
@@ -982,10 +1004,20 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   }, [selectedInstance, scopedInstance, setMyInstance]);
 
   // Conversas filtradas por busca
-  const filteredConversas = conversas.filter(conversa =>
-    conversa.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (conversa.leadPhone && conversa.leadPhone.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredConversas = conversas.filter((conversa) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      conversa.displayName.toLowerCase().includes(q) ||
+      (conversa.leadPhone && conversa.leadPhone.toLowerCase().includes(q)) ||
+      (conversa.lastMessageContent && conversa.lastMessageContent.toLowerCase().includes(q));
+    if (!matchesSearch) return false;
+    return matchesInboxFilter(inboxFilter, {
+      unreadCount: getUnreadCount(conversa.sessionId),
+      labelSlug: conversa.labelSlug,
+      leadStage: conversa.leadStage,
+    });
+  });
 
   const displayConversas = useMemo(() => {
     if (!sessionOverride?.sessionId) return filteredConversas;
@@ -1088,6 +1120,27 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     refetchConversas();
   }, [profile?.company_id, profile?.id, refetchConversas]);
 
+  useEffect(() => {
+    if (!onInboxStats) return;
+    const unread = conversas.reduce((acc, c) => acc + (getUnreadCount(c.sessionId) > 0 ? 1 : 0), 0);
+    onInboxStats({ total: conversas.length, unread });
+  }, [conversas, getUnreadCount, onInboxStats]);
+
+  useEffect(() => {
+    if (openTemplatesRequest > 0) {
+      setShowManageTemplatesModal(true);
+    }
+  }, [openTemplatesRequest]);
+
+  useEffect(() => {
+    if (selectedConversation || selectedLead) {
+      // Docked 3rd column only on xl+; phone/tablet open lead via header icon.
+      setLeadPanelOpen(isXlUp);
+    } else {
+      setLeadPanelOpen(false);
+    }
+  }, [isXlUp, selectedConversation, selectedLead]);
+
   /** Atualiza estágio do CRM (`leads.stage`) pelo lead vinculado à conversa (telefone). */
   const setConversationCrmStage = useCallback(async (sessionId: string, stage: LeadStage) => {
     const conv = conversas.find((c) => c.sessionId === sessionId);
@@ -1174,6 +1227,40 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
     selectedInstance,
     scopedInstance,
   ]);
+
+  const handleAssumeConversation = useCallback(async () => {
+    const sessionId = currentConversation?.sessionId || selectedConversation;
+    if (!sessionId) return;
+    try {
+      setAssuming(true);
+      await setConversationLabel(sessionId, 'humano');
+      toast({
+        title: 'Atendimento assumido',
+        description: 'A conversa foi marcada como atendimento humano (corretor).',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Não foi possível assumir',
+        description: e?.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAssuming(false);
+    }
+  }, [currentConversation?.sessionId, selectedConversation, setConversationLabel, toast]);
+
+  const quickActions = useMemo(() => {
+    return (templates || [])
+      .filter((t) => !disableFreeText || t.is_official_api)
+      .slice(0, 4)
+      .map((t) => ({
+        id: String(t.id),
+        label:
+          (t.message?.trim()?.slice(0, 32) || t.shortcut || 'Atalho') +
+          ((t.message?.trim()?.length || 0) > 32 ? '…' : ''),
+        onClick: () => selectTemplate(t),
+      }));
+  }, [templates, disableFreeText]);
 
   const openContactInfo = useCallback(async () => {
     if (resolvingContactInfo) return;
@@ -1883,30 +1970,28 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
   }, []);
 
   return (
-    // Ajuste de altura para compensar o layout pai (sidebar/header) e padding (aprox 7rem / 112px)
-    <div className="h-[calc(100vh-7rem)] bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
+    <div className="h-full min-h-0 min-w-0 bg-[var(--cv-shell)] text-[var(--cv-text)] overflow-hidden flex relative rounded-xl sm:rounded-2xl shadow-xl ring-1 ring-[var(--cv-ring)]">
       {/* SIDEBAR (Lista de Conversas) */}
       <div
-        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0`}
+        className={`conversas-list-panel ${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-[min(40%,300px)] lg:w-[320px] xl:w-[380px] flex-col border-r border-[var(--cv-border)] bg-[var(--cv-shell)] relative z-30 shrink-0 min-h-0 min-w-0`}
       >
-        {/* HEADER SIDEBAR */}
-        <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden">
-              <MessageCircle className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="font-semibold text-[var(--cv-text)] text-sm md:text-base">Conversas</h1>
-          </div>
-          <div className="flex gap-3 text-[var(--cv-icon)]">
-            <MessageSquare className="w-5 h-5 cursor-pointer" />
+        <ConversasInboxFilters
+          totalCount={conversas.length}
+          unreadCount={conversas.reduce((acc, c) => acc + (getUnreadCount(c.sessionId) > 0 ? 1 : 0), 0)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          activeFilter={inboxFilter}
+          onFilterChange={setInboxFilter}
+          onNewConversation={() => setShowNewConversationDialog(true)}
+          headerMenu={
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="rounded p-0.5 hover:text-[var(--cv-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cv-accent)]"
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg hover:bg-[var(--cv-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cv-accent)]"
                   aria-label="Menu de conversas"
                 >
-                  <MoreVertical className="w-5 h-5" />
+                  <MoreVertical className="w-4 h-4" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="bg-[var(--cv-panel)] border-[var(--cv-border)]">
@@ -1916,31 +2001,24 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 >
                   Nova conversa
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer focus:bg-[var(--cv-hover)]"
+                  onClick={() => setShowManageTemplatesModal(true)}
+                >
+                  Gerenciar templates
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-          <NewWhatsAppConversationDialog
-            open={showNewConversationDialog}
-            onOpenChange={setShowNewConversationDialog}
-            companyId={profile?.company_id ?? null}
-            userId={profile?.id ?? null}
-            userRole={profile?.role}
-            onStart={handleStartNewConversation}
-          />
-        </div>
-
-        {/* SEARCH & FILTER */}
-        <div className="p-2 border-b border-[var(--cv-border)]">
-          <div className="bg-[var(--cv-search-bg)] rounded-lg px-3 py-1.5 flex items-center gap-2">
-            <Search className="w-4 h-4 text-[var(--cv-text-muted)]" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Pesquisar ou começar uma nova..."
-              className="bg-transparent border-none outline-none text-sm text-[var(--cv-input-text)] w-full placeholder:text-[var(--cv-text-muted)]"
-            />
-          </div>
-        </div>
+          }
+        />
+        <NewWhatsAppConversationDialog
+          open={showNewConversationDialog}
+          onOpenChange={setShowNewConversationDialog}
+          companyId={profile?.company_id ?? null}
+          userId={profile?.id ?? null}
+          userRole={profile?.role}
+          onStart={handleStartNewConversation}
+        />
 
         {/* INSTANCES LIST — só quando há mais de uma (envio); lista de chats é por empresa/cliente */}
         {instances.length > 1 ? (
@@ -1954,9 +2032,10 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                 setSelectedLead(null);
               }}
               className={`inline-block px-3 py-1 text-xs rounded-full mr-2 transition-colors border ${selectedInstance === inst.name
-                ? "bg-[var(--cv-tab-active-bg)] text-[var(--cv-tab-active-text)] border-[var(--cv-tab-active-bg)]"
+                ? "bg-[var(--cv-tab-active-bg)] text-[var(--cv-tab-active-text)] border-[var(--cv-tab-active-bg)] btn-on-emerald"
                 : "bg-[var(--cv-tab-inactive-bg)] text-[var(--cv-tab-inactive-text)] border-transparent hover:bg-[var(--cv-hover)]"
                 }`}
+              style={selectedInstance === inst.name ? { color: '#fff' } : undefined}
             >
               {inst.name}
             </button>
@@ -2065,32 +2144,30 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
       </div>
 
       {/* MAIN CHAT AREA */}
-      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full`}>
+      <div className={`conversas-chat-shell ${!showSidebar ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative w-full h-full min-w-0 min-h-0`}>
         {!selectedConversation && !selectedLead ? (
-          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-8 border-b-[6px] border-[var(--cv-accent)]">
+          <div className="relative z-[1] flex-1 flex flex-col items-center justify-center text-center p-6 sm:p-8 border-b-[6px] border-[var(--cv-accent)]">
             <div className="max-w-[560px]">
 
-              <h2 className="text-3xl font-light text-[var(--cv-text)] mb-5">
+              <h2 className="text-2xl sm:text-3xl font-light text-[var(--cv-text)] mb-4 sm:mb-5">
                 Gerencie suas conversas
               </h2>
               <p className="text-[var(--cv-text-muted)] text-sm leading-6">
                 Selecione uma conversa para ver as mensagens.
               </p>
             </div>
-            <div className="absolute bottom-10 flex items-center gap-2 text-[var(--cv-text-muted)] text-xs">
-              <span className="opacity-80">Protegido com criptografia de ponta a ponta</span>
-            </div>
           </div>
         ) : (
           <>
             {/* CHAT HEADER */}
-            <div className="h-[60px] bg-[var(--cv-panel)] px-4 flex items-center justify-between shadow-sm shrink-0 z-10 w-full">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <Button variant="ghost" size="icon" className="md:hidden text-[var(--cv-icon)] mr-1" onClick={() => {
+            <div className="min-h-[56px] sm:min-h-[64px] bg-[var(--cv-panel)] px-2 sm:px-3 md:px-4 py-2 flex items-center justify-between gap-1.5 sm:gap-2 shadow-sm shrink-0 z-10 w-full border-b border-[var(--cv-border)] min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3 overflow-hidden min-w-0">
+                <Button variant="ghost" size="icon" className="md:hidden text-[var(--cv-icon)] shrink-0 h-9 w-9" onClick={() => {
                   setShowSidebar(true);
                   setSelectedConversation(null);
                   setSelectedLead(null);
                   setSessionOverride(null);
+                  setLeadPanelOpen(false);
                 }}>
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -2114,42 +2191,67 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   />
                 </button>
                 <div className="flex flex-col overflow-hidden min-w-0">
-                  <div className="flex items-center overflow-hidden gap-2">
+                  <div className="flex items-center overflow-hidden gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={() => void openContactInfo()}
                       disabled={resolvingContactInfo}
                       title="Ver informações do contato"
-                      className="text-[var(--cv-text)] font-semibold text-base truncate text-left hover:text-[var(--cv-accent)] focus-visible:outline-none focus-visible:underline disabled:opacity-60 min-w-0"
+                      className="text-[var(--cv-text)] font-semibold text-sm sm:text-base truncate text-left hover:text-[var(--cv-accent)] focus-visible:outline-none focus-visible:underline disabled:opacity-60 min-w-0"
                     >
                       {currentConversation?.displayName ||
                         sessionOverride?.displayName ||
                         selectedLead?.name ||
                         (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : '')}
                     </button>
+                    {currentConversation?.leadStage ? (
+                      <span className="hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-wide rounded-md px-1.5 py-0.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                        {currentConversation.leadStage}
+                      </span>
+                    ) : null}
                     {isOfficialApi && <CountdownTimer date={lastHumanDate} />}
                   </div>
                   <p className="text-xs text-[var(--cv-text-muted)] truncate">
-                    {currentConversation?.leadPhone ||
-                      sessionOverride?.leadPhone ||
-                      selectedLead?.phone ||
-                      (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : '')}
+                    {[
+                      currentConversation?.leadPhone ||
+                        sessionOverride?.leadPhone ||
+                        selectedLead?.phone ||
+                        (selectedConversation ? formatPhoneDisplayBR(selectedConversation) : ''),
+                      'WhatsApp Business',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-1 items-center text-[var(--cv-icon)]">
+              <div className="flex gap-0.5 sm:gap-1 items-center text-[var(--cv-icon)] shrink-0 max-w-[50%] sm:max-w-none overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <ConversasChatHeaderActions
+                  onAssume={
+                    currentConversation
+                      ? () => void handleAssumeConversation()
+                      : undefined
+                  }
+                  assumeDisabled={
+                    String(currentConversation?.labelSlug || '').toLowerCase() === 'humano' ||
+                    String(currentConversation?.leadStage || '').toLowerCase() === 'humano'
+                  }
+                  assumeLoading={assuming}
+                  onScheduleVisit={() => navigate('/agenda')}
+                  showLeadPanelToggle
+                  onToggleLeadPanel={() => setLeadPanelOpen((v) => !v)}
+                />
                 <ChatConversationTextSearchTrigger
                   messages={messagesForChatSearch}
                   scrollRootRef={messagesContainerRef}
                   onActiveMatchChange={setChatSearchHighlightId}
-                  triggerButtonClassName="h-9 w-9 shrink-0 text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)]"
+                  triggerButtonClassName="hidden sm:inline-flex h-9 w-9 shrink-0 text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)]"
                 />
                 {currentConversation && (
                   <ConversationActionsMenu
                     conversation={currentConversation}
                     onGenerateSummary={handleGenerateSummary}
                     onFollowUp={handleFollowUp}
-                    triggerClassName="text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)] h-9 w-9 p-0"
+                    triggerClassName="text-[var(--cv-icon)] hover:text-[var(--cv-text)] hover:bg-[var(--cv-hover)] h-8 w-8 sm:h-9 sm:w-9 p-0"
                   />
                 )}
               </div>
@@ -2159,7 +2261,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              className="conversas-chat-area flex-1 overflow-y-auto p-4 custom-scrollbar"
+              className="conversas-chat-area flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 custom-scrollbar min-h-0"
             >
               <div className="space-y-2 pb-2">
                 {/* LEAD MESSAGES */}
@@ -2251,7 +2353,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="absolute bottom-[72px] left-4 right-4 z-20 bg-[var(--cv-panel)] border border-[var(--cv-border)] rounded-xl shadow-2xl p-2 max-h-64 overflow-y-auto"
+                  className="absolute bottom-[120px] left-4 right-4 z-20 bg-[var(--cv-panel)] border border-[var(--cv-border)] rounded-xl shadow-2xl p-2 max-h-64 overflow-y-auto"
                 >
                   <div className="flex justify-between items-center px-2 pb-2 mb-2 border-b border-[var(--cv-border)]">
                     <span className="text-xs font-semibold text-[var(--cv-text-muted)]">Templates / Atalhos Rápido</span>
@@ -2289,6 +2391,8 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
               )}
             </AnimatePresence>
 
+            {!selectedLead ? <ConversasQuickActions actions={quickActions} /> : null}
+
             <ChatComposer
               surface="whatsapp"
               messageInput={messageInput}
@@ -2300,7 +2404,7 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
                   ? "Template API Oficial — texto bloqueado"
                   : disableFreeText
                     ? "Sessão expirada (24h). Digite '/' para templates"
-                    : "Mensagem"
+                    : "Escreva uma mensagem ou use / para modelos..."
               }
               textareaReadOnly={Boolean(lockedOfficialTemplate)}
               textareaClassName={disableFreeText && !lockedOfficialTemplate ? "placeholder:text-red-400/80" : undefined}
@@ -2376,6 +2480,32 @@ export function ConversasViewPremium({ }: ConversasViewPremiumProps) {
           </>
         )}
       </div>
+
+      {(selectedConversation || selectedLead) ? (
+        <ConversasLeadPanel
+          open={leadPanelOpen}
+          onOpenChange={setLeadPanelOpen}
+          leadId={currentConversation?.leadId || selectedLead?.id || null}
+          displayName={
+            currentConversation?.displayName ||
+            sessionOverride?.displayName ||
+            selectedLead?.name
+          }
+          phone={
+            currentConversation?.leadPhone ||
+            sessionOverride?.leadPhone ||
+            selectedLead?.phone ||
+            selectedConversation
+          }
+          channelLabel="WhatsApp"
+          profilePicUrl={currentConversation?.profilePicUrlWhatsapp}
+          messageCount={
+            selectedLead ? leadMessages.length : messages.length || currentConversation?.messageCount
+          }
+          labelStage={currentConversation?.leadStage}
+          onViewFicha={() => void openContactInfo()}
+        />
+      ) : null}
 
       {/* MEDIA PREVIEW OVERLAY */}
       <AnimatePresence>

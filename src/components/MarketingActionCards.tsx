@@ -41,15 +41,15 @@ const ColorField: React.FC<{
   onChange: (v: string) => void;
 }> = ({ label, value, onChange }) => (
   <div className="flex items-center justify-between gap-3 py-1">
-    <Label className="text-sm text-gray-300">{label}</Label>
+    <Label className="text-sm text-muted-foreground">{label}</Label>
     <div className="flex items-center gap-2">
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-12 cursor-pointer rounded border border-gray-700 bg-gray-800 p-0"
+        className="h-9 w-12 cursor-pointer rounded border border-border bg-background p-0"
       />
-      <span className="min-w-[72px] rounded bg-gray-800 px-2 py-1 text-center text-xs font-mono text-gray-300">
+      <span className="min-w-[72px] rounded border border-border bg-muted/40 px-2 py-1 text-center text-xs font-mono text-muted-foreground">
         {value.toUpperCase()}
       </span>
     </div>
@@ -697,245 +697,259 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
     <div className="flex gap-2">
       <Button
         variant="outline"
-        className="border-pink-600 text-pink-400 hover:bg-pink-900/30"
+        size="sm"
+        className="rounded-lg border-border h-9"
         onClick={handleOpenIg}
         disabled={generatingIG}
       >
-        <Instagram className="h-4 w-4 mr-2" />
+        <Instagram className="h-3.5 w-3.5 mr-1.5" />
         {generatingIG
           ? igProgress
             ? `Gerando ${igProgress.current}/${igProgress.total}...`
             : 'Gerando...'
-          : 'Post IG'}
+          : 'Post para Instagram'}
       </Button>
 
       <Button
         variant="outline"
-        className="border-red-600 text-red-400 hover:bg-red-900/30"
+        size="sm"
+        className="rounded-lg border-border h-9"
         onClick={() => { setPdfTab('textos'); setPdfOpen(true); }}
         disabled={generatingPDF}
       >
-        <FileText className="h-4 w-4 mr-2" />
-        {generatingPDF ? 'Gerando...' : 'Ficha PDF'}
+        <FileText className="h-3.5 w-3.5 mr-1.5" />
+        {generatingPDF ? 'Gerando...' : 'Ficha em PDF'}
       </Button>
 
       {/* ======================= IG CONFIG DIALOG ======================= */}
       <Dialog open={igOpen} onOpenChange={setIgOpen}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-6xl w-[96vw] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Post IG — Configurar carrossel</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Selecione as fotos, ajuste título e cores, veja a prévia e gere o carrossel.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden p-0 bg-background border-border text-foreground max-w-6xl w-[96vw] max-h-[92vh] sm:rounded-2xl flex flex-col">
+          <div className="flex-shrink-0 px-5 sm:px-6 py-4 sm:py-5" style={{ backgroundColor: '#1a2e24' }}>
+            <DialogHeader className="space-y-1.5">
+              <DialogTitle className="text-lg sm:text-xl font-semibold" style={{ color: '#ffffff' }}>
+                Post IG — Configurar carrossel
+              </DialogTitle>
+              <DialogDescription className="text-sm" style={{ color: '#a3a3a3' }}>
+                Selecione as fotos, ajuste título e cores, veja a prévia e gere o carrossel.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_440px] gap-6 items-start">
-            <Tabs value={igTab} onValueChange={(v) => setIgTab(v as any)}>
-              <TabsList className="bg-gray-800">
-                <TabsTrigger value="fotos">Fotos ({selectedImages.length})</TabsTrigger>
-                <TabsTrigger value="textos">Textos</TabsTrigger>
-                <TabsTrigger value="cores">Cores</TabsTrigger>
-              </TabsList>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 bg-[#F7F5F0] dark:bg-background">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_440px] gap-6 items-start">
+              <Tabs value={igTab} onValueChange={(v) => setIgTab(v as any)}>
+                <TabsList className="bg-muted border border-border">
+                  <TabsTrigger value="fotos">Fotos ({selectedImages.length})</TabsTrigger>
+                  <TabsTrigger value="textos">Textos</TabsTrigger>
+                  <TabsTrigger value="cores">Cores</TabsTrigger>
+                </TabsList>
 
-              {/* ---------- Fotos ---------- */}
-              <TabsContent value="fotos" className="mt-4">
-                {allImages.length === 0 ? (
-                  <div className="text-gray-400">Este imóvel não possui imagens cadastradas.</div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between text-sm mb-3">
-                      <span className="text-gray-400">
-                        {selectedImages.length} / {Math.min(10, allImages.length)} selecionadas — primeira foto = slide com infos; última = CTA.
-                      </span>
-                      {selectedImages.length > 0 && (
-                        <button
-                          type="button"
-                          className="text-xs text-gray-400 hover:text-white underline"
-                          onClick={() => setSelectedImages([])}
-                        >
-                          Limpar seleção
-                        </button>
+                {/* ---------- Fotos ---------- */}
+                <TabsContent value="fotos" className="mt-4">
+                  {allImages.length === 0 ? (
+                    <div className="text-muted-foreground">Este imóvel não possui imagens cadastradas.</div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between text-sm mb-3">
+                        <span className="text-muted-foreground">
+                          {selectedImages.length} / {Math.min(10, allImages.length)} selecionadas — primeira foto = slide com infos; última = CTA.
+                        </span>
+                        {selectedImages.length > 0 && (
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-foreground underline"
+                            onClick={() => setSelectedImages([])}
+                          >
+                            Limpar seleção
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[52vh] overflow-y-auto pr-1">
+                        {allImages.map((url) => {
+                          const orderIdx = selectedImages.indexOf(url);
+                          const isSelected = orderIdx >= 0;
+                          return (
+                            <button
+                              key={url}
+                              type="button"
+                              onClick={() => toggleImageSelection(url)}
+                              className={`relative aspect-square overflow-hidden rounded-lg border-2 transition ${
+                                isSelected
+                                  ? 'border-emerald-600 ring-2 ring-emerald-600/40'
+                                  : 'border-border hover:border-muted-foreground/50'
+                              }`}
+                            >
+                              <img src={url} alt="" className="h-full w-full object-cover" />
+                              {isSelected && (
+                                <>
+                                  <div className="absolute inset-0 bg-emerald-600/15 pointer-events-none" />
+                                  <div
+                                    className="absolute top-2 left-2 h-7 w-7 rounded-full bg-emerald-600 text-sm font-bold flex items-center justify-center shadow"
+                                    style={{ color: '#ffffff' }}
+                                  >
+                                    {orderIdx + 1}
+                                  </div>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </TabsContent>
+
+                {/* ---------- Textos ---------- */}
+                <TabsContent value="textos" className="mt-4 space-y-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Título do post (1º slide)</Label>
+                    <Input
+                      value={igTitle}
+                      onChange={(e) => setIgTitle(e.target.value)}
+                      className="mt-1 bg-background border-border text-foreground"
+                      placeholder="Ex: Casa dos sonhos em São José de Ribamar"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Título do CTA (último slide)</Label>
+                    <Input
+                      value={igCtaTitle}
+                      onChange={(e) => setIgCtaTitle(e.target.value)}
+                      className="mt-1 bg-background border-border text-foreground"
+                      placeholder="Agende sua visita"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Subtítulo do CTA</Label>
+                    <Input
+                      value={igCtaSubtitle}
+                      onChange={(e) => setIgCtaSubtitle(e.target.value)}
+                      className="mt-1 bg-background border-border text-foreground"
+                      placeholder="Chame no WhatsApp e marque seu horário..."
+                    />
+                  </div>
+                </TabsContent>
+
+                {/* ---------- Cores ---------- */}
+                <TabsContent value="cores" className="mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
+                    <ColorField label="Cor do título" value={igTitleColor} onChange={setIgTitleColor} />
+                    <ColorField label="Cor dos textos" value={igTextColor} onChange={setIgTextColor} />
+                    <ColorField label="Cor de destaque (preço / CTA)" value={igAccentColor} onChange={setIgAccentColor} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span className="text-muted-foreground">Presets:</span>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#e5e7eb'); setIgAccentColor('#34d399'); }}
+                    >
+                      Clássico (branco + verde)
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#f3f4f6'); setIgAccentColor('#f59e0b'); }}
+                    >
+                      Dourado
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#f3f4f6'); setIgAccentColor(brandAccent); }}
+                    >
+                      Cor da marca
+                    </button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="lg:sticky lg:top-2">
+                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div className="flex items-center justify-center gap-4 mb-4">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-border bg-background text-foreground hover:bg-muted"
+                      disabled={selectedImages.length < 1}
+                      onClick={() => {
+                        const order: Array<'first' | 'middle' | 'last'> = ['first'];
+                        if (selectedImages.length >= 3) order.push('middle');
+                        if (selectedImages.length >= 2) order.push('last');
+                        const idx = order.indexOf(previewSlide);
+                        setPreviewSlide(order[(idx - 1 + order.length) % order.length]);
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="text-sm text-muted-foreground min-w-[180px] text-center">
+                      {previewSlide === 'first' && 'Slide 1 — Info completa'}
+                      {previewSlide === 'middle' && 'Slides do meio — Deslize'}
+                      {previewSlide === 'last' && 'Último slide — CTA'}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-border bg-background text-foreground hover:bg-muted"
+                      disabled={selectedImages.length < 2}
+                      onClick={() => {
+                        const order: Array<'first' | 'middle' | 'last'> = ['first'];
+                        if (selectedImages.length >= 3) order.push('middle');
+                        if (selectedImages.length >= 2) order.push('last');
+                        const idx = order.indexOf(previewSlide);
+                        setPreviewSlide(order[(idx + 1) % order.length]);
+                      }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* Preview box: 420x420, template 1080x1080 escalado 0.389 — dark intentional */}
+                  <div className="mx-auto w-[420px] h-[420px] overflow-hidden rounded-xl border border-border bg-black">
+                    <div style={{ width: 1080, height: 1080, transform: 'scale(0.389)', transformOrigin: 'top left' }}>
+                      {previewSlide === 'first' && (
+                        <IgSlideFirst bgUrl={previewBg} {...igCommonProps} {...igFirstData} />
+                      )}
+                      {previewSlide === 'middle' && (
+                        <IgSlideMiddle bgUrl={previewBg} {...igCommonProps} />
+                      )}
+                      {previewSlide === 'last' && (
+                        <IgSlideLast
+                          bgUrl={previewBg}
+                          {...igCommonProps}
+                          ctaTitle={igCtaTitle}
+                          ctaSubtitle={igCtaSubtitle}
+                          companyName={companyName}
+                        />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[52vh] overflow-y-auto pr-1">
-                      {allImages.map((url) => {
-                        const orderIdx = selectedImages.indexOf(url);
-                        const isSelected = orderIdx >= 0;
-                        return (
-                          <button
-                            key={url}
-                            type="button"
-                            onClick={() => toggleImageSelection(url)}
-                            className={`relative aspect-square overflow-hidden rounded-lg border-2 transition ${
-                              isSelected ? 'border-pink-500 ring-2 ring-pink-500/40' : 'border-gray-700 hover:border-gray-500'
-                            }`}
-                          >
-                            <img src={url} alt="" className="h-full w-full object-cover" />
-                            {isSelected && (
-                              <>
-                                <div className="absolute inset-0 bg-pink-500/15 pointer-events-none" />
-                                <div className="absolute top-2 left-2 h-7 w-7 rounded-full bg-pink-500 text-white text-sm font-bold flex items-center justify-center shadow">
-                                  {orderIdx + 1}
-                                </div>
-                              </>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </TabsContent>
-
-              {/* ---------- Textos ---------- */}
-              <TabsContent value="textos" className="mt-4 space-y-4">
-                <div>
-                  <Label className="text-sm text-gray-300">Título do post (1º slide)</Label>
-                  <Input
-                    value={igTitle}
-                    onChange={(e) => setIgTitle(e.target.value)}
-                    className="mt-1 bg-gray-800 border-gray-700 text-white"
-                    placeholder="Ex: Casa dos sonhos em São José de Ribamar"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm text-gray-300">Título do CTA (último slide)</Label>
-                  <Input
-                    value={igCtaTitle}
-                    onChange={(e) => setIgCtaTitle(e.target.value)}
-                    className="mt-1 bg-gray-800 border-gray-700 text-white"
-                    placeholder="Agende sua visita"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm text-gray-300">Subtítulo do CTA</Label>
-                  <Input
-                    value={igCtaSubtitle}
-                    onChange={(e) => setIgCtaSubtitle(e.target.value)}
-                    className="mt-1 bg-gray-800 border-gray-700 text-white"
-                    placeholder="Chame no WhatsApp e marque seu horário..."
-                  />
-                </div>
-              </TabsContent>
-
-              {/* ---------- Cores ---------- */}
-              <TabsContent value="cores" className="mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
-                  <ColorField label="Cor do título" value={igTitleColor} onChange={setIgTitleColor} />
-                  <ColorField label="Cor dos textos" value={igTextColor} onChange={setIgTextColor} />
-                  <ColorField label="Cor de destaque (preço / CTA)" value={igAccentColor} onChange={setIgAccentColor} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className="text-gray-500">Presets:</span>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#e5e7eb'); setIgAccentColor('#34d399'); }}
-                  >
-                    Clássico (branco + verde)
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#f3f4f6'); setIgAccentColor('#f59e0b'); }}
-                  >
-                    Dourado
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setIgTitleColor('#ffffff'); setIgTextColor('#f3f4f6'); setIgAccentColor(brandAccent); }}
-                  >
-                    Cor da marca
-                  </button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            <div className="lg:sticky lg:top-2">
-              <div className="rounded-xl border border-gray-700 bg-gray-950/40 p-4">
-                <div className="flex items-center justify-center gap-4 mb-4">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-700 bg-gray-800 text-gray-200"
-                    disabled={selectedImages.length < 1}
-                    onClick={() => {
-                      const order: Array<'first' | 'middle' | 'last'> = ['first'];
-                      if (selectedImages.length >= 3) order.push('middle');
-                      if (selectedImages.length >= 2) order.push('last');
-                      const idx = order.indexOf(previewSlide);
-                      setPreviewSlide(order[(idx - 1 + order.length) % order.length]);
-                    }}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <div className="text-sm text-gray-300 min-w-[180px] text-center">
-                    {previewSlide === 'first' && 'Slide 1 — Info completa'}
-                    {previewSlide === 'middle' && 'Slides do meio — Deslize'}
-                    {previewSlide === 'last' && 'Último slide — CTA'}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-700 bg-gray-800 text-gray-200"
-                    disabled={selectedImages.length < 2}
-                    onClick={() => {
-                      const order: Array<'first' | 'middle' | 'last'> = ['first'];
-                      if (selectedImages.length >= 3) order.push('middle');
-                      if (selectedImages.length >= 2) order.push('last');
-                      const idx = order.indexOf(previewSlide);
-                      setPreviewSlide(order[(idx + 1) % order.length]);
-                    }}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                  <p className="mt-3 text-center text-xs text-muted-foreground">
+                    Formato 1080×1080 (prévia em 38.9% do tamanho real)
+                  </p>
                 </div>
-
-                {/* Preview box: 420x420, template 1080x1080 escalado 0.389 */}
-                <div className="mx-auto w-[420px] h-[420px] overflow-hidden rounded-xl border border-gray-700 bg-black">
-                  <div style={{ width: 1080, height: 1080, transform: 'scale(0.389)', transformOrigin: 'top left' }}>
-                    {previewSlide === 'first' && (
-                      <IgSlideFirst bgUrl={previewBg} {...igCommonProps} {...igFirstData} />
-                    )}
-                    {previewSlide === 'middle' && (
-                      <IgSlideMiddle bgUrl={previewBg} {...igCommonProps} />
-                    )}
-                    {previewSlide === 'last' && (
-                      <IgSlideLast
-                        bgUrl={previewBg}
-                        {...igCommonProps}
-                        ctaTitle={igCtaTitle}
-                        ctaSubtitle={igCtaSubtitle}
-                        companyName={companyName}
-                      />
-                    )}
-                  </div>
-                </div>
-                <p className="mt-3 text-center text-xs text-gray-500">
-                  Formato 1080×1080 (prévia em 38.9% do tamanho real)
-                </p>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-4 border-t border-gray-800 mt-2">
-            <div className="text-xs text-gray-500">
+          <div className="flex justify-between items-center gap-3 px-5 sm:px-6 py-4 border-t border-border bg-background flex-shrink-0">
+            <div className="text-xs text-muted-foreground">
               {selectedImages.length === 0 && 'Selecione ao menos 1 foto na aba "Fotos"'}
               {selectedImages.length === 1 && '1 slide: info completa.'}
               {selectedImages.length === 2 && '2 slides: info + CTA.'}
               {selectedImages.length >= 3 && `${selectedImages.length} slides: info + ${selectedImages.length - 2} foto(s) + CTA.`}
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="border-gray-700 text-gray-200 hover:bg-gray-800" onClick={() => setIgOpen(false)}>
+            <div className="flex gap-2 shrink-0">
+              <Button variant="outline" className="border-border text-foreground hover:bg-muted" onClick={() => setIgOpen(false)}>
                 Cancelar
               </Button>
               <Button
-                className="bg-pink-600 hover:bg-pink-700 text-white"
+                className="btn-on-emerald bg-emerald-800 hover:bg-emerald-700"
+                style={{ color: '#ffffff' }}
                 onClick={handleGenerateInstagram}
                 disabled={selectedImages.length === 0 || generatingIG}
               >
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="h-4 w-4 mr-2" style={{ color: '#ffffff' }} />
                 {selectedImages.length > 1 ? `Gerar carrossel (${selectedImages.length})` : 'Gerar post'}
               </Button>
             </div>
@@ -945,106 +959,113 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
 
       {/* ======================= PDF CONFIG DIALOG ======================= */}
       <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-6xl w-[96vw] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Ficha PDF — Configurar</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Ajuste título e cores e veja a prévia antes de gerar o PDF.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden p-0 bg-background border-border text-foreground max-w-6xl w-[96vw] max-h-[92vh] sm:rounded-2xl flex flex-col">
+          <div className="flex-shrink-0 px-5 sm:px-6 py-4 sm:py-5" style={{ backgroundColor: '#1a2e24' }}>
+            <DialogHeader className="space-y-1.5">
+              <DialogTitle className="text-lg sm:text-xl font-semibold" style={{ color: '#ffffff' }}>
+                Ficha PDF — Configurar
+              </DialogTitle>
+              <DialogDescription className="text-sm" style={{ color: '#a3a3a3' }}>
+                Ajuste título e cores e veja a prévia antes de gerar o PDF.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_440px] gap-6 items-start">
-            <Tabs value={pdfTab} onValueChange={(v) => setPdfTab(v as any)}>
-              <TabsList className="bg-gray-800">
-                <TabsTrigger value="textos">Textos</TabsTrigger>
-                <TabsTrigger value="cores">Cores</TabsTrigger>
-              </TabsList>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 bg-[#F7F5F0] dark:bg-background">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_440px] gap-6 items-start">
+              <Tabs value={pdfTab} onValueChange={(v) => setPdfTab(v as any)}>
+                <TabsList className="bg-muted border border-border">
+                  <TabsTrigger value="textos">Textos</TabsTrigger>
+                  <TabsTrigger value="cores">Cores</TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="textos" className="mt-4 space-y-4">
-                <div>
-                  <Label className="text-sm text-gray-300">Título do imóvel (cabeçalho da banner)</Label>
-                  <Input
-                    value={pdfTitle}
-                    onChange={(e) => setPdfTitle(e.target.value)}
-                    className="mt-1 bg-gray-800 border-gray-700 text-white"
-                    placeholder="Ex: Casa dos sonhos no Altos do Turú"
-                  />
-                </div>
-                <div className="rounded-md bg-gray-800/60 border border-gray-700 p-4 text-sm text-gray-400">
-                  <p><strong className="text-gray-200">Logo e nome da imobiliária</strong> são puxados automaticamente das configurações da sua empresa.</p>
-                  <p className="mt-1">Logo: <span className="text-gray-300">{companyLogo ? '✓ configurada' : '— não configurada'}</span></p>
-                  <p>Nome: <span className="text-gray-300">{companyName}</span></p>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="cores" className="mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
-                  <ColorField label="Cor do título" value={pdfTitleColor} onChange={setPdfTitleColor} />
-                  <ColorField label="Cor da descrição / textos" value={pdfDescColor} onChange={setPdfDescColor} />
-                  <ColorField label='Cor do footer "Gostou do imóvel?"' value={pdfFooterColor} onChange={setPdfFooterColor} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className="text-gray-500">Presets:</span>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setPdfTitleColor('#111827'); setPdfDescColor('#374151'); setPdfFooterColor(brandAccent); }}
-                  >
-                    Clássico (cor da marca)
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setPdfTitleColor('#0f172a'); setPdfDescColor('#334155'); setPdfFooterColor('#0f172a'); }}
-                  >
-                    Sóbrio
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
-                    onClick={() => { setPdfTitleColor('#1e40af'); setPdfDescColor('#1f2937'); setPdfFooterColor('#1e40af'); }}
-                  >
-                    Azul corporativo
-                  </button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            <div className="lg:sticky lg:top-2">
-              <div className="rounded-xl border border-gray-700 bg-gray-950/40 p-4">
-                <div className="mx-auto w-[420px] overflow-hidden rounded-xl border border-gray-700 bg-white">
-                  <div style={{ width: 800, transform: 'scale(0.525)', transformOrigin: 'top left' }}>
-                    <PdfTemplate
-                      property={property}
-                      raw={p}
-                      mainImage={mainImage}
-                      gallery={allImages.slice(1)}
-                      title={pdfTitle || property.title || ''}
-                      titleColor={pdfTitleColor}
-                      descColor={pdfDescColor}
-                      footerColor={pdfFooterColor}
-                      companyName={companyName}
-                      companyLogo={companyLogo}
-                      contactLine={contactLine}
-                      accent={brandAccent}
+                <TabsContent value="textos" className="mt-4 space-y-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Título do imóvel (cabeçalho da banner)</Label>
+                    <Input
+                      value={pdfTitle}
+                      onChange={(e) => setPdfTitle(e.target.value)}
+                      className="mt-1 bg-background border-border text-foreground"
+                      placeholder="Ex: Casa dos sonhos no Altos do Turú"
                     />
                   </div>
+                  <div className="rounded-md bg-muted/40 border border-border p-4 text-sm text-muted-foreground">
+                    <p><strong className="text-foreground">Logo e nome da imobiliária</strong> são puxados automaticamente das configurações da sua empresa.</p>
+                    <p className="mt-1">Logo: <span className="text-foreground/80">{companyLogo ? '✓ configurada' : '— não configurada'}</span></p>
+                    <p>Nome: <span className="text-foreground/80">{companyName}</span></p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="cores" className="mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
+                    <ColorField label="Cor do título" value={pdfTitleColor} onChange={setPdfTitleColor} />
+                    <ColorField label="Cor da descrição / textos" value={pdfDescColor} onChange={setPdfDescColor} />
+                    <ColorField label='Cor do footer "Gostou do imóvel?"' value={pdfFooterColor} onChange={setPdfFooterColor} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span className="text-muted-foreground">Presets:</span>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setPdfTitleColor('#111827'); setPdfDescColor('#374151'); setPdfFooterColor(brandAccent); }}
+                    >
+                      Clássico (cor da marca)
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setPdfTitleColor('#0f172a'); setPdfDescColor('#334155'); setPdfFooterColor('#0f172a'); }}
+                    >
+                      Sóbrio
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-border bg-background px-3 py-1 text-foreground hover:bg-muted"
+                      onClick={() => { setPdfTitleColor('#1e40af'); setPdfDescColor('#1f2937'); setPdfFooterColor('#1e40af'); }}
+                    >
+                      Azul corporativo
+                    </button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="lg:sticky lg:top-2">
+                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div className="mx-auto w-[420px] overflow-hidden rounded-xl border border-border bg-white">
+                    <div style={{ width: 800, transform: 'scale(0.525)', transformOrigin: 'top left' }}>
+                      <PdfTemplate
+                        property={property}
+                        raw={p}
+                        mainImage={mainImage}
+                        gallery={allImages.slice(1)}
+                        title={pdfTitle || property.title || ''}
+                        titleColor={pdfTitleColor}
+                        descColor={pdfDescColor}
+                        footerColor={pdfFooterColor}
+                        companyName={companyName}
+                        companyLogo={companyLogo}
+                        contactLine={contactLine}
+                        accent={brandAccent}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-center text-xs text-muted-foreground">Formato A4 (prévia fixa lateral)</p>
                 </div>
-                <p className="mt-3 text-center text-xs text-gray-500">Formato A4 (prévia fixa lateral)</p>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-gray-800 mt-2">
-            <Button variant="outline" className="border-gray-700 text-gray-200 hover:bg-gray-800" onClick={() => setPdfOpen(false)}>
+          <div className="flex justify-end gap-2 px-5 sm:px-6 py-4 border-t border-border bg-background flex-shrink-0">
+            <Button variant="outline" className="border-border text-foreground hover:bg-muted" onClick={() => setPdfOpen(false)}>
               Cancelar
             </Button>
             <Button
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="btn-on-emerald bg-emerald-800 hover:bg-emerald-700"
+              style={{ color: '#ffffff' }}
               onClick={handleGeneratePDF}
               disabled={generatingPDF}
             >
-              <FileText className="h-4 w-4 mr-2" />
+              <FileText className="h-4 w-4 mr-2" style={{ color: '#ffffff' }} />
               {generatingPDF ? 'Gerando...' : 'Gerar PDF'}
             </Button>
           </div>

@@ -73,38 +73,38 @@
   --border-primary: #e5e7eb;   /* gray-200 */
   --border-secondary: #d1d5db; /* gray-300 */
 
-  /* Conversas (WhatsApp-like) — modo claro */
+  /* Conversas — modo claro (mockup: forest green + white cards) */
   --cv-shell: #ffffff;
-  --cv-panel: #f3f4f6;
-  --cv-panel-muted: #e5e7eb;
-  --cv-chat: #e5ddd5;
-  --cv-chat-wallpaper: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
-  --cv-chat-wallpaper-opacity: 0.22;
-  --cv-empty: #f9fafb;
-  --cv-border: #e5e7eb;
+  --cv-panel: #ffffff;
+  --cv-panel-muted: #f3f4f6;
+  --cv-chat: #f0f2f5;
+  --cv-chat-wallpaper: none;
+  --cv-chat-wallpaper-opacity: 0;
+  --cv-empty: #f8fafc;
+  --cv-border: #e8eaed;
   --cv-text: #111827;
   --cv-text-muted: #6b7280;
   --cv-icon: #4b5563;
   --cv-input-bg: #ffffff;
   --cv-input-text: #111827;
   --cv-search-bg: #f3f4f6;
-  --cv-tab-active-bg: #059669;
+  --cv-tab-active-bg: #14532d;
   --cv-tab-active-text: #ffffff;
   --cv-tab-inactive-bg: #f3f4f6;
   --cv-tab-inactive-text: #6b7280;
-  --cv-hover: #e5e7eb;
-  --cv-hover-strong: #d1d5db;
-  --cv-accent: #059669;
-  --cv-accent-hover: #047857;
-  --cv-bubble-out: #059669;
+  --cv-hover: #f3f4f6;
+  --cv-hover-strong: #e5e7eb;
+  --cv-accent: #14532d;
+  --cv-accent-hover: #166534;
+  --cv-bubble-out: #14532d;
   --cv-bubble-out-text: #ffffff;
-  --cv-bubble-out-meta: rgba(255, 255, 255, 0.75);
-  --cv-bubble-in: #e5e7eb;
+  --cv-bubble-out-meta: rgba(255, 255, 255, 0.72);
+  --cv-bubble-in: #ffffff;
   --cv-bubble-in-text: #111827;
   --cv-bubble-in-meta: rgba(17, 24, 39, 0.45);
   --cv-media-placeholder: #e5e7eb;
   --cv-preview-bar-hover: #e5e7eb;
-  --cv-ring: #e5e7eb;
+  --cv-ring: #e8eaed;
 }
 
 /* Modo escuro — papel de parede visível (mesmo padrão WhatsApp, ajustado para fundo escuro) */
@@ -139,7 +139,32 @@
 }
 
 [data-theme="light"] .conversas-chat-shell::before {
-  filter: none;
+  display: none;
+}
+
+[data-theme="light"] .conversas-chat-shell {
+  background-color: #f0f2f5;
+}
+
+/* Bolhas de entrada no light: card branco com sombra suave */
+[data-theme="light"] .conversas-chat-area {
+  --cv-bubble-in: #ffffff;
+}
+
+[data-theme="light"] .conversas-list-item {
+  border-bottom-color: #f0f2f5;
+}
+
+[data-theme="light"] .conversas-list-item[data-selected='true'] {
+  background: color-mix(in srgb, #ecfdf5 70%, #ffffff 30%);
+}
+
+[data-theme="light"] .conversas-list-item[data-selected='true']::before {
+  background: #14532d;
+}
+
+[data-theme="light"] .conversas-list-unread-badge {
+  background: #14532d;
 }
 
 [data-theme="dark"] .conversas-chat-shell::before {
@@ -626,6 +651,26 @@
 /* text-white → preto */
 [data-theme="light"] .text-white { color: #111827 !important; }
 
+/* Escape hatch: chips/badges on dark fills must stay white in light theme */
+.user-filter-chip-active,
+.user-filter-chip-active *,
+[data-theme="light"] .user-filter-chip-active,
+[data-theme="light"] .user-filter-chip-active *,
+[data-theme="light"] .user-filter-chip-active .text-white {
+  color: #ffffff !important;
+}
+
+/* Escape hatch: emerald CTA buttons (text + svg) stay white in light theme */
+.btn-on-emerald,
+.btn-on-emerald *,
+.btn-on-emerald svg,
+[data-theme="light"] .btn-on-emerald,
+[data-theme="light"] .btn-on-emerald *,
+[data-theme="light"] .btn-on-emerald svg,
+[data-theme="light"] .btn-on-emerald .text-white {
+  color: #ffffff !important;
+}
+
 /* gray tones → mais escuros para legibilidade */
 [data-theme="light"] .text-gray-100 { color: #1f2937 !important; }
 [data-theme="light"] .text-gray-200 { color: #374151 !important; }
@@ -935,14 +980,15 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Charcoal sidebar mockup (#1A1A1A) */
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 240 5% 96%;
+    --sidebar-primary: 160 84% 28%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 160 40% 12%;
+    --sidebar-accent-foreground: 152 76% 94%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 160 84% 39%;
   }
 }
 
@@ -1072,6 +1118,43 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(59, 130, 246, 0.6);
+}
+
+/* Conversas inbox + chat — thin muted pill scrollbar */
+.conversas-scrollbar,
+.conversas-list-panel .custom-scrollbar,
+.conversas-chat-area {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
+.conversas-scrollbar::-webkit-scrollbar,
+.conversas-list-panel .custom-scrollbar::-webkit-scrollbar,
+.conversas-chat-area::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.conversas-scrollbar::-webkit-scrollbar-track,
+.conversas-list-panel .custom-scrollbar::-webkit-scrollbar-track,
+.conversas-chat-area::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.conversas-scrollbar::-webkit-scrollbar-thumb,
+.conversas-list-panel .custom-scrollbar::-webkit-scrollbar-thumb,
+.conversas-chat-area::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.conversas-scrollbar::-webkit-scrollbar-thumb:hover,
+.conversas-list-panel .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.conversas-chat-area::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(16, 185, 129, 0.55);
 }
 
 /* Scrollbar para modal de imóvel */

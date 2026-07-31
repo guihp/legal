@@ -1363,6 +1363,7 @@ export type Database = {
       leads: {
         Row: {
           arroba_instagram_cliente: string | null
+          conversation_summary: string | null
           instagram_id_cliente: string | null
           profile_pic_url_instagram: string | null
           last_profile_sync_instagram: string | null
@@ -1389,6 +1390,7 @@ export type Database = {
         }
         Insert: {
           arroba_instagram_cliente?: string | null
+          conversation_summary?: string | null
           instagram_id_cliente?: string | null
           profile_pic_url_instagram?: string | null
           last_profile_sync_instagram?: string | null
@@ -1415,6 +1417,7 @@ export type Database = {
         }
         Update: {
           arroba_instagram_cliente?: string | null
+          conversation_summary?: string | null
           instagram_id_cliente?: string | null
           profile_pic_url_instagram?: string | null
           last_profile_sync_instagram?: string | null
@@ -1748,6 +1751,57 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies_needing_attention"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_notifications: {
+        Row: {
+          id: string
+          company_id: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          meta: Json
+          read_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          user_id: string
+          type: string
+          title: string
+          body?: string
+          meta?: Json
+          read_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          user_id?: string
+          type?: string
+          title?: string
+          body?: string
+          meta?: Json
+          read_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]

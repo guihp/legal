@@ -1,874 +1,260 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  Users, 
-  Plus, 
-  Search, 
-  Filter, 
-  Eye, 
-  Edit, 
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  DollarSign,
-  FileText,
-  UserCheck,
-  Clock,
-  Building2,
-  Star,
-  MessageSquare,
-  AlertCircle,
-  User,
-  CheckCircle,
-  CreditCard,
-  Heart,
-  ChevronDown,
-  ChevronUp,
-  X,
-  AlertTriangle,
-  Info
-} from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Users } from 'lucide-react';
 import { useKanbanLeads } from '@/hooks/useKanbanLeads';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { AddLeadModal } from '@/components/AddLeadModal';
 import { BulkAssignModal } from '@/components/BulkAssignModal';
-import { useUserProfile } from '@/hooks/useUserProfile';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatDatePtBrBrazil } from '@/lib/datetime-brazil';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
-import { useRef } from 'react';
-import { cn } from '@/lib/utils';
+import { LeadViewModal } from '@/components/LeadViewModal';
+import { PipelineKpis } from '@/components/pipeline/PipelineKpis';
+import type { KanbanLead } from '@/types/kanban';
+import { ClientsCrmTopBar } from '@/components/clients-crm/ClientsCrmTopBar';
+import { ClientsCrmToolbar } from '@/components/clients-crm/ClientsCrmToolbar';
+import { ClientsCrmFilters } from '@/components/clients-crm/ClientsCrmFilters';
+import { ClientsCrmTable } from '@/components/clients-crm/ClientsCrmTable';
+import {
+  buildCrmKpis,
+  countByCrmTab,
+  leadMatchesCrmTab,
+  type CrmFilterTab,
+} from '@/components/clients-crm/helpers';
 
-// Função para determinar cor do status baseado no stage
-const getStageColor = (stage: string) => {
-  switch (stage) {
-    case 'Fechado': return 'bg-green-100 text-green-800 border-green-300';
-    case 'Em Atendimento': return 'bg-blue-100 text-blue-800 border-blue-300';
-    case 'Reunião Agendada': return 'bg-purple-100 text-purple-800 border-purple-300';
-    case 'Novo Lead': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    case 'Perdido': return 'bg-red-100 text-red-800 border-red-300';
-    case 'Desistiu': return 'bg-gray-100 text-gray-800 border-gray-300';
-    default: return 'bg-gray-100 text-gray-800 border-gray-300';
-  }
-};
-
-// Função para determinar cor da origem
-const getSourceColor = (source: string) => {
-  switch (source.toLowerCase()) {
-    case 'facebook': return 'bg-blue-100 text-blue-800 border-blue-300';
-    case 'zap imóveis': return 'bg-orange-100 text-orange-800 border-orange-300';
-    case 'viva real': return 'bg-green-100 text-green-800 border-green-300';
-    case 'olx': return 'bg-purple-100 text-purple-800 border-purple-300';
-    case 'indicação': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-    case 'whatsapp': return 'bg-teal-100 text-teal-800 border-teal-300';
-    case 'website': return 'bg-cyan-100 text-cyan-800 border-cyan-300';
-    default: return 'bg-gray-100 text-gray-800 border-gray-300';
-  }
-};
-
-// Função para determinar cor do badge do corretor
-const getBrokerColor = (role: string) => {
-  switch (role.toLowerCase()) {
-    case 'admin': return 'bg-red-100 text-red-800 border-red-300';
-    case 'gestor': return 'bg-indigo-100 text-indigo-800 border-indigo-300';
-    case 'corretor': return 'bg-amber-100 text-amber-800 border-amber-300';
-    default: return 'bg-gray-100 text-gray-800 border-gray-300';
-  }
-};
+const PAGE_SIZE = 10;
 
 export function ClientsCRMView() {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTab, setSelectedTab] = useState('todos');
+  const [selectedTab, setSelectedTab] = useState<CrmFilterTab>('todos');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedLead, setSelectedLead] = useState(null);
-  const [brokerFilter, setBrokerFilter] = useState<string>('all');
+  const [viewLeadId, setViewLeadId] = useState<string | null>(null);
+  const [leadToEdit, setLeadToEdit] = useState<KanbanLead | null>(null);
   const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(new Set());
-  const [showBrokerFilter, setShowBrokerFilter] = useState<boolean>(false);
-  const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
+  const [showBrokerFilter, setShowBrokerFilter] = useState(false);
+  const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string; role: string }>>(
+    [],
+  );
   const brokerFilterRef = useRef<HTMLDivElement>(null);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 10;
-  const [showBulkAssignModal, setShowBulkAssignModal] = useState<boolean>(false);
-  const [leadsWithChats, setLeadsWithChats] = useState<Set<string>>(new Set());
-  
-  // Usar o mesmo hook que o Pipeline de Clientes
-  const { leads, loading, createLead, bulkAssignLeads } = useKanbanLeads();
-  
-  // Verificar se o usuário pode ver informações de todos os corretores
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const { leads, loading, fetchLeads, bulkAssignLeads } = useKanbanLeads();
   const { profile, getCompanyUsers } = useUserProfile();
   const canSeeAllBrokers = profile?.role === 'gestor' || profile?.role === 'admin';
-  
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
     const loadBrokers = async () => {
       if (!canSeeAllBrokers) return;
       try {
         const users = await getCompanyUsers();
         if (cancelled) return;
-        const onlyBrokers = (users || []).filter((u: any) => (u.role ?? 'corretor') === 'corretor');
-        setBrokers(onlyBrokers.map((u: any) => ({ 
-          id: u.id, 
-          full_name: u.full_name || 'Sem nome',
-          role: u.role || 'corretor'
-        })));
-      } catch (e) {
-        // silencioso
+        const onlyBrokers = (users || []).filter(
+          (u: { role?: string }) => (u.role ?? 'corretor') === 'corretor',
+        );
+        setBrokers(
+          onlyBrokers.map((u: { id: string; full_name?: string; role?: string }) => ({
+            id: u.id,
+            full_name: u.full_name || 'Sem nome',
+            role: u.role || 'corretor',
+          })),
+        );
+      } catch {
+        /* silencioso */
       }
     };
     loadBrokers();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [canSeeAllBrokers, getCompanyUsers]);
 
-  // Carregar leads que possuem conversas no WhatsApp
-  React.useEffect(() => {
-    let cancelled = false;
-    const loadLeadsWithChats = async () => {
-      if (!leads.length) return;
-      
-      try {
-        // Pegar lista de IDs dos leads atuais
-        const leadIds = leads.map(lead => lead.id);
-        
-        // Buscar conversas apenas para os leads atuais
-        const { data: chats, error } = await supabase
-          .from('whatsapp_chats')
-          .select('lead_id')
-          .not('lead_id', 'is', null)
-          .in('lead_id', leadIds);
-
-        if (error) {
-          console.error('Erro ao buscar chats:', error);
-          return;
-        }
-
-        if (cancelled) return;
-
-        // Criar set com os IDs dos leads que têm conversas
-        const leadsWithChatsSet = new Set(
-          (chats || [])
-            .map(chat => chat.lead_id)
-            .filter(Boolean)
-        );
-        
-        setLeadsWithChats(leadsWithChatsSet);
-        console.log('📱 Leads com conversas WhatsApp:', leadsWithChatsSet.size, 'de', leads.length, 'leads');
-      } catch (error) {
-        console.error('Erro ao verificar conversas dos leads:', error);
-      }
-    };
-
-    loadLeadsWithChats();
-    return () => { cancelled = true; };
-  }, [leads]);
-
-  // Effect para fechar filtro ao clicar fora
-  React.useEffect(() => {
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (brokerFilterRef.current && !brokerFilterRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const root = document.querySelector('[data-broker-filter]');
+      if (root && !root.contains(target)) {
         setShowBrokerFilter(false);
       }
     };
-
     if (showBrokerFilter) {
       document.addEventListener('mousedown', handleClickOutside);
     }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showBrokerFilter]);
 
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (lead.telefone && lead.telefone.includes(searchTerm));
-    
-    const matchesTab = selectedTab === 'todos' || 
-                      (selectedTab === 'ativos' && ['Fechado', 'Em Atendimento', 'Reunião Agendada'].includes(lead.stage)) ||
-                      (selectedTab === 'prospects' && ['Novo Lead'].includes(lead.stage)) ||
-                      (selectedTab === 'negociacao' && ['Em Atendimento', 'Reunião Agendada'].includes(lead.stage)) ||
-                      (selectedTab === 'fechados' && lead.stage === 'Fechado') ||
-                      (selectedTab === 'perdidos' && ['Perdido', 'Desistiu'].includes(lead.stage));
+  const brokerFilteredLeads = useMemo(() => {
+    return leads.filter((lead) => {
+      if (!canSeeAllBrokers || selectedBrokers.size === 0) return true;
+      return (
+        (lead.id_corretor_responsavel && selectedBrokers.has(lead.id_corretor_responsavel)) ||
+        (selectedBrokers.has('unassigned') && !lead.id_corretor_responsavel)
+      );
+    });
+  }, [leads, canSeeAllBrokers, selectedBrokers]);
 
-    const matchesBroker = !canSeeAllBrokers || 
-                      selectedBrokers.size === 0 || 
-                      (lead.id_corretor_responsavel && selectedBrokers.has(lead.id_corretor_responsavel)) ||
-                      (selectedBrokers.has('unassigned') && !lead.id_corretor_responsavel);
+  const tabCounts = useMemo(
+    () => countByCrmTab(brokerFilteredLeads),
+    [brokerFilteredLeads],
+  );
 
-    return matchesSearch && matchesTab && matchesBroker;
-  });
+  const filteredLeads = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    return brokerFilteredLeads.filter((lead) => {
+      const matchesSearch =
+        !q ||
+        lead.nome.toLowerCase().includes(q) ||
+        (lead.email && lead.email.toLowerCase().includes(q)) ||
+        (lead.telefone && lead.telefone.includes(searchTerm)) ||
+        (lead.interesse && lead.interesse.toLowerCase().includes(q));
+      return matchesSearch && leadMatchesCrmTab(lead, selectedTab);
+    });
+  }, [brokerFilteredLeads, searchTerm, selectedTab]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
-  const startIndex = (safePage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const paginatedLeads = filteredLeads.slice(startIndex, endIndex);
+  const paginatedLeads = filteredLeads.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
 
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
+    setSelectedIds(new Set());
   }, [searchTerm, selectedTab, selectedBrokers]);
 
-  // Funções para gerenciar filtro de corretores
-  const handleBrokerToggle = (brokerId: string) => {
-    const newSelected = new Set(selectedBrokers);
-    if (newSelected.has(brokerId)) {
-      newSelected.delete(brokerId);
-    } else {
-      newSelected.add(brokerId);
+  const kpis = useMemo(() => buildCrmKpis(brokerFilteredLeads), [brokerFilteredLeads]);
+
+  const subtitle = useMemo(() => {
+    const n = brokerFilteredLeads.length;
+    return `Base de relacionamento · ${n} registro${n !== 1 ? 's' : ''}`;
+  }, [brokerFilteredLeads.length]);
+
+  const handleBrokerToggle = useCallback((brokerId: string) => {
+    setSelectedBrokers((prev) => {
+      const next = new Set(prev);
+      if (next.has(brokerId)) next.delete(brokerId);
+      else next.add(brokerId);
+      return next;
+    });
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchLeads();
+    } finally {
+      setRefreshing(false);
     }
-    setSelectedBrokers(newSelected);
-  };
+  }, [fetchLeads]);
 
-  const clearBrokerFilter = () => {
-    setSelectedBrokers(new Set());
-  };
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
-  const selectAllBrokers = () => {
-    const allBrokerIds = new Set([...brokers.map(b => b.id), 'unassigned']);
-    setSelectedBrokers(allBrokerIds);
-  };
+  const handleToggleSelectAllPage = useCallback(
+    (checked: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const lead of paginatedLeads) {
+          if (checked) next.add(lead.id);
+          else next.delete(lead.id);
+        }
+        return next;
+      });
+    },
+    [paginatedLeads],
+  );
 
-  const stats = {
-    total: leads.length,
-    ativos: leads.filter(l => ['Fechado', 'Em Atendimento', 'Reunião Agendada'].includes(l.stage)).length,
-    prospects: leads.filter(l => l.stage === 'Novo Lead').length,
-    fechados: leads.filter(l => l.stage === 'Fechado').length,
-    totalValue: leads.reduce((sum, l) => sum + (l.valorEstimado || l.valor || 0), 0)
-  };
+  const handleViewLead = useCallback((lead: KanbanLead) => {
+    setViewLeadId(lead.id);
+  }, []);
 
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-  };
-
-  const handleViewLead = (lead) => {
-    setSelectedLead(lead);
-    setShowViewModal(true);
-  };
-
-  const handleEditLead = (lead) => {
-    setSelectedLead(lead);
+  const handleEditLead = useCallback((lead: KanbanLead) => {
+    setLeadToEdit(lead);
     setShowEditModal(true);
-  };
-
-  const handleOpenWhatsApp = (lead) => {
-    // Verificar se o lead tem conversa ativa
-    if (!leadsWithChats.has(lead.id)) {
-      console.log('❌ Lead não possui conversa ativa no WhatsApp:', lead.nome);
-      return;
-    }
-    
-    // Módulo de chats foi removido - funcionalidade desabilitada
-    console.log('ℹ️ Funcionalidade de chats foi removida do sistema');
-    // navigate('/chats', { state: { leadPhone: lead.telefone, leadName: lead.nome } });
-  };
-
-  const handleCloseViewModal = () => {
-    setShowViewModal(false);
-    setSelectedLead(null);
-  };
-
-  const handleCloseEditModal = () => {
-    setShowEditModal(false);
-    setSelectedLead(null);
-  };
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-          className="inline-block"
-        >
-          <Users className="h-8 w-8 text-blue-400" />
-        </motion.div>
-        <p className="ml-3 text-gray-400">Carregando clientes...</p>
+      <div className="min-h-[40vh] md:h-[calc(100vh-8rem)] md:max-h-[calc(100vh-8rem)] w-full bg-[#F7F5F0] dark:bg-background flex items-center justify-center rounded-xl border border-border/60">
+        <Users className="h-8 w-8 text-emerald-700 animate-pulse" />
+        <p className="ml-3 text-muted-foreground">Carregando clientes...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 min-h-0 bg-background text-foreground">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}
-        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            CRM de Clientes
-          </h1>
-          <p className="text-muted-foreground">
-            Gestão completa do relacionamento com clientes e prospects
-          </p>
-        </div>
-        
-        <motion.div 
-          className="flex gap-3"
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4, duration: 0.8 }}
-        >
-          {canSeeAllBrokers && (
-            <Button
-              variant="outline"
-              onClick={() => setShowBulkAssignModal(true)}
-              className="flex items-center gap-2 bg-card border-green-600/50 text-green-700 dark:text-green-400 hover:bg-muted/80"
-            >
-              <Users className="h-4 w-4" />
-              Gestão em Massa
-            </Button>
-          )}
-          
-          {canSeeAllBrokers && (
-            <div ref={brokerFilterRef} className="relative">
-              <Button
-                variant="outline"
-                onClick={() => setShowBrokerFilter(!showBrokerFilter)}
-                className="flex items-center gap-2 bg-card border-blue-600/50 text-blue-700 dark:text-blue-400 hover:bg-muted/80"
-              >
-                <Filter className="h-4 w-4" />
-                Filtrar Corretores 
-                {selectedBrokers.size > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-blue-600 text-white">
-                    {selectedBrokers.size}
-                  </Badge>
-                )}
-                {showBrokerFilter ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-
-              {showBrokerFilter && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full left-0 mt-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 p-4"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-medium text-foreground">Filtrar por Corretor</h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowBrokerFilter(false)}
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="flex gap-2 mb-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={selectAllBrokers}
-                      className="text-xs bg-background border-border text-foreground hover:bg-muted"
-                    >
-                      Todos
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={clearBrokerFilter}
-                      className="text-xs bg-background border-border text-foreground hover:bg-muted"
-                    >
-                      Limpar
-                    </Button>
-                  </div>
-
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {/* Opção para leads sem corretor */}
-                    <div className="flex items-center space-x-2 p-2 hover:bg-muted/60 rounded">
-                      <Checkbox
-                        id="unassigned"
-                        checked={selectedBrokers.has('unassigned')}
-                        onCheckedChange={() => handleBrokerToggle('unassigned')}
-                      />
-                      <label
-                        htmlFor="unassigned"
-                        className="text-sm text-muted-foreground cursor-pointer flex-1"
-                      >
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          Sem corretor atribuído
-                        </div>
-                      </label>
-                    </div>
-
-                    {/* Lista de corretores */}
-                    {brokers.map(broker => (
-                      <div key={broker.id} className="flex items-center space-x-2 p-2 hover:bg-muted/60 rounded">
-                        <Checkbox
-                          id={broker.id}
-                          checked={selectedBrokers.has(broker.id)}
-                          onCheckedChange={() => handleBrokerToggle(broker.id)}
-                        />
-                        <label
-                          htmlFor={broker.id}
-                          className="text-sm text-muted-foreground cursor-pointer flex-1"
-                        >
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-amber-500" />
-                            {broker.full_name}
-                          </div>
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-
-                  {selectedBrokers.size > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <p className="text-xs text-muted-foreground">
-                        {selectedBrokers.size} corretor{selectedBrokers.size !== 1 ? 'es' : ''} selecionado{selectedBrokers.size !== 1 ? 's' : ''}
-                      </p>
-                    </div>
-                  )}
-                </motion.div>
-              )}
+    <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col rounded-xl border border-border/60 overflow-x-hidden md:h-[calc(100vh-8rem)] md:max-h-[calc(100vh-8rem)] md:overflow-hidden">
+      <div className="relative z-10 flex flex-col w-full md:flex-1 md:min-h-0 md:overflow-hidden">
+        <div className="border-b border-border/70 bg-[#F7F5F0]/80 dark:bg-card/80 backdrop-blur-sm flex-shrink-0">
+          <div className="px-4 sm:px-6 py-4 space-y-4">
+            <ClientsCrmTopBar onRefresh={handleRefresh} refreshing={refreshing} />
+            <div ref={brokerFilterRef}>
+              <ClientsCrmToolbar
+                subtitle={subtitle}
+                canBulkAssign={canSeeAllBrokers}
+                onBulkAssign={() => setShowBulkAssignModal(true)}
+                availableBrokers={canSeeAllBrokers ? brokers : []}
+                selectedBrokers={selectedBrokers}
+                showBrokerFilter={showBrokerFilter}
+                onToggleBrokerFilter={() => setShowBrokerFilter((s) => !s)}
+                onBrokerToggle={handleBrokerToggle}
+                onClearBrokers={() => setSelectedBrokers(new Set())}
+                onNewClient={() => setShowAddModal(true)}
+              />
             </div>
-          )}
-
-
-          <Button 
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-            onClick={() => setShowAddModal(true)}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Cliente
-          </Button>
-        </motion.div>
-      </motion.div>
-
-      {/* Stats Cards */}
-      <motion.div 
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.8 }}
-      >
-        {[
-          { title: "Total Clientes", value: stats.total, icon: Users, color: "text-blue-400" },
-          { title: "Clientes Ativos", value: stats.ativos, icon: UserCheck, color: "text-green-400" },
-          { title: "Prospects", value: stats.prospects, icon: Star, color: "text-yellow-400" },
-          { title: "Fechados", value: stats.fechados, icon: CheckCircle, color: "text-emerald-400" }
-        ].map((stat, index) => (
-          <motion.div
-            key={stat.title}
-            whileHover={{ scale: 1.02, y: -5 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                  </div>
-                  <div className="p-3 rounded-full bg-muted/60">
-                    <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Search */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8, duration: 0.8 }}
-        className="flex flex-col sm:flex-row gap-4"
-      >
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            placeholder="Buscar por nome, email ou telefone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
-          />
+            <PipelineKpis items={kpis} />
+          </div>
         </div>
-      </motion.div>
 
-      {/* Clients List */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1, duration: 0.8 }}
-      >
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-slate-100 border border-slate-200 dark:bg-muted/50 dark:border-border">
-            <TabsTrigger value="todos" className="clients-crm-tab-trigger clients-crm-tab-blue">
-              Todos ({stats.total})
-            </TabsTrigger>
-            <TabsTrigger value="ativos" className="clients-crm-tab-trigger clients-crm-tab-green">
-              Ativos ({stats.ativos})
-            </TabsTrigger>
-            <TabsTrigger value="prospects" className="clients-crm-tab-trigger clients-crm-tab-amber">
-              Prospects ({stats.prospects})
-            </TabsTrigger>
-            <TabsTrigger value="negociacao" className="clients-crm-tab-trigger clients-crm-tab-purple">
-              Em Negociação
-            </TabsTrigger>
-            <TabsTrigger value="fechados" className="clients-crm-tab-trigger clients-crm-tab-emerald">
-              Fechados ({stats.fechados})
-            </TabsTrigger>
-            <TabsTrigger value="perdidos" className="clients-crm-tab-trigger clients-crm-tab-red">
-              Perdidos
-            </TabsTrigger>
-          </TabsList>
+        <div className="p-3 sm:p-5 space-y-4 overflow-x-hidden md:flex-1 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden">
+          <div className="min-w-0 w-full max-w-full overflow-hidden rounded-2xl border border-border bg-card p-3 sm:p-4 shadow-sm space-y-4">
+            <ClientsCrmFilters
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              selectedTab={selectedTab}
+              onTabChange={setSelectedTab}
+              counts={tabCounts}
+            />
+            <ClientsCrmTable
+              leads={paginatedLeads}
+              filteredTotal={filteredLeads.length}
+              brokers={brokers}
+              profileId={profile?.id}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onToggleSelectAllPage={handleToggleSelectAllPage}
+              onView={handleViewLead}
+              onEdit={handleEditLead}
+              mode="tabela"
+              isMobile={isMobile}
+              page={safePage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        </div>
+      </div>
 
-          {['todos', 'ativos', 'prospects', 'negociacao', 'fechados', 'perdidos'].map(tab => (
-            <TabsContent key={tab} value={tab} className="space-y-4 mt-6">
-              <div className="grid gap-4">
-                {paginatedLeads.map((lead, index) => (
-                  <motion.div
-                    key={lead.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1, duration: 0.5 }}
-                    whileHover={{ scale: 1.01, y: -2 }}
-                  >
-                    <Card className="bg-card border-border hover:bg-muted/40 transition-all duration-300">
-                      <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                          {/* Informações Principais do Cliente */}
-                          <div className="flex-1">
-                            {/* Header com Nome e Status */}
-                            <div className="flex items-start gap-3 mb-4">
-                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                {lead.profile_pic_url_instagram ? (
-                                  <img
-                                    src={lead.profile_pic_url_instagram}
-                                    alt={lead.nome || 'Lead'}
-                                    className="h-full w-full object-cover"
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                ) : (
-                                  <span className="text-foreground font-semibold text-sm">
-                                    {(lead.nome || 'SN')
-                                      .split(' ')
-                                      .filter(Boolean)
-                                      .map(n => n[0])
-                                      .join('')
-                                      .substring(0, 2)
-                                      .toUpperCase()}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h3 className="text-lg font-semibold text-foreground mb-2">{lead.nome}</h3>
-                                <div className="flex gap-2 flex-wrap">
-                                  <Badge variant="outline" className={getStageColor(lead.stage)}>
-                                    {lead.stage}
-                                  </Badge>
-                                  <Badge variant="outline" className={getSourceColor(lead.origem)}>
-                                    {lead.origem}
-                                  </Badge>
-                                  {lead.arroba_instagram_cliente && (
-                                    <Badge variant="outline" className="bg-pink-100 text-pink-800 border-pink-300">
-                                      @{lead.arroba_instagram_cliente.replace(/^@+/, '')}
-                                    </Badge>
-                                  )}
-                                  {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
-                                  {(() => {
-                                    const brokerFromList = lead.id_corretor_responsavel 
-                                      ? brokers.find(b => b.id === lead.id_corretor_responsavel) 
-                                      : undefined;
-                                    const brokerName = lead.corretor?.nome 
-                                      || brokerFromList?.full_name 
-                                      || (lead.id_corretor_responsavel && profile?.id && lead.id_corretor_responsavel === profile.id ? 'Você' 
-                                      : 'Sem corretor');
-                                    const brokerRole = (lead.corretor?.role || brokerFromList?.role || 'corretor');
-                                    return (
-                                      <Badge variant="outline" className={getBrokerColor(brokerRole)}>
-                                        <User className="h-3 w-3 mr-1" />
-                                        {brokerName}
-                                      </Badge>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Grupos de Informações lado a lado */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                              {/* Informações de Contato - Seção 1 */}
-                              <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
-                                <h4 className="text-sm font-medium text-blue-400 mb-3 flex items-center gap-2">
-                                  <MessageSquare className="h-4 w-4" />
-                                  Informações de Contato
-                                </h4>
-                                <div className="space-y-2">
-                                  {lead.email && (
-                                    <div className="flex items-center gap-2 text-gray-300">
-                                      <Mail className="h-4 w-4 text-blue-400" />
-                                      <span className="text-sm truncate">{lead.email}</span>
-                                    </div>
-                                  )}
-                                  {lead.telefone && (
-                                    <div className="flex items-center gap-2 text-gray-300">
-                                      <Phone className="h-4 w-4 text-green-400" />
-                                      <span className="text-sm">{lead.telefone}</span>
-                                    </div>
-                                  )}
-                                  {lead.endereco && (
-                                    <div className="flex items-start gap-2 text-gray-300">
-                                      <MapPin className="h-4 w-4 text-orange-400 mt-0.5" />
-                                      <span className="text-sm text-gray-400 line-clamp-2">{lead.endereco}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
+      <AddLeadModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} />
 
-                              {/* Informações do Negócio - Seção 2 */}
-                              <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
-                                <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
-                                  <AlertCircle className="h-4 w-4" />
-                                  Interesse e Valor
-                                </h4>
-                                <div className="space-y-2">
-                                  {lead.interesse && (
-                                    <div className="flex items-start gap-2 text-gray-300">
-                                      <Building2 className="h-4 w-4 text-green-400 mt-0.5" />
-                                      <span className="text-sm text-gray-400 line-clamp-2">{lead.interesse}</span>
-                                    </div>
-                                  )}
-                                  {(lead.valorEstimado || lead.valor) && (
-                                    <div className="flex items-center gap-2 text-gray-300">
-                                      <DollarSign className="h-4 w-4 text-green-400" />
-                                      <span className="text-sm font-medium">
-                                        R$ {(lead.valorEstimado || lead.valor || 0).toLocaleString('pt-BR')}
-                                      </span>
-                                    </div>
-                                  )}
-                                  <div className="flex items-center gap-2 text-gray-300">
-                                    <Calendar className="h-4 w-4 text-purple-400" />
-                                    <span className="text-sm">
-                                      {formatDatePtBrBrazil(lead.dataContato)}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Informações Adicionais - Seção 3 */}
-                              {(lead.observacoes || lead.cpf || lead.estado_civil || lead.message) ? (
-                                <div className="bg-muted/40 p-4 rounded-lg border border-border/50">
-                                  <h4 className="text-sm font-medium text-purple-400 mb-3 flex items-center gap-2">
-                                    <FileText className="h-4 w-4" />
-                                    Informações Adicionais
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {lead.cpf && (
-                                      <div className="flex items-center gap-2 text-gray-300">
-                                        <CreditCard className="h-4 w-4 text-purple-400" />
-                                        <span className="text-sm">
-                                          <strong>CPF:</strong> {lead.cpf}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {lead.estado_civil && (
-                                      <div className="flex items-center gap-2 text-gray-300">
-                                        <Heart className="h-4 w-4 text-purple-400" />
-                                        <span className="text-sm">
-                                          <strong>Estado Civil:</strong> {lead.estado_civil}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {lead.message && (
-                                      <div className="flex items-start gap-2 text-gray-300">
-                                        <MessageSquare className="h-4 w-4 text-purple-400 mt-0.5" />
-                                        <div className="text-sm">
-                                          <strong>Mensagem:</strong>
-                                          <p className="text-gray-400 mt-1 italic line-clamp-2">"{lead.message}"</p>
-                                        </div>
-                                      </div>
-                                    )}
-                                    {lead.observacoes && (
-                                      <div className="flex items-start gap-2 text-gray-300">
-                                        <FileText className="h-4 w-4 text-purple-400 mt-0.5" />
-                                        <div className="text-sm">
-                                          <strong>Observações:</strong>
-                                          <p className="text-gray-400 mt-1 line-clamp-2">{lead.observacoes}</p>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                // Placeholder vazio para manter alinhamento
-                                <div className="bg-muted/40 p-4 rounded-lg border border-border/50 opacity-50">
-                                  <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
-                                    <FileText className="h-4 w-4" />
-                                    Sem dados adicionais
-                                  </h4>
-                                  <p className="text-xs text-gray-500">Nenhuma informação adicional disponível</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Ações */}
-                          <div className="flex items-center gap-2 lg:flex-col lg:items-end">
-                            {(() => {
-                              const hasWhatsAppChat = leadsWithChats.has(lead.id);
-                              const actions = [
-                                { 
-                                  icon: Eye, 
-                                  className: "!bg-blue-600 hover:!bg-blue-700 !text-white border-0 shadow-sm",
-                                  label: "Ver Detalhes",
-                                  action: () => handleViewLead(lead),
-                                  disabled: false
-                                },
-                                { 
-                                  icon: Edit, 
-                                  className: "!bg-green-600 hover:!bg-green-700 !text-white border-0 shadow-sm",
-                                  label: "Editar",
-                                  action: () => handleEditLead(lead),
-                                  disabled: false
-                                },
-                                { 
-                                  icon: MessageSquare, 
-                                  className: hasWhatsAppChat 
-                                    ? "!bg-emerald-600 hover:!bg-emerald-700 !text-white border-0 shadow-sm" 
-                                    : "!bg-muted !text-muted-foreground border border-border cursor-not-allowed",
-                                  label: hasWhatsAppChat 
-                                    ? "WhatsApp" 
-                                    : "WhatsApp (Sem conversa)",
-                                  action: () => handleOpenWhatsApp(lead),
-                                  disabled: !hasWhatsAppChat
-                                }
-                              ];
-                              
-                              return actions.map((action, actionIndex) => (
-                                <motion.div
-                                  key={actionIndex}
-                                  whileHover={!action.disabled ? { scale: 1.1, y: -2 } : {}}
-                                  whileTap={!action.disabled ? { scale: 0.9 } : {}}
-                                >
-                                  <Button 
-                                    size="sm" 
-                                    disabled={action.disabled}
-                                    className={cn(
-                                      "h-9 w-9 min-w-9 shrink-0 p-0 transition-all duration-200",
-                                      action.className,
-                                      action.disabled && "opacity-50"
-                                    )}
-                                    title={action.label}
-                                    onClick={action.disabled ? undefined : action.action}
-                                  >
-                                    <action.icon
-                                      className={cn(
-                                        "h-4 w-4 shrink-0",
-                                        action.disabled ? "text-muted-foreground" : "text-white"
-                                      )}
-                                    />
-                                  </Button>
-                                </motion.div>
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-
-              {filteredLeads.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.8 }}
-                >
-                  <Card className="bg-card border-border">
-                    <CardContent className="p-12 text-center">
-                      <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-foreground mb-2">Nenhum cliente encontrado</h3>
-                      <p className="text-gray-400 mb-4">
-                        {searchTerm ? 'Não encontramos clientes com os critérios de busca.' : 'Você ainda não possui clientes cadastrados.'}
-                      </p>
-                      <Button 
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                        onClick={() => setShowAddModal(true)}
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Adicionar Primeiro Cliente
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              )}
-
-              {filteredLeads.length > 0 && (
-                <div className="mt-6 flex items-center justify-center">
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <PaginationPrevious
-                          href="#"
-                          onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }}
-                          className={safePage === 1 ? 'pointer-events-none opacity-50' : ''}
-                        />
-                      </PaginationItem>
-                      {Array.from({ length: totalPages }).map((_, i) => (
-                        <PaginationItem key={i}>
-                          <PaginationLink
-                            href="#"
-                            isActive={safePage === (i + 1)}
-                            className="text-muted-foreground hover:text-blue-600 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400"
-                            onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }}
-                          >
-                            {i + 1}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ))}
-                      <PaginationItem>
-                        <PaginationNext
-                          href="#"
-                          onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
-                          className={safePage === totalPages ? 'pointer-events-none opacity-50' : ''}
-                        />
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
-                </div>
-              )}
-            </TabsContent>
-          ))}
-        </Tabs>
-      </motion.div>
-
-      {/* Modal Adicionar Cliente */}
-      <AddLeadModal
-        isOpen={showAddModal}
-        onClose={handleCloseModal}
-      />
-
-      {/* Modal Editar Cliente */}
       <AddLeadModal
         isOpen={showEditModal}
-        onClose={handleCloseEditModal}
-        leadToEdit={selectedLead}
+        onClose={() => {
+          setShowEditModal(false);
+          setLeadToEdit(null);
+        }}
+        leadToEdit={leadToEdit}
       />
 
-      {/* Modal Gestão em Massa */}
       <BulkAssignModal
         isOpen={showBulkAssignModal}
         onClose={() => setShowBulkAssignModal(false)}
@@ -877,184 +263,11 @@ export function ClientsCRMView() {
         onBulkAssign={bulkAssignLeads}
       />
 
-      {/* Modal Visualizar Cliente */}
-      <Dialog open={showViewModal} onOpenChange={handleCloseViewModal}>
-        <DialogContent className="max-w-4xl bg-background border-border text-foreground">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-foreground flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center overflow-hidden">
-                {selectedLead?.profile_pic_url_instagram ? (
-                  <img
-                    src={selectedLead.profile_pic_url_instagram}
-                    alt={selectedLead?.nome || 'Lead'}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span className="text-foreground font-semibold">
-                    {(selectedLead?.nome || 'SN')
-                      .split(' ')
-                      .filter(Boolean)
-                      .map((n: string) => n[0])
-                      .join('')
-                      .substring(0, 2)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
-              {selectedLead?.nome}
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedLead && (
-            <div className="space-y-6 py-4">
-              {/* Status e Badges */}
-              <div className="flex gap-3 flex-wrap">
-                <Badge variant="outline" className={getStageColor(selectedLead.stage)}>
-                  {selectedLead.stage}
-                </Badge>
-                <Badge variant="outline" className={getSourceColor(selectedLead.origem)}>
-                  {selectedLead.origem}
-                </Badge>
-                {selectedLead.arroba_instagram_cliente && (
-                  <Badge variant="outline" className="bg-pink-100 text-pink-800 border-pink-300">
-                    @{selectedLead.arroba_instagram_cliente.replace(/^@+/, '')}
-                  </Badge>
-                )}
-                {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
-                {(() => {
-                  const brokerFromList = selectedLead.id_corretor_responsavel 
-                    ? brokers.find(b => b.id === selectedLead.id_corretor_responsavel) 
-                    : undefined;
-                  const brokerName = selectedLead.corretor?.nome 
-                    || brokerFromList?.full_name 
-                    || (selectedLead.id_corretor_responsavel && profile?.id && selectedLead.id_corretor_responsavel === profile.id ? 'Você' 
-                    : 'Sem corretor');
-                  const brokerRole = (selectedLead.corretor?.role || brokerFromList?.role || 'corretor');
-                  return (
-                    <Badge variant="outline" className={getBrokerColor(brokerRole)}>
-                      <User className="h-3 w-3 mr-1" />
-                      {brokerName}
-                    </Badge>
-                  );
-                })()}
-              </div>
-
-              {/* Informações em Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Dados Pessoais */}
-                <Card className="bg-card border-border">
-                  <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <User className="h-5 w-5 text-blue-400" />
-                      Dados Pessoais
-                    </h3>
-                    <div className="space-y-3">
-                      {selectedLead.email && (
-                        <div className="flex items-center gap-3">
-                          <Mail className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">{selectedLead.email}</span>
-                        </div>
-                      )}
-                      {selectedLead.telefone && (
-                        <div className="flex items-center gap-3">
-                          <Phone className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">{selectedLead.telefone}</span>
-                        </div>
-                      )}
-                      {selectedLead.cpf && (
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">CPF: {selectedLead.cpf}</span>
-                        </div>
-                      )}
-                      {selectedLead.estado_civil && (
-                        <div className="flex items-center gap-3">
-                          <User className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">Estado Civil: {selectedLead.estado_civil}</span>
-                        </div>
-                      )}
-                      {selectedLead.endereco && (
-                        <div className="flex items-center gap-3">
-                          <MapPin className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">{selectedLead.endereco}</span>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Informações do Negócio */}
-                <Card className="bg-card border-border">
-                  <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <Building2 className="h-5 w-5 text-green-400" />
-                      Informações do Negócio
-                    </h3>
-                    <div className="space-y-3">
-                      {selectedLead.interesse && (
-                        <div className="flex items-center gap-3">
-                          <Star className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">Interesse: {selectedLead.interesse}</span>
-                        </div>
-                      )}
-                      {(selectedLead.valorEstimado || selectedLead.valor) && (
-                        <div className="flex items-center gap-3">
-                          <DollarSign className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-300">
-                            Valor Estimado: R$ {(selectedLead.valorEstimado || selectedLead.valor || 0).toLocaleString('pt-BR')}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3">
-                        <Calendar className="h-4 w-4 text-gray-400" />
-                        <span className="text-gray-300">
-                          Cadastro: {formatDatePtBrBrazil(selectedLead.dataContato)}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Observações */}
-              {selectedLead.observacoes && (
-                <Card className="bg-card border-border">
-                  <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <MessageSquare className="h-5 w-5 text-purple-400" />
-                      Observações
-                    </h3>
-                    <p className="text-gray-300 leading-relaxed">{selectedLead.observacoes}</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Actions Footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-border">
-                <Button
-                  variant="outline"
-                  onClick={handleCloseViewModal}
-                  className="border-border text-red-600 hover:bg-red-500/10 dark:text-red-400"
-                >
-                  Fechar
-                </Button>
-                <Button
-                  onClick={() => {
-                    handleCloseViewModal();
-                    handleEditLead(selectedLead);
-                  }}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                >
-                  <Edit className="mr-2 h-4 w-4" />
-                  Editar Cliente
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <LeadViewModal
+        isOpen={!!viewLeadId}
+        onClose={() => setViewLeadId(null)}
+        leadId={viewLeadId}
+      />
     </div>
   );
-} 
+}

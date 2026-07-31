@@ -43,8 +43,10 @@ export type ImoveisOrderBy = { column: 'created_at' | 'preco' | 'tamanho_m2'; as
 export interface ImoveisFilters {
   search?: string;
   listingId?: string;
-  tipoCategoria?: string[]; // modalidade/finalidade
+  tipoCategoria?: string[]; // Residential / Commercial
   tipoImovel?: string[];
+  modalidade?: string[]; // For Sale / Rent / Sale/Rent
+  disponibilidade?: 'disponivel' | 'indisponivel' | 'reforma';
   preco?: { min?: number; max?: number };
   tamanho?: { min?: number; max?: number };
   quartos?: { min?: number; max?: number };
@@ -107,6 +109,12 @@ export function useImoveisVivaReal(initial?: {
       }
       if (filters.tipoImovel && filters.tipoImovel.length > 0) {
         query = query.in('tipo_imovel', filters.tipoImovel);
+      }
+      if (filters.modalidade && filters.modalidade.length > 0) {
+        query = query.in('modalidade', filters.modalidade);
+      }
+      if (filters.disponibilidade) {
+        query = query.eq('disponibilidade', filters.disponibilidade);
       }
 
       const rangeFilter = (

@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { ChatMediaItemType } from "@/lib/chatMediaFiles";
 import { contentTypeForChatUpload } from "@/lib/chatMediaKind";
 import { chatMediaStorageSubdir } from "@/lib/chatMediaStorage";
+import { safeRandomUUID } from "@/lib/safeRandomUUID";
 
 export async function uploadChatMediaAndGetPublicUrl(
   file: File,
@@ -14,7 +15,7 @@ export async function uploadChatMediaAndGetPublicUrl(
   const safeCompany = (companyId || "sem_empresa").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!companyId) throw new Error("company_id ausente para upload da mídia");
   const subdir = chatMediaStorageSubdir(mediaType);
-  const path = `${safeCompany}/chat-media/${channel}/${subdir}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const path = `${safeCompany}/chat-media/${channel}/${subdir}/${Date.now()}-${safeRandomUUID()}.${ext}`;
   const contentType = contentTypeForChatUpload(file, mediaType);
   const { error } = await supabase.storage.from(bucket).upload(path, file, {
     contentType,

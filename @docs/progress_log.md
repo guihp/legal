@@ -1,5 +1,246 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-31 — Relatórios: fix load dead-state
+
+- **Causa:** `fetchReportsBundle` perdeu `async` (StrReplace) → Vite `await isn't allowed in non-async function` → módulo não carrega → bundle null → “Não foi possível carregar os dados.”
+- **Fix:** restaurar `export async function`; soft-catch por query; fallback `emptyDashboardBundle`/shell vazio; ReportsView mostra shell + banner parcial em vez de tela morta.
+
+## 2026-07-31 — Relatórios: redesign cream (mockups) + dados reais
+
+- Shell `#F7F5F0`: breadcrumb Analytics/Relatórios; título + subtítulo com range; pills 7d|30d|Trimestre|Ano; Agendar envio / Novo relatório (`.btn-on-emerald` + white inline).
+- 4 KPIs: Relatórios disponíveis, Exportados no mês, Envios agendados, Última geração (catálogo real + histórico/agenda localStorage).
+- Filtros CATEGORIA Todos|Portfólio|Comercial|Marketing|Operação + busca; grid de 8 cards com métricas company-scoped período-aware.
+- Tipos: Portfólio (imoveisvivareal), Funil (leads/stages — GESTOR), Corretores, Mercado (canais), Presença digital (public_site_visits + LPs), Atendimento/IA (mensagens), Agenda/plantão (agenda + oncall_schedules), Auditoria (audit_logs — ADMIN).
+- Exportar PDF real via jsPDF (+ autotable) para todos os tipos; pré-visualizar dialog; histórico/agendamentos localStorage; Destaques emerald `#0C2919`.
+- Extraídos em `src/components/reports/*`; `ReportsView` reexporta. Soft: envio automático sem backend; tempo resposta IA `—`; “Novo relatório” toast; badges ocultam cards por role.
+
+## 2026-07-31 — Painel: fix VGV do mês R$ 0 / -100%
+
+- **Causa:** VGV usava só leads `Fechamento` + `estimated_value` + `updated_at`. Único fechamento na base (R$ 500k em 2026-06-12) cai no período *anterior* ao default 30d → KPI atual 0 e delta `-100%`.
+- **Fix:** stages fechados ampliados (fechamento/fechado/ganho/won/closed/vendido); fallback estoque `indisponivel|vendido` → legado soma `preco` cadastro (adapter antigo); footer `sem fechamentos no período` quando VGV=0 (sem `-100%`); `formatDeltaPct` não emite ±100% com lado zerado.
+- Arquivos: `dashboard/helpers.ts`, `dashboard/fetchDashboardData.ts`.
+
+## 2026-07-31 — Painel (Dashboard): redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Analytics/Painel; título + sync + range + atualizado às; filtros 7d|30d|Trimestre|Ano; Exportar / Ver relatórios (`.btn-on-emerald` + white inline).
+- 6 KPIs com sparkline: VGV do mês, Imóveis vendidos, Disponíveis, Leads no período, Visitas agendadas, Ticket médio — período reativa aggregates.
+- Charts/cards: VGV×vendidos 12m, Portfólio (Disponíveis/Reservados/Vendidos/Sem LP + Casas/Apts/Terrenos), Canais, Funil, Desempenho por corretor, Próximos compromissos, Atividade recente (card emerald `#0C2919`).
+- Extraídos em `src/components/dashboard/*`; `DashboardContent` orquestra. Dados company-scoped (leads/imóveis/LPs/agenda/audit). Soft: VGV/vendidos via Fechamento (`estimated_value`+`updated_at`, sem `sold_at`); Reservados≈reforma / Vendidos≈indisponivel; visitas IA≈source WhatsApp/IA; meta mensal inexistente.
+
+## 2026-07-31 — Permissões: alinhamento exacto ao mockup
+
+- Shell `#F7F5F0`: breadcrumb Sistema/Permissões; subtítulo mockup; ações Ver auditoria / Restaurar padrão / Salvar permissões (`.btn-on-emerald` + white inline).
+- 3 KPIs de perfil: Administrador (laranja 100% irrestrito), Gestor/Corretor (% + “N de M ativas” + contagem usuários).
+- Matriz: título + “N permissões em N módulos”; busca; pills Todos|Imóveis|Leads e CRM|Menus|Administração; headers PERMISSÃO|GESTOR|CORRETOR|ADMINISTRADOR; badges ESCRITA/SENSÍVEL; bulk por coluna; Admin `sempre`.
+- Seções mockup (Imóveis 2 / Leads 3 / Menus 11 / Admin 5). Save por toggle + confirm + audit intactos. Soft: auditoria/restaurar = toast; Salvar confirma persistência imediata.
+
+## 2026-07-31 — Permissões: redesign cream (mockups) [superseded]
+
+- Primeira passada: shell cream + matriz Gestor/Corretor; cards laterais usuários/atividade/práticas. Substituída pelo alinhamento exacto acima.
+
+## 2026-07-31 — Configurações: redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Sistema/Configurações; título + subtítulo (conta criada em); Descartar / Salvar alterações (`.btn-on-emerald` + white inline).
+- 4 KPIs: Status da conta, Plano, Usuários, Cadastro % (dots + bars + hints).
+- Nav SEÇÃO: Dados da empresa | Endereço | Plano e assinatura | Preferências + badge Tudo salvo; layout 2 col + sticky Conta ativa / Cadastro completo? / Últimas alterações.
+- Empresa: logo Trocar (`uploadLogo`), nome, responsável, e-mail, CNPJ obrigatório, telefone, CRECI (localStorage soft). Endereço: CEP ViaCEP + campos. Plano: grid + uso + upgrade/NF/pagamento (toast soft). Preferências: toggles localStorage + timezone em `company_settings`.
+- Extraídos em `src/components/configurations/*`; `ConfigurationsViewSimple` reexporta. Save/load `update_own_company` + logo preservados.
+
+## 2026-07-31 — Configuração da IA: redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Sistema/Configuração da IA; título + subtítulo WhatsApp; Ver histórico / Testar IA / Salvar alterações (`.btn-on-emerald` + white inline).
+- Status bar: toggle Assistente IA ativa + pills Prompt/Modelo/Salvo em (soft `—` sem campos no schema) + badge Tudo salvo; blockers de ativação preservados.
+- Nav SEÇÃO com ícones + Completo %: Identidade e mensagens | Contexto e regras | Horário de funcionamento | Agendamento de visitas. Layout 2 col (forms + preview/checklist/impacto sticky).
+- Identidade: nome, tom Consultivo/Direto/Caloroso, mensagem inicial+vars, fallback, diretrizes de tom. Contexto: missão/pagamento/visita/público/regras/extras com badges preenchido|crítico|opcional. Horário: tabela DIA/ABRE/ALMOÇO/FECHA + aplicar 09–18. Visitas: radio cards + critério tabs + prioridade Alta/Média/Baixa.
+- `asText()` evita `[object Object]` nos textareas. Etiquetas preservadas via `?section=etiquetas`. Soft gaps: Prompt v/modelo, impacto (placeholders mockup), histórico, teste handoff checklist.
+
+## 2026-07-31 — Testar IA: redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Sistema/Testar IA; título + subtítulo (sessão UUID, sem impacto no CRM); Configurar IA / Nova sessão / Salvar como cenário (`.btn-on-emerald` + white inline).
+- Status bar: IA ativa · Instância · Sessão+copiar · Modelo/temperatura (soft `—` sem campo no schema).
+- Chat card: avatar + stats + Debug/refresh; bolhas cliente esquerda / IA direita (forest `#0C2919` + texto branco); pills; composer Enter; tip isolamento CRM.
+- Sidebar: Cenários (Lead frio/Preço/Agendamento/Fora do escopo), Diagnóstico (prompt/imóveis/agenda/handoff), card emerald “Base usada” (tokens/custo soft `—`).
+- Extraídos em `src/components/ai-test/*`; lógica send/session/webhook/realtime preservada. Soft gaps: modelo/temp/tokens/custo/imóveis consultados; salvar cenário só localStorage.
+
+## 2026-07-31 — Visitas ao site (marketing-visitas): redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Presença digital/Visitas ao site; título + subtítulo com range; Abrir site / Atualizar / Exportar CSV (`.btn-on-emerald` + white inline).
+- Filtros: PERÍODO 7/30/90/Personalizado, AGRUPAR Dia/Semana/Mês, PÁGINA Todas/Vitrine/LPs com counts; 5 KPIs (total, hoje, 7d, média, leads) com dots + bars + footers.
+- Chart stacked Vitrine+LP; Origens; Top 5 páginas (SITE/LP); Comportamento emerald escuro (`#0C2919`, texto branco inline); tabela Últimas visitas (filtro, dispositivo/tempo soft) + footer rastreamento próprio.
+- Extraídos em `src/components/marketing-visitas/*`; lógica `public_site_visits` + CSV + refresh preservada. Soft gaps: tempo/dispositivo/recorrentes (sem UA/duração no schema); canais UTM→mockup; leads via `source` ilike site/vitrine/lp.
+
+## 2026-07-30 — Landing pages (marketing-lps): redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Presença digital/Landing pages; título + subtítulo `/imovel/slug`; Atualizar / Exportar relatório CSV / Ir para Propriedades (`.btn-on-emerald`).
+- 5 KPIs (Total, Publicadas, Rascunhos, Views 30d, Leads) com dots + progress; lista com busca, tabs status (Todas/Publicadas/Rascunhos/Despublicadas), ordenar Mais vistas|Mais recentes.
+- Tabela: thumb + título + badge categoria + endereço + ID, slug, status pill, desempenho (views·leads + bar), atualização, ações (abrir/copiar/mais). Footer Exibindo N de M + legenda.
+- 3 cards finais: melhor desempenho, precisam de atenção, tráfego 30d (card emerald escuro com texto branco inline). Extraídos em `src/components/marketing-lps/*`.
+- Soft gaps: editor (sem `updated_by`); Despublicada≈unpublished+views; tráfego por fonte aproximado se `public_site_visits` fino; leads via `imovel_interesse`.
+
+## 2026-07-30 — Site Vitrine: redesign cream (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Presença digital/Site vitrine; toolbar com status Publicado + URL + última publicação; Copiar link / Abrir site / Salvar e publicar (`.btn-on-emerald`).
+- Banner amarelo “Como funciona”; nav de seções (Identidade | Aparência | Textos | Logo e capas | Rastreamento) com counts + Preenchimento %; layout 2 col (forms + preview/checklist/status sticky).
+- Cards: identidade (slug `/s/` + Verificar), aparência (5 cores + AA/AAA + tipografia), textos (#sobre/#contato + destaques), assets (logo + 3 capas), rastreamento (Meta Pixel + GA).
+- Extraídos em `src/components/site-vitrine/*`; `MarketingView` orquestra. Lógica de save/slug/upload/publish preservada. Soft gaps: dims/KB da logo e reorder real dos destaques.
+
+## 2026-07-30 — Plantão: redesign cream finalizado (mockups)
+
+- Shell `#F7F5F0`: breadcrumb Operação/Plantão; título + subtítulo com última atualização; tabs segmentadas abaixo do título (Calendários | Escala) + Atualizar / Adicionar agenda (visível nas duas abas para gestor).
+- 4 KPIs com dot no canto direito, progress bars (cobertura = dias/7); tabela Calendários conectados (ID truncado, avatar pastel, footer cream “Google Calendar autorizado”).
+- Escala: seletor de agenda + badge responsável clicável (config), “Escala salva” à direita, grid 4 colunas (4+3), toggle emerald, bulk 09:00–18:00 / desligar fim de semana.
+- Componentes em `src/components/plantao/*`; Google Calendar create/delete/sync e `oncall_schedules` intactos. Escalas carregam também na aba Calendários (KPIs + Responsável).
+
+## 2026-07-30 — Plantão: redesign cream + forest green
+
+- `PlantaoView`: shell `#F7F5F0`, breadcrumb Operação/Plantão, toolbar com tabs segmentadas (Calendários | Escala do plantão), Atualizar + Adicionar agenda (`.btn-on-emerald`), 4 KPIs com progress bars.
+- Extraídos componentes em `src/components/plantao/` (`TopBar`, `Toolbar`, `Kpis`, `CalendarsTable`, `EscalaPanel`, `TimePicker`, `helpers`).
+- Tab Calendários: tabela conectados (status, responsável, sync relativa); tab Escala: seletor de agenda, grid 7 dias, bulk apply/desligar fim de semana, copiar de outro. Lógica Google Calendar + `oncall_schedules` preservada.
+
+## 2026-07-30 — Conexões: redesign cream + forest green
+
+- `ConnectionsViewSimplified`: shell `#F7F5F0`, breadcrumb Infraestrutura/Conexões, toolbar (Atualizar, Logs webhook via AlertDialog, Nova instância + badge LIMITE), banner sync amber, 5 KPIs com progress bars, layout 2 col (WhatsApp | Instagram).
+- Extraídos componentes em `src/components/connections/`; `CompanyInstagramConnectionsSection` restyle cream/white; `OfficialApiConnectionsView` shell/header alinhados.
+- Ver conversas → `navigate('/conversas')`; lógica QR/create/delete/config/pending requests preservada.
+
+## 2026-07-30 — CRM Clientes: colunas da tabela restauradas
+
+- `ClientsCrmTable`: colunas separadas **Valor**, **Origem**, **Corretor**, **Contato**, **Cadastro** (antes agrupadas em “Valor / origem” e “Corretor · contato”).
+- Contato exibe telefone + e-mail; Cadastro usa `dataContato` + tempo relativo de `updatedAt`; Interesse com fallback em `message` quando vazio.
+
+## 2026-07-30 — LeadViewModal: resumo estruturado (n8n)
+
+- Parser `parseConversationSummaryResponse` atualizado: array → `output` (JSON string) → objeto estruturado; `parseStoredConversationSummary` aceita JSON ou texto legado.
+- Persistência em `leads.conversation_summary` como JSON stringificado (reabrir modal restaura status, nota, ações, pendências, riscos, métricas/qualidade).
+- UI cream card (`ConversationSummaryCard`) na seção Contato; botão **Gerar resumo** sem ícone (spinner no loading).
+
+## 2026-07-30 — LeadViewModal: Gerar resumo da conversa (n8n)
+
+- Botão **Gerar resumo** na seção Contato (`.btn-on-emerald`, loading state); chama webhook `resumo_conversa` direto (mesmo padrão Conversas/ChatsView).
+- Payload: `lead_id`, `session_id` (telefone ou `leads.id` IG), `phone`, `email`, `name`, `company_id`, `user_email`, `role`, `instancia`, `plataforma`, `rota`.
+- Resposta normalizada em `src/lib/parseConversationSummaryResponse.ts`; persistência em `leads.conversation_summary` (migration `20260730160000_leads_conversation_summary.sql`); exibição ao reabrir modal.
+- Catálogo: `docs/events.md` — `conversation.summary.request` atualizado.
+
+## 2026-07-30 — AddEventModal + EditEventModal: redesign cream + forest green
+
+- Modais alinhados ao padrão AddLeadModal/AddImovelModal: header `#1a2e24` + ícone, body cream `#F7F5F0`, campos `bg-card rounded-xl`.
+- Seção Data/Horário em card aninhado; chips outline com selected emerald (`.btn-on-emerald`); sugestão em amber suave; CTAs Cancel outline + primary emerald-800.
+- Toda lógica preservada (Google Calendar, corretor/disponibilidade, imóvel Viva Real, validação).
+
+## 2026-07-30 — LeadViewModal: redesign cream + forest green
+
+- Modal alinhado ao padrão AddLeadModal/AddImovelModal: header `#1a2e24`, body cream `#F7F5F0`, cards `bg-card` com seções Contato | Imóvel & Interesse | Atividades.
+- Badge de estágio humanizado (`visita-agendada` → Visita Agendada); footer Fechar outline + Editar `.btn-on-emerald`. Colunas empilham no mobile.
+
+## 2026-07-30 — Editar Cliente (AddLeadModal): fix nome + redesign
+
+- **Bug:** `updateLead` enviava coluna inexistente `property_id` na tabela `leads`, fazendo o UPDATE falhar por completo — nome e demais campos não persistiam; toast de sucesso aparecia mesmo com falha.
+- **Fix:** removido `property_id` do payload de update/create; `nome` mapeia sempre para `leads.name` (`!== undefined`); placeholder CPF `000.000.000-00` não é salvo; retorno de `updateLead`/`createLead` checado antes do toast.
+- **UI:** modal alinhado ao padrão cream `#F7F5F0` + header forest `#1a2e24` (AddImovelModal): seções Informações Básicas | Lead | Atribuição, grids 2 col, CTA `.btn-on-emerald`.
+- `normalizeLeadStoredName` em `kanban.ts` trata placeholder WhatsApp `~` como vazio na exibição.
+
+## 2026-07-30 — Agenda: botão Visitado + pipeline
+
+- Botão **Visitado** (após 1h do horário): confirmação via `AlertDialog` antes de aplicar.
+- Ao confirmar: status do evento → Visitado (Google sync preservado) + lead vinculado → estágio **Visita Realizada** (`leads.stage`).
+- Eventos carregam `leadId` (extendedProperties ou match por e-mail). Sem lead: toast informativo; já em Visita Realizada: só atualiza agenda.
+
+## 2026-07-30 — Agenda: redesign mockup cream + forest green
+
+- Chrome cream `#F7F5F0`: breadcrumbs Operação/Agenda, título + status Google (email + sincronizado às HH:MM), toggle Mês|Semana|Lista, Sincronizar, CTA `+ Novo evento` (`.btn-on-emerald`).
+- 5 KPIs reais: HOJE, ESTA SEMANA, ESTE MÊS, CONFIRMADOS, PENDENTES com hints e barras de progresso quando aplicável.
+- Filtros: chips por corretor/calendário com counts, pills Todos os status|Confirmados|Pendentes, atalhos Ir para Hoje/Amanhã/Próxima semana.
+- Calendário mês: células arredondadas, selecionado verde floresta, hoje wash pastel, dots + contagem; legenda agentes.
+- Painel do dia: badge eventos/confirmados, cards com borda verde, badges tipo/status, avatar corretor, Confirmar/Reagendar/⋯; seção PRÓXIMOS COMPROMISSOS.
+- Extraído `src/components/agenda/*`; Google sync, criar/editar/confirmar/reagendar/excluir, filtros por calendário e polling 30s preservados.
+
+## 2026-07-30 — Ver ficha (PropertyDetailsPopup): redesign mockup
+
+- Dialog `max-w-6xl`: header charcoal (#1a2e24) com código, título, badge DISPONÍVEL, endereço; Compartilhar / Editar imóvel / X (texto `#fff` / hatch).
+- Body 2 colunas (stack no mobile): carousel + contador + GALERIA thumbs; preço (venda/aluguel), 4 stats, LOCALIZAÇÃO + Ver no mapa (Maps search), FICHA TÉCNICA de campos reais.
+- Footer: LP / IG / PDF / Copiar link; Fechar; Alterar disponibilidade; Agendar visita → `/agenda` (`.btn-on-emerald`). Condo/IPTU/simulação omitidos (sem campos). Adapter propaga cep/bairro/andar/etc.
+
+## 2026-07-30 — Imóveis / Properties: redesign mockup
+
+- Chrome cream `#F7F5F0`: breadcrumbs Portfólio/Imóveis, título + subtítulo com contagem real (sem “sincronizado com site”), toggle Grade only (Lista/Mapa e Importar planilha omitidos — sem UI/backend), CTA `+ Adicionar imóvel` (`.btn-on-emerald`).
+- 5 KPIs reais: total, disponíveis, indisponíveis, em reforma, ticket médio (AVG `preco`); mockup “Reservados/Vendidos” remapeados aos status do schema (`indisponivel`/`reforma`). Hints só com dados reais.
+- Filtros: busca código/rua/bairro; abas Todos/Disponíveis/Venda/Aluguel com counts; sort Mais recentes/Valor/Área; filtros avançados preservados (cidade/bairro/área/preço/etc.).
+- Cards: foto ou placeholder listrado, badge status, contagem fotos, código, título+preço, endereço, tags, área/dorm/suítes/vagas, Ver ficha / Editar / ⋮; footer corretor omitido (sem join de perfil). Paginação “Exibindo N de M”.
+- Extraído `src/components/properties/*`; `useImoveisVivaReal` ganhou `modalidade`/`disponibilidade`; CRUD, galeria, edit VivaReal, disponibilidade e permissões corretor preservados.
+
+## 2026-07-30 — CRM de Clientes: redesign mockup
+
+- Chrome cream `#F7F5F0`: breadcrumbs Comercial/CRM, título + subtítulo com contagem real, toggle Tabela|Cards, Gestão em massa (gestor/admin), filtro corretores, CTA `+ Novo cliente` (`.btn-on-emerald`).
+- 5 KPIs reais (total, carteira ativa, prospects + hint sem corretor, fechados ano, conversão); omitidos “última importação” e deltas inventados.
+- Tabela (checkbox, cliente c/ avatar User, estágio, interesse, valor/origem, corretor·contato, ações) + cards no mobile/toggle; abas Todos/Ativos/Prospects/Negociação/Fechados/Perdidos mapeadas aos estágios atuais do pipeline.
+- Widgets inferiores: distribuição por estágio, precisam de atenção, carteira por corretor (SLA inventado suavizado).
+- Extraído `src/components/clients-crm/*`; CRUD (`AddLeadModal`/`LeadViewModal`), bulk assign, filtros e `useKanbanLeads` preservados.
+
+## 2026-07-30 — Pipeline: estágio "Visita realizada"
+
+- Novo estágio CRM `visita-realizada` / **Visita Realizada**, entre Visita Agendada e Visita Cancelada.
+- UI: `PIPELINE_STAGES`, `LeadStage`, `CRM_KANBAN_STAGE_TITLES`, AddLeadModal, badges, métricas de agendamento.
+- Migration `20260730150000_add_visita_realizada_stage`: `format_lead_stage_label` + CHECK `leads_stage_allowed` (slug/título, acentos normalizados).
+
+## 2026-07-30 — Pipeline Kanban: colunas + cards (mockup)
+
+- Coluna: container `rounded-2xl` muted; header (dot + nome | count), soma real em verde, barra accent por stage; body scroll + “Ver mais”; footer `+ Adicionar lead` branco. Sem ⋮ de coluna (sem ações). Omitidos SLA/conv inventados.
+- Card: avatar com iniciais (User se vazio); nome + interesse; ⋮ Ver/Editar; valor; note com barra verde; telefone + “• há Xh”. Sem temperatura/visita/WhatsApp inventados. DnD + memo + cap 25 preservados.
+
+## 2026-07-30 — Pipeline de Vendas: performance (coluna + cards)
+
+- Causa: board sem max-height → página ~17k px montando todos os cards (ex. 95+199 por coluna).
+- Colunas: `h-full min-h-0 overflow-y-auto` dentro de shell viewport (`h-[calc(100vh-8rem)] overflow-hidden`); scroll por coluna, não no documento.
+- Cap de montagem: 25 cards/coluna + “Ver mais (N)” (`PIPELINE_COLUMN_PAGE_SIZE`); `@tanstack/react-virtual` não está nas deps.
+- Memo: `React.memo` em `PipelineLeadCard`/`PipelineColumn`/KPIs/Conversion; `leadsByStage` em useMemo; callbacks estáveis; `DragOverlay` leve (`PipelineDragPreview`); sensor distance 10; edge-scroll via ref (sem re-render por frame).
+
+## 2026-07-30 — Pipeline de Vendas: redesign mockup
+
+- Chrome: breadcrumbs Comercial/Pipeline, busca (nome/telefone/interesse), refresh, título+subtítulo (funil · mês · atualizado), switcher Kanban|Lista (Lista → `/clients-crm`), filtro corretores, CTA `+ Novo lead` (`.btn-on-emerald`).
+- KPIs reais (ativos, negociação, fechamentos mês, valor pipeline, ciclo médio) + barra “Conversão por etapa”; omitidos Previsão, settings, temperatura, SLA/meta inventados.
+- Kanban: colunas com accent/count/soma, cards com avatar User (não iniciais), valor, origem, telefone, tempo relativo, notes; `+ Adicionar lead` por coluna (`defaultStage` no modal).
+- Extraído `src/components/pipeline/*`; DnD/filtros/modais/`useKanbanLeads` preservados; fundo cream light.
+
+## 2026-07-30 — Conversas: responsivo mobile/tablet
+
+- Breakpoints: `<md` 1 painel (lista↔chat); `md–lg` lista+chat, lead em Sheet; `xl+` 3 colunas.
+- Lead Sheet em todo viewport `<xl` (antes só mobile — tablet com toggle quebrado); auto-open docked só em xl+.
+- Top bar compacta (breadcrumb some &lt;md; unread sempre; tabs WA/IG sem overflow); composer/inbox/header com padding menor; altura `dvh` + padding main reduzido só em Conversas.
+- Mesmo shell em WA (`ConversasViewPremium`) e IG (`ConversasViewInstagram`).
+
+## 2026-07-30 — Conversas: redesign 3 colunas (mockup)
+
+- Shell compartilhado: top bar (breadcrumbs Atendimento/Conversas + tabs WA/IG/Site·Chat), inbox com chips Todas/Não lidas/IA/Corretor, chat header Assumir + Agendar visita, painel Lead (desktop) / Sheet (mobile).
+- Evoluiu `ConversasPage`, `ConversasViewPremium`, `ConversasViewInstagram`, `ChatComposer` + `src/components/conversas/*`; tokens light `--cv-*` forest green / fundo chat cinza claro.
+- Assumir → label `humano`; Agendar → `/agenda`; Ver ficha → `LeadViewModal`; quick chips = templates WA. Site/Chat e Transferir omitidos (sem backend / fluxo chat).
+- Lógica WA/IG preservada (realtime, mídia, labels, webhooks); só um canal montado por vez.
+
+## 2026-07-30 — Notificação: nome real do lead (não `~`)
+
+- **Causa:** trigger lia só `leads.name`; WhatsApp grava `~` como placeholder → body `~ movido de ...`.
+- Migration `20260730140000_fix_notify_lead_stage_display_name`: `lead_display_name()` ignora `~`/vazio e cai em `nome_instagram_cliente` → `@arroba` → `phone`; copy `"Nome" foi movido de "X" para "Y".`; backfill das notificações com `~`.
+
+## 2026-07-30 — Sidebar light mode + notificações in-app
+
+- Sidebar: tokens `bg-sidebar` / `text-sidebar-foreground` (light legível); dark mantém charcoal/verde; logo IAFÉ light/dark preservada.
+- `user_notifications` (migration `20260730120000`): RLS por destinatário; trigger em `leads.stage` notifica corretor + gestores (pipeline + visita agendada); view compat `notifications`.
+- Header: tokens de tema; sino com popover (lista, badge, marcar lidas, navegar `/clients` ou `/agenda`).
+- User Management: avatar padrão lucide `User` (sem iniciais); chips de filtro com texto/badge brancos quando ativos.
+
+## 2026-07-30 — UI mockup: sidebar + User Management
+
+- Sidebar: charcoal `#1A1A1A`, seções Operação / Presença digital / Analytics / Sistema; item ativo verde escuro; footer com avatar+role, Tema/Sair lado a lado. Logo da empresa / IAFÉ preservada (sem square "IA" genérico).
+- User Management: 4 metric cards (total / ativos / inativos / admin|gestores), CTA verde escuro "+ Novo usuário", painel com busca + chips, tabela desktop (Membro/Cargo/Status/Telefone/Criado em/Ações) e cards no mobile; footer "Exibindo N de M".
+- Omitidos do mockup: Exportar CSV, Convidar por link, Convites pendentes, Último acesso, Filtros avançados, paginação — sem backend/campo correspondente.
+- Lógica intacta (RPC, CRUD, WhatsApp settings, permissões).
+
+## 2026-07-30 — User Management: people directory layout
+
+- Redesign de tabela dark legada para diretório de pessoas: lista densa (desktop) + cards (mobile); chips de cargo com contagens; sem HTML Table.
+- Extraído monólito para `src/components/user-management/*` (header, toolbar, list/card, badges, dialogs); re-export estável em `UserManagementView.tsx`.
+- Tokens do design system (`bg-background` / `border-border` / etc.); removidos gray-800 forçado e gradientes purple/blue; copy de debug de permissão limpa.
+- Lógica intacta: RPC `list_company_users`, CRUD, WhatsApp settings, gestor não vê admin, role edit só admin.
+
 ## 2026-07-28 — Delete usuário: FK `audit_logs.actor_id`
 
 - **Causa:** `audit_logs_actor_id_fkey` com `NO ACTION` bloqueava `DELETE` em `user_profiles` (histórico de auditoria).

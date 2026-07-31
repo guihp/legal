@@ -7,16 +7,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { CalendarIcon, Clock, Building2, ChevronsUpDown, Check } from "lucide-react";
+import { CalendarIcon, CalendarPlus, Clock, ChevronsUpDown, Check, X } from "lucide-react";
 import format from "date-fns/format";
 import ptBR from "date-fns/locale/pt-BR";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { DatabaseClient } from "@/hooks/useClients";
-import { cn } from "@/lib/utils";
 import { CustomModal } from "./CustomModal";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 
+const FIELD_CLASS =
+  'rounded-xl border-border bg-card text-foreground placeholder:text-muted-foreground h-10 dark:bg-gray-800/50 dark:border-gray-700 dark:text-white dark:placeholder:text-gray-400';
+const LABEL_CLASS = 'text-sm font-medium text-muted-foreground flex items-center gap-2 dark:text-gray-300';
+const SELECT_TRIGGER_CLASS = `${FIELD_CLASS} h-10`;
+const SELECT_CONTENT_CLASS =
+  'border-border bg-popover text-popover-foreground dark:bg-gray-800 dark:border-gray-700';
+const SELECT_ITEM_CLASS =
+  'dark:text-white dark:focus:bg-gray-700 dark:focus:text-white cursor-pointer';
+const POPOVER_TRIGGER_CLASS = `${FIELD_CLASS} inline-flex w-full items-center justify-between px-3 py-2 text-left h-10`;
 interface AddEventModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -46,8 +54,6 @@ export function AddEventModal({
   const [email, setEmail] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [time, setTime] = useState<string>("");
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
   const [eventType, setEventType] = useState<string>("Visita");
   const [selectedCorretor, setSelectedCorretor] = useState<string>("aleatorio");
   const [loading, setLoading] = useState(false);
@@ -396,52 +402,6 @@ export function AddEventModal({
     }
   };
 
-  // Funções para atalhos de data
-  const setQuickDate = (days: number) => {
-    const date = new Date();
-    date.setDate(date.getDate() + days);
-    setSelectedDate(date);
-    setShowDatePicker(false);
-  };
-
-  // Horários comuns para seleção rápida (ordenados por popularidade)
-  const commonTimes = [
-    { label: "09:00", value: "09:00", popular: true },
-    { label: "10:00", value: "10:00", popular: true },
-    { label: "14:00", value: "14:00", popular: true },
-    { label: "15:00", value: "15:00", popular: true },
-    { label: "16:00", value: "16:00", popular: true },
-    { label: "11:00", value: "11:00", popular: true },
-    { label: "08:00", value: "08:00" },
-    { label: "17:00", value: "17:00" },
-    { label: "18:00", value: "18:00" },
-  ];
-
-  // Sugerir próximo horário disponível baseado na hora atual
-  const getSuggestedTime = () => {
-    const now = new Date();
-    const currentHour = now.getHours();
-    
-    // Se for manhã (antes das 12h), sugerir horários da tarde
-    if (currentHour < 12) {
-      return "14:00";
-    }
-    // Se for tarde, sugerir próximo horário comercial
-    else if (currentHour < 17) {
-      const nextHour = currentHour + 1;
-      return `${nextHour.toString().padStart(2, '0')}:00`;
-    }
-    // Se for final do dia, sugerir próximo dia útil manhã
-    else {
-      return "09:00";
-    }
-  };
-
-  const setQuickTime = (timeValue: string) => {
-    setTime(timeValue);
-    setShowTimePicker(false);
-  };
-
   // Função para mostrar modal personalizado
   const showCustomModal = (type: 'success' | 'error' | 'confirm' | 'alert', title: string, message: string, onConfirm?: () => void) => {
     setModalConfig({
@@ -490,8 +450,6 @@ export function AddEventModal({
         setEventType("Visita");
         setSelectedCorretor("aleatorio");
         setListingId("");
-        setShowDatePicker(false);
-        setShowTimePicker(false);
         onClose();
       };
 
@@ -521,54 +479,75 @@ export function AddEventModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-background border-border text-foreground">
-        <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5" />
-            Adicionar Evento na Agenda
-          </DialogTitle>
-        </DialogHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <DialogContent className="sm:max-w-[600px] max-h-[92vh] flex flex-col gap-0 overflow-hidden p-0 bg-background border-border text-foreground sm:rounded-2xl shadow-2xl">
+        {/* Header — forest green */}
+        <div
+          className="flex-shrink-0 flex items-start justify-between gap-3 px-5 sm:px-6 py-4 sm:py-5"
+          style={{ backgroundColor: '#1a2e24' }}
+        >
+          <DialogHeader className="space-y-1.5 text-left min-w-0 flex-1">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/10 flex items-center justify-center shrink-0">
+                <CalendarPlus className="h-5 w-5 text-emerald-100" />
+              </div>
+              <DialogTitle className="text-lg sm:text-xl font-semibold" style={{ color: '#ffffff' }}>
+                Adicionar Evento na Agenda
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-9 w-9 rounded-lg hover:bg-white/10 shrink-0"
+            aria-label="Fechar"
+            style={{ color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.25)' }}
+          >
+            <X className="h-4 w-4" style={{ color: '#ffffff' }} />
+          </Button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 bg-[#F7F5F0] dark:bg-background space-y-4">
           {/* Tipo de Evento */}
           <div className="space-y-2">
-            <Label htmlFor="eventType" className="text-gray-300">
+            <Label htmlFor="eventType" className={LABEL_CLASS}>
               Tipo de Evento
             </Label>
             <Select value={eventType} onValueChange={setEventType}>
-              <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
+              <SelectTrigger className={SELECT_TRIGGER_CLASS}>
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-700 border-gray-600">
-                <SelectItem value="Visita">Visita</SelectItem>
-                <SelectItem value="Avaliação">Avaliação</SelectItem>
-                <SelectItem value="Apresentação">Apresentação</SelectItem>
-                <SelectItem value="Vistoria">Vistoria</SelectItem>
-                <SelectItem value="Reunião">Reunião</SelectItem>
+              <SelectContent className={SELECT_CONTENT_CLASS}>
+                <SelectItem value="Visita" className={SELECT_ITEM_CLASS}>Visita</SelectItem>
+                <SelectItem value="Avaliação" className={SELECT_ITEM_CLASS}>Avaliação</SelectItem>
+                <SelectItem value="Apresentação" className={SELECT_ITEM_CLASS}>Apresentação</SelectItem>
+                <SelectItem value="Vistoria" className={SELECT_ITEM_CLASS}>Vistoria</SelectItem>
+                <SelectItem value="Reunião" className={SELECT_ITEM_CLASS}>Reunião</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Seleção de Imóvel via Viva Real */}
           <div className="space-y-2">
-            <Label htmlFor="imovel" className="text-gray-300 flex items-center gap-2">
-              <Building2 className="w-4 h-4" />
-              Imóvel <span className="text-red-400">*</span>
+            <Label htmlFor="imovel" className={LABEL_CLASS}>
+              Imóvel <span className="text-red-500 dark:text-red-400">*</span>
             </Label>
             <Popover open={listingOpen} onOpenChange={setListingOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex w-full items-center justify-between rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-left text-white hover:bg-gray-600"
+                  className={POPOVER_TRIGGER_CLASS}
                   aria-label="Selecione o imóvel"
                 >
                   <span className="truncate">
                     {listingId ? `${listingId} - ${listingOptions.find(opt => opt.listing_id === listingId)?.endereco || listingOptions.find(opt => opt.listing_id === listingId)?.cidade || 'Endereço não disponível'}` : 'Selecione o ID do imóvel ou digite'}
                   </span>
-                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50 shrink-0" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-gray-800 border-gray-600" style={{ zIndex: 10000 }}>
+              <PopoverContent className="p-0 w-[--radix-popover-trigger-width] border-border bg-popover dark:bg-gray-800 dark:border-gray-700" style={{ zIndex: 10000 }}>
                 <Command>
                   <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
                   <CommandList>
@@ -580,15 +559,15 @@ export function AddEventModal({
                           value={opt.listing_id}
                           onSelect={() => {
                             setListingId(opt.listing_id);
-                            setSelectedProperty(opt.listing_id); // Manter compatibilidade
+                            setSelectedProperty(opt.listing_id);
                             setListingOpen(false);
                           }}
                         >
-                          <div className="flex flex-col text-white">
+                          <div className="flex flex-col">
                             <span className="font-medium">{opt.listing_id} - {(opt.endereco || opt.cidade || '-')}</span>
                           </div>
                           {listingId === opt.listing_id && (
-                            <Check className="ml-auto h-4 w-4 text-white" />
+                            <Check className="ml-auto h-4 w-4 text-emerald-700 dark:text-emerald-300" />
                           )}
                         </CommandItem>
                       ))}
@@ -601,16 +580,16 @@ export function AddEventModal({
 
           {/* Seleção de Cliente */}
           <div className="space-y-2">
-            <Label htmlFor="client" className="text-gray-300">
-              Cliente <span className="text-red-400">*</span>
+            <Label htmlFor="client" className={LABEL_CLASS}>
+              Cliente <span className="text-red-500 dark:text-red-400">*</span>
             </Label>
             <Select value={selectedClient} onValueChange={handleClientChange}>
-              <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
+              <SelectTrigger className={SELECT_TRIGGER_CLASS}>
                 <SelectValue placeholder="Selecione um cliente" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-700 border-gray-600">
+              <SelectContent className={SELECT_CONTENT_CLASS}>
                 {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
+                  <SelectItem key={client.id} value={client.id} className={SELECT_ITEM_CLASS}>
                     {client.name} {client.email && `(${client.email})`}
                   </SelectItem>
                 ))}
@@ -620,8 +599,8 @@ export function AddEventModal({
 
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-gray-300">
-              Email <span className="text-red-400">*</span>
+            <Label htmlFor="email" className={LABEL_CLASS}>
+              Email <span className="text-red-500 dark:text-red-400">*</span>
             </Label>
             <Input
               id="email"
@@ -629,213 +608,66 @@ export function AddEventModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="email@exemplo.com"
-              className="bg-gray-700 border-gray-600 text-white"
+              className={FIELD_CLASS}
             />
           </div>
 
-          {/* Data e Hora - Seção Modernizada */}
-          <div className="space-y-4 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-            <div className="flex items-center gap-2 mb-3">
-              <CalendarIcon className="h-5 w-5 text-blue-400" />
-              <Label className="text-gray-300 font-medium">
-                Data e Horário <span className="text-red-400">*</span>
+          {/* Data e Hora */}
+          <div className="space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm dark:border-gray-700/60">
+            <div className="flex items-center gap-2 mb-1">
+              <CalendarIcon className="h-5 w-5 text-emerald-700 dark:text-emerald-400" />
+              <Label className={`${LABEL_CLASS} font-medium text-foreground dark:text-gray-200`}>
+                Data e Horário <span className="text-red-500 dark:text-red-400">*</span>
               </Label>
             </div>
 
             {/* Seleção de Data */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-400">Data do evento</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-                >
-                  {showDatePicker ? "Ocultar calendário" : "Ver calendário"}
-                </Button>
-              </div>
+              <span className="text-sm text-muted-foreground">Data do evento</span>
 
-              {/* Atalhos rápidos de data */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(0)}
-                  className={cn(
-                    "bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-all",
-                    selectedDate && selectedDate.toDateString() === new Date().toDateString() && 
-                    "bg-blue-600 border-blue-500 text-white"
-                  )}
-                >
-                  🌅 Hoje
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(1)}
-                  className={cn(
-                    "bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-all",
-                    selectedDate && selectedDate.toDateString() === new Date(Date.now() + 86400000).toDateString() && 
-                    "bg-blue-600 border-blue-500 text-white"
-                  )}
-                >
-                  🌄 Amanhã
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(2)}
-                  className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                >
-                  📅 Em 2 dias
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(7)}
-                  className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                >
-                  🗓️ Próxima semana
-                </Button>
-              </div>
-
-              {/* Data selecionada */}
               {selectedDate && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/80 p-3 dark:border-emerald-800/40 dark:bg-emerald-950/20">
                   <div className="flex items-center gap-2">
-                    <CalendarIcon className="h-4 w-4 text-green-400" />
-                    <span className="text-green-300 font-medium">
+                    <CalendarIcon className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+                    <span className="font-medium text-emerald-900 dark:text-emerald-300">
                       {format(selectedDate, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Calendário expandido */}
-              {showDatePicker && (
-                <div className="border border-gray-600 rounded-lg overflow-hidden">
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={setSelectedDate}
-                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                    initialFocus
-                    className="bg-gray-800 text-white"
-                  />
-                </div>
-              )}
+              <div className="rounded-xl border border-border overflow-hidden dark:border-gray-700">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                  initialFocus
+                  className="bg-card text-foreground dark:bg-gray-900 dark:text-white"
+                />
+              </div>
             </div>
 
             {/* Seleção de Horário */}
-            <div className="space-y-3 border-t border-gray-700 pt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-400">Horário do evento</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowTimePicker(!showTimePicker)}
-                  className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-                >
-                  {showTimePicker ? "Ocultar horários" : "Ver mais horários"}
-                </Button>
-              </div>
+            <div className="space-y-3 border-t border-border/60 pt-4 dark:border-gray-700">
+              <span className="text-sm text-muted-foreground">Horário do evento</span>
 
-              {/* Sugestão inteligente */}
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">💡</span>
-                    <span className="text-sm font-medium text-amber-900 dark:text-yellow-300">
-                      Sugestão: {getSuggestedTime()}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setQuickTime(getSuggestedTime())}
-                    className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10"
-                  >
-                    Usar sugestão
-                  </Button>
-                </div>
-              </div>
-
-              {/* Horários rápidos populares */}
-              <div className="space-y-2">
-                <span className="text-xs text-gray-500 uppercase tracking-wide">Horários mais populares</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {commonTimes.slice(0, 6).map((timeOption) => (
-                    <Button
-                      key={timeOption.value}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setQuickTime(timeOption.value)}
-                      className={cn(
-                        "bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-all relative",
-                        time === timeOption.value && "bg-blue-600 border-blue-500 text-white",
-                        timeOption.popular && "border-green-500/30"
-                      )}
-                    >
-                      <div className="flex flex-col items-center">
-                        <span>🕐 {timeOption.label}</span>
-                        {timeOption.popular && (
-                          <span className="text-xs text-green-400">⭐</span>
-                        )}
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Mais horários */}
-              {showTimePicker && (
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-700">
-                  {commonTimes.slice(6).map((timeOption) => (
-                    <Button
-                      key={timeOption.value}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setQuickTime(timeOption.value)}
-                      className={cn(
-                        "bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-all",
-                        time === timeOption.value && "bg-blue-600 border-blue-500 text-white"
-                      )}
-                    >
-                      🕐 {timeOption.label}
-                    </Button>
-                  ))}
-                </div>
-              )}
-
-              {/* Input personalizado de horário */}
               <div className="relative">
-                <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="time"
                   type="time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  placeholder="Ou escolha um horário personalizado"
-                  className="bg-gray-700 border-gray-600 text-white pl-10"
+                  className={`${FIELD_CLASS} pl-10`}
                 />
               </div>
 
-              {/* Horário selecionado */}
               {time && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/80 p-3 dark:border-emerald-800/40 dark:bg-emerald-950/20">
                   <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-blue-400" />
-                    <span className="font-medium text-blue-800 dark:text-blue-300">
+                    <Clock className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+                    <span className="font-medium text-emerald-900 dark:text-emerald-300">
                       Horário selecionado: {time}
                     </span>
                   </div>
@@ -845,16 +677,16 @@ export function AddEventModal({
 
             {/* Resumo do agendamento */}
             {selectedDate && time && (
-              <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-lg p-4 mt-4">
+              <div className="rounded-lg border border-emerald-200/60 bg-gradient-to-r from-emerald-50/90 to-emerald-100/50 p-4 mt-4 dark:border-emerald-800/40 dark:from-emerald-950/30 dark:to-emerald-900/20">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-green-500/20 rounded-full">
+                  <div className="flex items-center justify-center w-10 h-10 bg-emerald-100 rounded-full dark:bg-emerald-900/40">
                     <span className="text-lg">✅</span>
                   </div>
                   <div className="flex-1">
-                    <div className="text-white font-medium mb-1">
+                    <div className="font-medium text-foreground dark:text-white mb-1">
                       Agendamento confirmado para:
                     </div>
-                    <div className="text-green-300 text-sm">
+                    <div className="text-sm text-emerald-800 dark:text-emerald-300">
                       📅 {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })} às {time}
                     </div>
                   </div>
@@ -865,18 +697,17 @@ export function AddEventModal({
 
           {/* Seleção de Corretor com Disponibilidade */}
           <div className="space-y-2">
-            <Label htmlFor="corretor" className="text-gray-300 flex items-center gap-2">
-              <span className="text-lg">👥</span>
+            <Label htmlFor="corretor" className={LABEL_CLASS}>
               Corretor
               {selectedDate && time && (
-                <span className="text-xs bg-blue-500/20 px-2 py-1 rounded-full text-blue-800 dark:text-blue-300">
+                <span className="text-xs bg-emerald-100 px-2 py-1 rounded-full text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                   Baseado na disponibilidade
                 </span>
               )}
             </Label>
             <Select value={selectedCorretor} onValueChange={setSelectedCorretor}>
               <SelectTrigger 
-                className="bg-gray-700 border-gray-600 text-white"
+                className={SELECT_TRIGGER_CLASS}
                 onClick={() => {
                   console.log('🎛️ DROPDOWN ABERTO - Estado atual:');
                   console.log('📅 Data selecionada:', selectedDate?.toLocaleDateString());
@@ -896,36 +727,28 @@ export function AddEventModal({
               >
                 <SelectValue placeholder={corretorLoading ? "Verificando disponibilidade..." : "Selecione um corretor"} />
               </SelectTrigger>
-              <SelectContent className="bg-gray-700 border-gray-600">
-                <SelectItem value="aleatorio" className="flex items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎲</span>
-                    <span>Aleatório (sistema escolhe)</span>
-                  </div>
+              <SelectContent className={SELECT_CONTENT_CLASS}>
+                <SelectItem value="aleatorio" className={SELECT_ITEM_CLASS}>
+                  Aleatório (sistema escolhe)
                 </SelectItem>
                 
-                {/* Se data E horário selecionados: mostrar APENAS disponíveis */}
                 {(selectedDate && time) ? (
-                  // Modo filtrado: apenas corretores disponíveis no horário
                   corretoresDisponiveis.filter(c => c.available).map((corretor) => (
-                    <SelectItem key={corretor.id} value={corretor.full_name} className="flex items-center gap-2">
+                    <SelectItem key={corretor.id} value={corretor.full_name} className={SELECT_ITEM_CLASS}>
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                        <span className="text-lg">👤</span>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                         <span>{corretor.full_name}</span>
-                        <span className="text-xs text-green-400 ml-2">✓ Disponível</span>
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 ml-2">✓ Disponível</span>
                       </div>
                     </SelectItem>
                   ))
                 ) : (
-                  // Modo sem filtro: mostrar todos os corretores
                   corretoresDisponiveis.map((corretor) => (
-                    <SelectItem key={corretor.id} value={corretor.full_name} className="flex items-center gap-2">
+                    <SelectItem key={corretor.id} value={corretor.full_name} className={SELECT_ITEM_CLASS}>
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${corretor.available ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-                        <span className="text-lg">👤</span>
+                        <div className={`w-2 h-2 rounded-full ${corretor.available ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40'}`}></div>
                         <span>{corretor.full_name}</span>
-                        <span className={`text-xs ml-2 ${corretor.available ? 'text-green-400' : 'text-gray-400'}`}>
+                        <span className={`text-xs ml-2 ${corretor.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
                           {corretor.available ? '✓ Com escala' : '⏳ Verificar horário'}
                         </span>
                       </div>
@@ -938,11 +761,11 @@ export function AddEventModal({
             {/* Indicador visual do corretor selecionado */}
             <div className="flex items-center gap-2 mt-2">
               <div className={`w-3 h-3 rounded-full ${
-                selectedCorretor === 'aleatorio' ? 'bg-yellow-500' :
-                corretoresDisponiveis.find(c => c.full_name === selectedCorretor)?.available ? 'bg-green-500' :
+                selectedCorretor === 'aleatorio' ? 'bg-amber-500' :
+                corretoresDisponiveis.find(c => c.full_name === selectedCorretor)?.available ? 'bg-emerald-500' :
                 'bg-red-500'
               }`}></div>
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-muted-foreground">
                 {selectedCorretor === 'aleatorio' ? 'Sistema escolherá entre corretores disponíveis' :
                  corretoresDisponiveis.find(c => c.full_name === selectedCorretor)?.available ? 
                    `${selectedCorretor} está disponível no horário selecionado` :
@@ -953,53 +776,58 @@ export function AddEventModal({
             
             {/* Avisos sobre filtragem */}
             {(!selectedDate || !time) ? (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mt-2">
+              <div className="rounded-lg border border-amber-200/60 bg-amber-50/70 p-3 mt-2 dark:border-amber-800/40 dark:bg-amber-950/20">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">⚠️</span>
-                  <span className="text-sm text-amber-900 dark:text-yellow-300">
+                  <span className="text-sm text-amber-900 dark:text-amber-200">
                     Selecione data e horário para filtrar apenas corretores disponíveis no plantão
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mt-2">
+              <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/70 p-3 mt-2 dark:border-emerald-800/40 dark:bg-emerald-950/20">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🔍</span>
-                  <span className="text-sm text-blue-800 dark:text-blue-300">
+                  <span className="text-sm text-emerald-900 dark:text-emerald-300">
                     Mostrando apenas corretores disponíveis em {format(selectedDate, "dd/MM", { locale: ptBR })} às {time}
                     {corretoresDisponiveis.filter(c => c.available).length === 0 && (
-                      <span className="text-red-400 ml-2">⚠️ Nenhum corretor disponível neste horário</span>
+                      <span className="text-red-500 dark:text-red-400 ml-2">⚠️ Nenhum corretor disponível neste horário</span>
                     )}
                   </span>
                 </div>
               </div>
             )}
           </div>
+          </div>
 
-          {/* Botões */}
-          <div className="flex justify-end space-x-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Criando no Google Calendar...
-                </div>
-              ) : (
-                "Criar Evento"
-              )}
-            </Button>
+          {/* Footer */}
+          <div className="flex-shrink-0 border-t border-border bg-background px-5 sm:px-6 py-4">
+            <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="sm:min-w-[140px] border-border text-foreground hover:bg-muted"
+                disabled={loading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="btn-on-emerald sm:min-w-[180px] bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50"
+                style={{ color: '#ffffff' }}
+              >
+                {loading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Criando no Google Calendar...
+                  </div>
+                ) : (
+                  "Criar Evento"
+                )}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

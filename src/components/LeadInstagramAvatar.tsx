@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { differenceInHours } from 'date-fns';
+import { User } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { requestInstagramProfilePicRefresh } from '@/lib/instagramProfilePicRefresh';
 
@@ -29,7 +30,7 @@ export type LeadInstagramAvatarProps = {
  */
 export function LeadInstagramAvatar({
   leadId,
-  displayName,
+  displayName: _displayName,
   profilePicUrlInstagram,
   lastProfileSyncInstagram,
   instagramIdCliente,
@@ -38,7 +39,6 @@ export function LeadInstagramAvatar({
   fallbackClassName,
 }: LeadInstagramAvatarProps) {
   const [imgBroken, setImgBroken] = useState(false);
-  const initial = (displayName?.trim()?.charAt(0) || '?').toUpperCase();
   const rawUrl = profilePicUrlInstagram?.trim() || '';
   const effectiveSrc = rawUrl && !imgBroken ? rawUrl : undefined;
 
@@ -64,7 +64,9 @@ export function LeadInstagramAvatar({
         className="object-cover"
         onError={() => setImgBroken(true)}
       />
-      <AvatarFallback className={fallbackClassName}>{initial}</AvatarFallback>
+      <AvatarFallback className={fallbackClassName}>
+        <User className="h-6 w-6" strokeWidth={1.5} aria-hidden />
+      </AvatarFallback>
     </Avatar>
   );
 }

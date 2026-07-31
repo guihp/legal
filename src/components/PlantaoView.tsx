@@ -1,25 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Copy, RefreshCw, ChevronDown, ChevronRight, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { invokeEdge } from "@/integrations/supabase/invoke";
-
-type TimePickerProps = {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-};
+import { PlantaoTopBar } from "@/components/plantao/PlantaoTopBar";
+import { PlantaoToolbar, type PlantaoTab } from "@/components/plantao/PlantaoToolbar";
+import { PlantaoKpis } from "@/components/plantao/PlantaoKpis";
+import { CalendarsTable } from "@/components/plantao/CalendarsTable";
+import { EscalaPanel } from "@/components/plantao/EscalaPanel";
+import {
+  DIAS_SEMANA,
+  type EscalaSlot,
+  buildPlantaoKpis,
+  buildPlantaoSubtitle,
+  computeWeeklyStats,
+  getCalendarSyncStatus,
+} from "@/components/plantao/helpers";
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -40,31 +39,6 @@ const toHalfHour = (hhmm: string): string => {
   return `${pad2(h)}:${pad2(m)}`;
 };
 
-function TimePicker({ value, onChange, disabled }: TimePickerProps) {
-  // opções de 08:00 até 19:30, a cada 30 minutos
-  const times: string[] = [];
-  for (let h = 8; h <= 19; h++) {
-    for (const m of [0, 30]) {
-      times.push(`${pad2(h)}:${pad2(m)}`);
-    }
-  }
-
-  return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className={`bg-background border-border text-foreground h-9 ${disabled ? 'opacity-60' : ''}`}>
-        <SelectValue placeholder="—:—" />
-      </SelectTrigger>
-      <SelectContent className="bg-popover border-border max-h-64">
-        {times.map((t) => (
-          <SelectItem key={t} value={t} className="font-mono">
-            {t}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 const PlantaoView = () => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -81,7 +55,8 @@ const PlantaoView = () => {
     conferenceAllowed?: string;
   }>>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<'calendarios' | 'escala'>('calendarios');
+  const [activeTab, setActiveTab] = useState<PlantaoTab>('calendarios');
+  const [escalaSelectedCalendarId, setEscalaSelectedCalendarId] = useState<string>("");
   const [isAddAgendaOpen, setIsAddAgendaOpen] = useState(false);
   const [newAgendaName, setNewAgendaName] = useState("");
   const [addingAgenda, setAddingAgenda] = useState(false);
@@ -95,22 +70,11 @@ const PlantaoView = () => {
   const [assignedUserLocal, setAssignedUserLocal] = useState<string>("");
   const [companyUsers, setCompanyUsers] = useState<{ id: string; full_name: string; email: string; role?: string }[]>([]);
   const { profile, isManager, getCompanyUsers } = useUserProfile();
-  const [expandedCalendars, setExpandedCalendars] = useState<Record<string, boolean>>({});
   const [dirtyCalendars, setDirtyCalendars] = useState<Record<string, boolean>>({});
   const [savingCalendars, setSavingCalendars] = useState<Record<string, boolean>>({});
-  type EscalaSlot = { dia: string; inicio: string; fim: string };
   const [escalas, setEscalas] = useState<Record<string, { calendarName: string; assignedUserId?: string; assignedUserName?: string; slots: EscalaSlot[] }>>({});
 
-  const formatTimeZoneLabel = (tz?: string) => {
-    if (!tz) return "-";
-    const parts = tz.split("/");
-    const last = parts[parts.length - 1] || tz;
-    const pretty = last
-      .replace(/_/g, " ")
-      .replace(/Sao/gi, "São")
-      .replace(/Paulo/gi, "Paulo");
-    return pretty;
-  };
+  const dias = [...DIAS_SEMANA];
 
   const puxarAgendas = async (mode: "auto" | "manual" = "manual") => {
     try {
@@ -207,7 +171,6 @@ const PlantaoView = () => {
     if (activeTab === 'calendarios') {
       puxarAgendas("auto");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   // Controlar aba baseado no perfil do usuário
@@ -219,7 +182,8 @@ const PlantaoView = () => {
       console.log('🔄 PlantaoView: Definindo aba calendários para gestor/admin');
       setActiveTab('calendarios');
     }
-  }, [profile?.role]); // Executar apenas quando o role mudar
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reagir a mudança de role
+  }, [profile?.role]);
 
   // Ações Calendários
   const handleAddAgenda = async () => {
@@ -405,94 +369,10 @@ const PlantaoView = () => {
     });
   }, []);
 
-  const dias = [
-    'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'
-  ];
-
-  const diaCurto: Record<string, string> = {
-    'Segunda': 'Seg',
-    'Terça': 'Ter',
-    'Quarta': 'Qua',
-    'Quinta': 'Qui',
-    'Sexta': 'Sex',
-    'Sábado': 'Sáb',
-    'Domingo': 'Dom',
-  };
-
-  const buildScheduleSummary = (cfg: { slots: EscalaSlot[] }): string => {
-    const map: Record<string, { works: boolean; start: string | null; end: string | null }> = {
-      'Segunda': { works: false, start: null, end: null },
-      'Terça': { works: false, start: null, end: null },
-      'Quarta': { works: false, start: null, end: null },
-      'Quinta': { works: false, start: null, end: null },
-      'Sexta': { works: false, start: null, end: null },
-      'Sábado': { works: false, start: null, end: null },
-      'Domingo': { works: false, start: null, end: null },
-    };
-    for (const s of cfg.slots) {
-      if (map[s.dia]) map[s.dia] = { works: true, start: s.inicio, end: s.fim };
-    }
-    const groups: { startIdx: number; endIdx: number; works: boolean; start?: string | null; end?: string | null }[] = [];
-    let i = 0;
-    while (i < dias.length) {
-      const cur = map[dias[i]];
-      let j = i;
-      while (
-        j + 1 < dias.length &&
-        map[dias[j + 1]].works === cur.works &&
-        map[dias[j + 1]].start === cur.start &&
-        map[dias[j + 1]].end === cur.end
-      ) {
-        j++;
-      }
-      groups.push({ startIdx: i, endIdx: j, works: cur.works, start: cur.start, end: cur.end });
-      i = j + 1;
-    }
-    // Map groups to string
-    const parts = groups.map(g => {
-      const rangeLabel = g.startIdx === g.endIdx
-        ? diaCurto[dias[g.startIdx]]
-        : `${diaCurto[dias[g.startIdx]]}–${diaCurto[dias[g.endIdx]]}`;
-      if (g.works) {
-        return `${rangeLabel} ${g.start}–${g.end}`;
-      }
-      return `${rangeLabel} não trabalha`;
-    });
-    const allOff = groups.every(g => !g.works);
-    if (allOff) return 'Não trabalha em nenhum dia';
-    return parts.join('; ');
-  };
-
-  const toggleExpanded = (calendarId: string, calendarName?: string) => {
-    const isOpen = !!expandedCalendars[calendarId];
-    const willOpen = !isOpen;
-    if (willOpen && !escalas[calendarId]) {
-      // Carregar escala do banco ao expandir pela primeira vez
-      loadSchedule(calendarId, calendarName || '');
-    }
-    setExpandedCalendars(prev => ({ ...prev, [calendarId]: willOpen }));
-  };
-
-  const getDayMapFromSlots = (slots: EscalaSlot[]) => {
-    const map: Record<string, { works: boolean; start: string | null; end: string | null }> = {
-      'Segunda': { works: false, start: null, end: null },
-      'Terça': { works: false, start: null, end: null },
-      'Quarta': { works: false, start: null, end: null },
-      'Quinta': { works: false, start: null, end: null },
-      'Sexta': { works: false, start: null, end: null },
-      'Sábado': { works: false, start: null, end: null },
-      'Domingo': { works: false, start: null, end: null },
-    };
-    for (const s of slots) {
-      if (map[s.dia]) map[s.dia] = { works: true, start: s.inicio, end: s.fim };
-    }
-    return map;
-  };
-
   const setDayWorking = (calendarId: string, dia: string, works: boolean) => {
     const current = escalas[calendarId];
     if (!current) return;
-    let nextSlots = [...current.slots];
+    const nextSlots = [...current.slots];
     const idx = nextSlots.findIndex(s => s.dia === dia);
     if (works) {
       if (idx === -1) {
@@ -510,7 +390,7 @@ const PlantaoView = () => {
   const setDayTime = (calendarId: string, dia: string, field: 'inicio' | 'fim', value: string) => {
     const current = escalas[calendarId];
     if (!current) return;
-    let nextSlots = [...current.slots];
+    const nextSlots = [...current.slots];
     const idx = nextSlots.findIndex(s => s.dia === dia);
     // util: validação de horários (inicio < fim)
     const toMinutes = (t: string) => {
@@ -549,7 +429,7 @@ const PlantaoView = () => {
       if (!user) return;
 
       // Buscar escala por calendar_id (mais genérico)
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('oncall_schedules')
         .select(`
           *,
@@ -925,6 +805,15 @@ const PlantaoView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, profile]);
 
+  // Carregar escalas também na aba Calendários (KPIs + coluna Responsável)
+  useEffect(() => {
+    if (activeTab !== 'calendarios') return;
+    if (!profile || calendars.length === 0) return;
+    if (Object.keys(escalas).length > 0) return;
+    void loadAllSchedules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, calendars.length, profile?.id]);
+
   // Quando a lista de calendários mudar e a aba Escala estiver ativa, recarregar escalas
   useEffect(() => {
     if (activeTab === 'escala' && calendars.length > 0 && profile) {
@@ -937,472 +826,339 @@ const PlantaoView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendars.length, profile?.id, activeTab]);
 
+  const schedulesToShow = useMemo(() => {
+    const allScheduleIds = new Set([
+      ...calendars.map((c) => c.id),
+      ...Object.keys(escalas),
+    ]);
+
+    return Array.from(allScheduleIds)
+      .map((calendarId) => {
+        const apiCalendar = calendars.find((c) => c.id === calendarId);
+        const dbSchedule = escalas[calendarId];
+        return {
+          id: calendarId,
+          name: apiCalendar?.name || dbSchedule?.calendarName || 'Agenda Externa',
+        };
+      })
+      .filter((item) => {
+        if (profile?.role === 'admin' || profile?.role === 'gestor') return true;
+        if (profile?.role === 'corretor') {
+          return escalas[item.id]?.assignedUserId === profile?.id;
+        }
+        return false;
+      });
+  }, [calendars, escalas, profile?.id, profile?.role]);
+
+  useEffect(() => {
+    if (schedulesToShow.length === 0) return;
+    if (!escalaSelectedCalendarId || !schedulesToShow.some((s) => s.id === escalaSelectedCalendarId)) {
+      setEscalaSelectedCalendarId(schedulesToShow[0].id);
+      if (!escalas[schedulesToShow[0].id]) {
+        void loadSchedule(schedulesToShow[0].id, schedulesToShow[0].name);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulesToShow.map((s) => s.id).join('|')]);
+
+  const handleSelectEscalaCalendar = (calendarId: string) => {
+    setEscalaSelectedCalendarId(calendarId);
+    const cal = schedulesToShow.find((s) => s.id === calendarId);
+    if (cal && !escalas[calendarId]) {
+      void loadSchedule(calendarId, cal.name);
+    }
+  };
+
+  const totalBrokers = useMemo(
+    () => companyUsers.filter((u) => u.role === 'corretor').length || companyUsers.length,
+    [companyUsers],
+  );
+
+  const kpis = useMemo(() => {
+    const syncedCount = calendars.filter((c) => getCalendarSyncStatus(c) === 'synced').length;
+    const attentionCalendars = calendars.filter((c) => getCalendarSyncStatus(c) === 'token_expiring');
+    const brokersOnScale = Object.values(escalas).filter(
+      (e) => e.assignedUserId && e.slots.length > 0,
+    ).length;
+
+    let weeklyHours = 0;
+    const daysSet = new Set<string>();
+    for (const cfg of Object.values(escalas)) {
+      const stats = computeWeeklyStats(cfg.slots);
+      weeklyHours += stats.totalHours;
+      cfg.slots.forEach((s) => daysSet.add(s.dia));
+    }
+
+    return buildPlantaoKpis({
+      calendarCount: calendars.length,
+      syncedCount,
+      brokersOnScale,
+      totalBrokers,
+      weeklyHours,
+      daysWithPlantao: daysSet.size,
+      attentionCount: attentionCalendars.length,
+      attentionHint:
+        attentionCalendars.length > 0
+          ? 'token do Google expirando'
+          : 'tudo ok',
+    });
+  }, [calendars, escalas, totalBrokers]);
+
+  const applyDefaultAll = (calendarId: string) => {
+    const current = escalas[calendarId];
+    if (!current) return;
+    const nextSlots: EscalaSlot[] = dias.map((d) => ({ dia: d, inicio: '09:00', fim: '18:00' }));
+    persistEscalas({ ...escalas, [calendarId]: { ...current, slots: nextSlots } });
+    setDirtyCalendars((prev) => ({ ...prev, [calendarId]: true }));
+  };
+
+  const disableWeekend = (calendarId: string) => {
+    const current = escalas[calendarId];
+    if (!current) return;
+    const nextSlots = current.slots.filter((s) => s.dia !== 'Sábado' && s.dia !== 'Domingo');
+    persistEscalas({ ...escalas, [calendarId]: { ...current, slots: nextSlots } });
+    setDirtyCalendars((prev) => ({ ...prev, [calendarId]: true }));
+  };
+
+  const copyEscalaFrom = (targetId: string, sourceId: string) => {
+    const source = escalas[sourceId];
+    const target = escalas[targetId];
+    if (!source || !target) return;
+    persistEscalas({
+      ...escalas,
+      [targetId]: {
+        ...target,
+        slots: source.slots.map((s) => ({ ...s })),
+      },
+    });
+    setDirtyCalendars((prev) => ({ ...prev, [targetId]: true }));
+    toast.success('Escala copiada — clique em Salvar escala para persistir');
+  };
+
+  const handleConfigureCalendar = (calendarId: string) => {
+    setConfigCalendarId(calendarId);
+    setAssignedUserLocal(escalas[calendarId]?.assignedUserId || '__remove__');
+    setIsConfigOpen(true);
+  };
+
+  const handleSaveAssignment = () => {
+    if (!configCalendarId) return;
+    const effectiveUserId = assignedUserLocal === '__remove__' ? null : assignedUserLocal;
+    const selectedUser = effectiveUserId ? companyUsers.find((u) => u.id === effectiveUserId) : null;
+    const assignedUserName = selectedUser ? (selectedUser.full_name || selectedUser.email) : undefined;
+
+    persistEscalas({
+      ...escalas,
+      [configCalendarId]: {
+        ...escalas[configCalendarId],
+        assignedUserId: effectiveUserId ?? undefined,
+        assignedUserName,
+      },
+    });
+    setDirtyCalendars((prev) => ({ ...prev, [configCalendarId]: true }));
+    salvarCalendario(configCalendarId, effectiveUserId);
+    setIsConfigOpen(false);
+    setConfigCalendarId(null);
+  };
+
+  const selectedEscalaCfg = escalas[escalaSelectedCalendarId] || {
+    calendarName: schedulesToShow.find((s) => s.id === escalaSelectedCalendarId)?.name || '',
+    slots: [] as EscalaSlot[],
+  };
+
+  const canEditSelectedEscala =
+    profile?.role === 'admin' ||
+    profile?.role === 'gestor' ||
+    (profile?.role === 'corretor' && selectedEscalaCfg.assignedUserId === profile?.id);
+
+  const handleRefresh = () => {
+    if (activeTab === 'calendarios') {
+      void puxarAgendas('manual');
+    } else {
+      void (async () => {
+        if (calendars.length === 0) await puxarAgendas('auto');
+        await loadAllSchedules();
+      })();
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Calendar className="h-6 w-6 text-blue-400" />
-        <h2 className="text-2xl font-semibold">Plantão</h2>
+    <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col min-w-0">
+      <div className="border-b border-border/70">
+        <div className="px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+          <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm px-3 py-2 space-y-2 sm:px-4 sm:py-3 sm:space-y-3 md:px-6 md:py-4 md:space-y-4">
+            <PlantaoTopBar />
+            <PlantaoToolbar
+              subtitle={buildPlantaoSubtitle(lastUpdated)}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              isManager={isManager}
+              loading={loading}
+              canAddAgenda={isManager}
+              onRefresh={handleRefresh}
+              onAddAgenda={handleAddAgenda}
+            />
+          </div>
+        </div>
       </div>
 
+      <div className="p-3 sm:p-5 space-y-4 bg-[#F7F5F0] dark:bg-background">
+        <PlantaoKpis items={kpis} />
 
-      {/* Abas Plantão */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'calendarios' | 'escala')} className="w-full">
-        <TabsList className="bg-muted/50 border border-border">
-          {isManager && (<TabsTrigger value="calendarios">Calendários</TabsTrigger>)}
-          <TabsTrigger value="escala">Escala do Plantão</TabsTrigger>
-        </TabsList>
+        {activeTab === 'calendarios' && isManager ? (
+          <CalendarsTable
+            calendars={filteredCalendars}
+            totalCount={calendars.length}
+            loading={loading}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            lastUpdated={lastUpdated}
+            escalas={escalas}
+            companyUsers={companyUsers}
+            statusMessage={status}
+            isManager={isManager}
+            onCopyId={async (id) => {
+              await navigator.clipboard.writeText(id);
+              toast.success('Calendar ID copiado');
+            }}
+            onDelete={handleDeleteCalendar}
+            onConfigure={handleConfigureCalendar}
+          />
+        ) : null}
 
-        {isManager && (
-          <TabsContent value="calendarios" className="mt-4">
-            <Card className="border-border bg-card text-card-foreground">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-card-foreground">Calendários</CardTitle>
-                    <CardDescription className="text-xs mt-1">
-                      Última atualização em: {lastUpdated ? lastUpdated.toLocaleString('pt-BR') : '—'}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
-                      onClick={() => puxarAgendas('manual')}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <span className="inline-flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                          Atualizando...
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4" /> Atualizar
-                        </span>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
-                      onClick={handleAddAgenda}
-                      disabled={loading}
-                    >
-                      <Plus className="h-4 w-4 mr-1" /> Adicionar agenda
-                    </Button>
-                  </div>
-                </div>
+        {activeTab === 'escala' ? (
+          <EscalaPanel
+            schedules={schedulesToShow}
+            selectedCalendarId={escalaSelectedCalendarId}
+            onSelectCalendar={handleSelectEscalaCalendar}
+            cfg={selectedEscalaCfg}
+            canEdit={!!canEditSelectedEscala}
+            isDirty={!!dirtyCalendars[escalaSelectedCalendarId]}
+            isSaving={!!savingCalendars[escalaSelectedCalendarId]}
+            isManager={isManager}
+            onOpenConfigure={() => handleConfigureCalendar(escalaSelectedCalendarId)}
+            onToggleDay={(dia, works) => setDayWorking(escalaSelectedCalendarId, dia, works)}
+            onSetDayTime={(dia, field, value) => setDayTime(escalaSelectedCalendarId, dia, field, value)}
+            onSave={() => salvarCalendario(escalaSelectedCalendarId)}
+            onCopyFrom={(sourceId) => copyEscalaFrom(escalaSelectedCalendarId, sourceId)}
+            onApplyDefaultAll={() => applyDefaultAll(escalaSelectedCalendarId)}
+            onDisableWeekend={() => disableWeekend(escalaSelectedCalendarId)}
+          />
+        ) : null}
+      </div>
 
-                {/* Modal Adicionar Agenda */}
-                <Dialog open={isAddAgendaOpen} onOpenChange={setIsAddAgendaOpen}>
-                  <DialogContent className="bg-background border-border text-foreground">
-                    <DialogHeader>
-                      <DialogTitle>Adicionar nova agenda</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-muted-foreground">Nome da agenda</label>
-                        <Input
-                          value={newAgendaName}
-                          onChange={(e) => setNewAgendaName(e.target.value)}
-                          placeholder="Ex.: Corretor João"
-                          className="bg-background border-border text-foreground mt-1"
-                        />
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
-                          onClick={() => setIsAddAgendaOpen(false)}
-                          disabled={addingAgenda}
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
-                          onClick={submitAddAgenda}
-                          disabled={addingAgenda}
-                        >
-                          {addingAgenda ? 'Adicionando...' : 'Adicionar'}
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+      <Dialog open={isAddAgendaOpen} onOpenChange={setIsAddAgendaOpen}>
+        <DialogContent className="rounded-2xl bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Adicionar nova agenda</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Nome da agenda</label>
+              <Input
+                value={newAgendaName}
+                onChange={(e) => setNewAgendaName(e.target.value)}
+                placeholder="Ex.: Corretor João"
+                className="mt-1 rounded-xl bg-background border-border"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setIsAddAgendaOpen(false)} disabled={addingAgenda}>
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                className="btn-on-emerald rounded-xl bg-emerald-800 text-white hover:bg-emerald-700"
+                onClick={submitAddAgenda}
+                disabled={addingAgenda}
+              >
+                {addingAgenda ? 'Adicionando...' : 'Adicionar'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-                {/* Modal Confirmar Exclusão */}
-                <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-                  <DialogContent className="bg-background border-border text-foreground">
-                    <DialogHeader>
-                      <DialogTitle>Remover agenda</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">Tem certeza que deseja remover esta agenda?</p>
-                      {deleteTargetName && (
-                        <p className="text-xs text-muted-foreground">Agenda: <span className="text-foreground">{deleteTargetName}</span></p>
-                      )}
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-foreground bg-transparent border border-border shadow-none hover:bg-muted/60"
-                          onClick={() => setIsDeleteOpen(false)}
-                          disabled={deletingAgenda}
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-300 bg-transparent border-0 shadow-none"
-                          onClick={confirmDeleteCalendar}
-                          disabled={deletingAgenda}
-                        >
-                          {deletingAgenda ? 'Removendo...' : 'Remover'}
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row gap-3 mb-6">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Buscar por nome ou ID"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="bg-background border-border text-foreground placeholder:text-muted-foreground"
-                    />
-                  </div>
-                </div>
+      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <DialogContent className="rounded-2xl bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Remover agenda</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Tem certeza que deseja remover esta agenda?</p>
+            {deleteTargetName ? (
+              <p className="text-xs text-muted-foreground">
+                Agenda: <span className="text-foreground">{deleteTargetName}</span>
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setIsDeleteOpen(false)} disabled={deletingAgenda}>
+                Cancelar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50"
+                onClick={confirmDeleteCalendar}
+                disabled={deletingAgenda}
+              >
+                {deletingAgenda ? 'Removendo...' : 'Remover'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-                {loading ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="rounded-lg border border-border bg-card p-4">
-                        <div className="flex items-center gap-3">
-                          <Skeleton className="h-3 w-3 rounded-full" />
-                          <Skeleton className="h-5 w-48" />
-                        </div>
-                        <Skeleton className="mt-3 h-4 w-full" />
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <Skeleton className="h-8 w-full" />
-                          <Skeleton className="h-8 w-full" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : filteredCalendars.length === 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">Nenhum calendário para exibir.</p>
-                    {status && (
-                      <p className="text-xs text-amber-400">{status}</p>
-                    )}
-                  </div>
-                ) : (
-                  <TooltipProvider>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                      {filteredCalendars.map((cal) => (
-                        <div
-                          key={`${cal.id}-${cal.name}`}
-                          className="rounded-md border border-border bg-card px-2 py-1.5 hover:border-primary/40 hover:shadow-md transition-all"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0 flex items-center gap-2">
-                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cal.color || '#64748b' }} />
-                              <h3 className="text-[13px] font-medium text-foreground truncate max-w-[220px]">{cal.name}</h3>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="px-2 h-7 text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                                    onClick={async () => {
-                                      await navigator.clipboard.writeText(cal.id);
-                                      toast.success('Calendar ID copiado');
-                                    }}
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <span>Copia o ID da agenda</span>
-                                </TooltipContent>
-                              </Tooltip>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="px-2 h-7 text-red-300 hover:text-red-200"
-                                onClick={() => handleDeleteCalendar(cal.id, cal.name)}
-                                aria-label="Deletar agenda"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </TooltipProvider>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-
-        <TabsContent value="escala" className="mt-4">
-          <Card className="border-border bg-card text-card-foreground">
-            <CardHeader>
-              <CardTitle className="text-card-foreground">Escala do Plantão</CardTitle>
-              <CardDescription className="text-xs mt-1">Configure horários de plantão por calendário</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Listagem de todas as agendas conhecidas + escalas do banco */}
-              <div className="space-y-6">
-                {(() => {
-                  // Combinar calendários da API + escalas do banco
-                  const allScheduleIds = new Set([
-                    ...calendars.map(c => c.id),
-                    ...Object.keys(escalas)
-                  ]);
-
-                  const schedulesToShow = Array.from(allScheduleIds)
-                    .map(calendarId => {
-                      const apiCalendar = calendars.find(c => c.id === calendarId);
-                      const dbSchedule = escalas[calendarId];
-
-                      return {
-                        id: calendarId,
-                        name: apiCalendar?.name || dbSchedule?.calendarName || 'Agenda Externa',
-                        fromAPI: !!apiCalendar,
-                        hasSchedule: !!dbSchedule
-                      };
-                    })
-                    .filter(item => {
-                      // Gestores e admins veem todas as agendas
-                      if (profile?.role === 'admin' || profile?.role === 'gestor') return true;
-
-                      // Corretores só veem agendas onde estão vinculados
-                      if (profile?.role === 'corretor') {
-                        return escalas[item.id]?.assignedUserId === profile?.id;
-                      }
-
-                      // Fallback: não mostrar nada para roles desconhecidos
-                      return false;
-                    });
-
-
-                  return schedulesToShow.length === 0 ? (
-                    <p className="text-sm text-gray-400">
-                      {profile?.role === 'corretor'
-                        ? 'Você não possui agendas vinculadas.'
-                        : 'Nenhuma agenda encontrada.'
-                      }
-                    </p>
-                  ) : (
-                    schedulesToShow.map((c) => {
-                      const cfg = escalas[c.id] || { calendarName: c.name, slots: [] };
-                      // Permissões de edição: admins/gestores podem editar tudo, corretores só suas próprias escalas
-                      const canEdit = (profile?.role === 'admin' || profile?.role === 'gestor') ||
-                        (profile?.role === 'corretor' && cfg.assignedUserId === profile?.id);
-                      const resumo = buildScheduleSummary(cfg);
-                      const dayMap = getDayMapFromSlots(cfg.slots);
-                      const ownerName = cfg.assignedUserId
-                        ? (
-                          (profile?.role === 'corretor' && cfg.assignedUserId === profile?.id)
-                            ? (profile.full_name || profile.email)
-                            : (companyUsers.find(u => u.id === cfg.assignedUserId)?.full_name || cfg.assignedUserName || 'Vinculado')
-                        )
-                        : 'Não vinculado';
-                      const isOpen = !!expandedCalendars[c.id];
-
-                      if (c.id.includes('0ae22feaa75b11bebadb9e065010b9af7737828cd27764412524369d6fa8c3d1')) {
-                        console.log('🔍 DEBUG agenda Isis:', {
-                          calendarId: c.id,
-                          cfg,
-                          assignedUserName: cfg.assignedUserName,
-                          assignedUserId: cfg.assignedUserId,
-                          ownerName
-                        });
-                      }
-
-                      return (
-                        <div key={c.id} className="rounded-xl border border-border p-4 bg-card hover:border-emerald-500/35 hover:shadow-md transition-all">
-                          <div className="flex items-start justify-between gap-3 cursor-pointer select-none" onClick={() => toggleExpanded(c.id, c.name)} role="button" aria-expanded={isOpen}>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                                <h3 className="text-foreground font-semibold truncate">{c.name}</h3>
-                              </div>
-                              {/* resumo removido por solicitação */}
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Usuário: <span className="text-foreground">{ownerName}</span>
-                                {cfg.assignedUserId === profile?.id && (profile?.role === 'corretor' || profile?.role === 'gestor') && (
-                                  <span className="ml-2 px-1.5 py-0.5 bg-blue-500/15 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200 rounded text-[10px]">
-                                    Sua agenda
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                              {/* Botão Configurar apenas para ADMIN e GESTOR */}
-                              {(profile?.role === 'admin' || profile?.role === 'gestor') && (
-                                <Dialog open={isConfigOpen && configCalendarId === c.id} onOpenChange={(v) => { setIsConfigOpen(v); if (!v) setConfigCalendarId(null); }}>
-                                  <DialogTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      className="text-blue-700 hover:text-blue-800 hover:bg-blue-500/10 dark:text-blue-300 dark:hover:text-blue-200 dark:hover:bg-blue-900/20"
-                                      onClick={() => {
-                                        setConfigCalendarId(c.id);
-                                        setIsConfigOpen(true);
-                                        // Se não há usuário vinculado, usar valor especial para remoção
-                                        setAssignedUserLocal(escalas[c.id]?.assignedUserId || "__remove__");
-                                      }}
-                                    >
-                                      Configurar
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent className="bg-background border-border text-foreground">
-                                    <DialogHeader>
-                                      <DialogTitle>Configurar agenda</DialogTitle>
-                                    </DialogHeader>
-                                    <div className="space-y-3">
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">Vincular agenda ao usuário</label>
-                                        <Select value={assignedUserLocal} onValueChange={setAssignedUserLocal}>
-                                          <SelectTrigger className="bg-background border-border text-foreground">
-                                            <SelectValue placeholder={
-                                              companyUsers.length === 0
-                                                ? "Nenhum usuário encontrado"
-                                                : "Selecione um usuário"
-                                            } />
-                                          </SelectTrigger>
-                                          <SelectContent className="bg-popover border-border">
-                                            <SelectItem value="__remove__" className="text-muted-foreground">
-                                              Remover vinculação
-                                            </SelectItem>
-                                            {companyUsers.map(u => (
-                                              <SelectItem key={u.id} value={u.id}>
-                                                {u.full_name || u.email}
-                                                <span className="text-xs text-muted-foreground ml-2">
-                                                  ({u.role === 'gestor' ? 'Gestor' : 'Corretor'})
-                                                </span>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                        {companyUsers.length === 0 && (
-                                          <p className="text-xs text-yellow-400 mt-1">
-                                            Nenhum usuário disponível na empresa
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="flex justify-end gap-2">
-                                        <Button variant="ghost" className="text-red-400 hover:text-red-300" onClick={() => { setIsConfigOpen(false); setConfigCalendarId(null); }}>Cancelar</Button>
-                                        <Button
-                                          variant="ghost"
-                                          className="text-foreground hover:bg-muted/60"
-                                          onClick={() => {
-                                            // Tratar valor especial para remoção
-                                            const effectiveUserId = assignedUserLocal === '__remove__' ? null : assignedUserLocal;
-                                            const selectedUser = effectiveUserId ? companyUsers.find(u => u.id === effectiveUserId) : null;
-                                            const assignedUserName = selectedUser ? (selectedUser.full_name || selectedUser.email) : undefined;
-
-                                            persistEscalas({
-                                              ...escalas,
-                                              [c.id]: {
-                                                ...escalas[c.id],
-                                                assignedUserId: effectiveUserId,
-                                                assignedUserName
-                                              }
-                                            });
-                                            setDirtyCalendars(prev => ({ ...prev, [c.id]: true }));
-                                            salvarCalendario(c.id, effectiveUserId);
-                                            setIsConfigOpen(false);
-                                            setConfigCalendarId(null);
-                                          }}
-                                        >
-                                          Salvar
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
-                              )}
-                              {(canEdit) && (
-                                <Button
-                                  variant="ghost"
-                                  className={`hover:bg-muted/40 ${dirtyCalendars[c.id] ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}
-                                  disabled={!!savingCalendars[c.id]}
-                                  onClick={() => salvarCalendario(c.id)}
-                                >
-                                  {savingCalendars[c.id] ? 'Salvando...' : (
-                                    dirtyCalendars[c.id]
-                                      ? (profile?.role === 'corretor' ? 'Salvar meu plantão' : 'Salvar alterações')
-                                      : (profile?.role === 'corretor' ? 'Salvar plantão' : 'Salvar')
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          {isOpen && (
-                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" onClick={(e) => e.stopPropagation()}>
-                              {dias.map((d) => {
-                                const info = dayMap[d];
-                                const active = info?.works;
-                                return (
-                                  <div
-                                    key={d}
-                                    className={`rounded-lg border p-3 ${active ? 'border-emerald-600/30 bg-emerald-500/10 dark:bg-emerald-900/10' : 'border-border bg-card'}`}
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-sm font-medium text-foreground">{d}</span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[11px] text-muted-foreground">{active ? 'Trabalha' : 'Não trabalha'}</span>
-                                        <Switch checked={!!active} disabled={!canEdit} onCheckedChange={(v) => { if (canEdit) setDayWorking(c.id, d, v); }} />
-                                      </div>
-                                    </div>
-                                    <div className="mt-3 grid grid-cols-2 gap-2">
-                                      <div>
-                                        <label className="text-[10px] text-muted-foreground">Início</label>
-                                        <TimePicker
-                                          value={(info?.start as string) || '09:00'}
-                                          disabled={!canEdit || !active}
-                                          onChange={(val) => { if (canEdit) setDayTime(c.id, d, 'inicio', val); }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-[10px] text-muted-foreground">Fim</label>
-                                        <TimePicker
-                                          value={(info?.end as string) || '18:00'}
-                                          disabled={!canEdit || !active}
-                                          onChange={(val) => { if (canEdit) setDayTime(c.id, d, 'fim', val); }}
-                                        />
-                                      </div>
-                                    </div>
-
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  );
-                })()}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Dialog
+        open={isConfigOpen && !!configCalendarId}
+        onOpenChange={(open) => {
+          setIsConfigOpen(open);
+          if (!open) setConfigCalendarId(null);
+        }}
+      >
+        <DialogContent className="rounded-2xl bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Configurar responsável</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Vincular agenda ao usuário</label>
+              <select
+                value={assignedUserLocal}
+                onChange={(e) => setAssignedUserLocal(e.target.value)}
+                className="mt-1 flex h-10 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="__remove__">Remover vinculação</option>
+                {companyUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name || u.email} ({u.role === 'gestor' ? 'Gestor' : 'Corretor'})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => {
+                  setIsConfigOpen(false);
+                  setConfigCalendarId(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                className="btn-on-emerald rounded-xl bg-emerald-800 text-white hover:bg-emerald-700"
+                onClick={handleSaveAssignment}
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

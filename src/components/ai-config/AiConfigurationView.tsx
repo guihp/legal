@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, Loader2, Save, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
 import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
 import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
+import { useCompanyUsers } from '@/hooks/useCompanyUsers';
 import {
   clearLegacyLocalVisitSchedulingConfig,
   companyRowToVisitSchedulingConfig,
@@ -23,19 +23,31 @@ import {
   formatActivationBlockersMessage,
   getAiActivationBlockers,
 } from '@/lib/aiAssistantActivation';
+import { AiConfigTopBar } from './AiConfigTopBar';
+import { AiConfigToolbar } from './AiConfigToolbar';
+import { AiConfigStatusBar } from './AiConfigStatusBar';
 import { AiConfigSectionNav } from './AiConfigSectionNav';
-import { AiConfigGeralSection } from './sections/AiConfigGeralSection';
+import { AiConfigPreview } from './AiConfigPreview';
+import { AiConfigChecklist } from './AiConfigChecklist';
+import { AiConfigImpactCard } from './AiConfigImpactCard';
 import { AiConfigIdentidadeSection } from './sections/AiConfigIdentidadeSection';
 import { AiConfigContextoSection } from './sections/AiConfigContextoSection';
+import { AiConfigHorarioSection } from './sections/AiConfigHorarioSection';
 import { AiConfigEtiquetasSection } from './sections/AiConfigEtiquetasSection';
 import { AiConfigVisitasSection } from './sections/AiConfigVisitasSection';
 import {
-  AI_CONFIG_SECTION_META,
   EMPTY_AI_CONFIG_FORM,
   parseAiConfigSection,
   type AiConfigFormState,
   type AiConfigSectionId,
 } from './constants';
+import {
+  asText,
+  buildChecklist,
+  fillPercent,
+  formatSavedAt,
+  softImpactMetrics,
+} from './helpers';
 
 function formFromCompany(company: {
   ai_initial_message?: string | null;
@@ -51,16 +63,16 @@ function formFromCompany(company: {
   business_hours?: string | null;
 }): AiConfigFormState {
   return {
-    aiInitialMessage: company.ai_initial_message || '',
-    aiAssistantName: company.ai_assistant_name || '',
-    aiUnknownInfoMessage: company.ai_unknown_info_message || '',
-    aiCompanyMission: company.ai_company_mission || '',
-    aiTone: company.ai_tone || '',
-    aiPaymentMethods: company.ai_payment_methods || '',
-    aiVisitPolicy: company.ai_visit_policy || '',
-    aiTargetAudience: company.ai_target_audience || '',
-    aiRules: company.ai_rules || '',
-    aiAdditionalInfo: company.ai_additional_info || '',
+    aiInitialMessage: asText(company.ai_initial_message),
+    aiAssistantName: asText(company.ai_assistant_name),
+    aiUnknownInfoMessage: asText(company.ai_unknown_info_message),
+    aiCompanyMission: asText(company.ai_company_mission),
+    aiTone: asText(company.ai_tone),
+    aiPaymentMethods: asText(company.ai_payment_methods),
+    aiVisitPolicy: asText(company.ai_visit_policy),
+    aiTargetAudience: asText(company.ai_target_audience),
+    aiRules: asText(company.ai_rules),
+    aiAdditionalInfo: asText(company.ai_additional_info),
     businessHoursSchedule: parseBusinessHours(company.business_hours),
   };
 }
@@ -81,18 +93,20 @@ function isFormDirty(
     business_hours?: string | null;
   },
 ): boolean {
+  const baseline = formFromCompany(company);
   return !(
-    form.aiInitialMessage === (company.ai_initial_message || '') &&
-    form.aiAssistantName === (company.ai_assistant_name || '') &&
-    form.aiUnknownInfoMessage === (company.ai_unknown_info_message || '') &&
-    form.aiCompanyMission === (company.ai_company_mission || '') &&
-    form.aiTone === (company.ai_tone || '') &&
-    form.aiPaymentMethods === (company.ai_payment_methods || '') &&
-    form.aiVisitPolicy === (company.ai_visit_policy || '') &&
-    form.aiTargetAudience === (company.ai_target_audience || '') &&
-    form.aiRules === (company.ai_rules || '') &&
-    form.aiAdditionalInfo === (company.ai_additional_info || '') &&
-    serializeBusinessHours(form.businessHoursSchedule) === (company.business_hours || '')
+    form.aiInitialMessage === baseline.aiInitialMessage &&
+    form.aiAssistantName === baseline.aiAssistantName &&
+    form.aiUnknownInfoMessage === baseline.aiUnknownInfoMessage &&
+    form.aiCompanyMission === baseline.aiCompanyMission &&
+    form.aiTone === baseline.aiTone &&
+    form.aiPaymentMethods === baseline.aiPaymentMethods &&
+    form.aiVisitPolicy === baseline.aiVisitPolicy &&
+    form.aiTargetAudience === baseline.aiTargetAudience &&
+    form.aiRules === baseline.aiRules &&
+    form.aiAdditionalInfo === baseline.aiAdditionalInfo &&
+    serializeBusinessHours(form.businessHoursSchedule) ===
+      serializeBusinessHours(baseline.businessHoursSchedule)
   );
 }
 
@@ -100,14 +114,19 @@ export function AiConfigurationView() {
   const { company, loading, updating, isManager, updateCompany } = useOwnCompany();
   const { isOfficialApi, loadingApiMode } = useCompanyApiMode();
   const { labels } = useCompanyAiLabels();
+  const { users, loadUsers } = useCompanyUsers();
   const [searchParams, setSearchParams] = useSearchParams();
   const section = parseAiConfigSection(searchParams.get('section'));
 
   const [togglingAi, setTogglingAi] = useState(false);
   const [activationBlockers, setActivationBlockers] = useState<string[]>([]);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const aiEnabled = company?.ai_assistant_enabled ?? false;
   const [form, setForm] = useState<AiConfigFormState>(EMPTY_AI_CONFIG_FORM);
   const [visitSchedulingConfig, setVisitSchedulingConfig] = useState<AiVisitSchedulingConfig>(
+    () => companyRowToVisitSchedulingConfig(null),
+  );
+  const [visitDraft, setVisitDraft] = useState<AiVisitSchedulingConfig>(
     () => companyRowToVisitSchedulingConfig(null),
   );
 
@@ -116,11 +135,28 @@ export function AiConfigurationView() {
     [form, company],
   );
 
+  const brokerCount = useMemo(
+    () => users.filter((u) => u.isActive && (u.role === 'corretor' || u.role === 'gestor')).length,
+    [users],
+  );
+
+  const percent = useMemo(
+    () => fillPercent(form, visitDraft, brokerCount),
+    [form, visitDraft, brokerCount],
+  );
+
+  const checklist = useMemo(
+    () => buildChecklist(form, visitDraft, brokerCount),
+    [form, visitDraft, brokerCount],
+  );
+
+  const impactMetrics = useMemo(() => softImpactMetrics(), []);
+
   const setSection = (next: AiConfigSectionId) => {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
-        if (next === 'geral') {
+        if (next === 'identidade') {
           params.delete('section');
         } else {
           params.set('section', next);
@@ -130,6 +166,11 @@ export function AiConfigurationView() {
       { replace: true },
     );
   };
+
+  useEffect(() => {
+    if (!company?.id) return;
+    loadUsers(undefined, ['corretor', 'gestor'], false);
+  }, [company?.id, loadUsers]);
 
   useEffect(() => {
     if (!company?.id) {
@@ -147,11 +188,11 @@ export function AiConfigurationView() {
     };
   }, [company, isOfficialApi, loadingApiMode]);
 
-  const canEnableAi = useMemo(() => activationBlockers.length === 0, [activationBlockers]);
-
   useEffect(() => {
     if (!company) return;
-    setVisitSchedulingConfig(companyRowToVisitSchedulingConfig(company));
+    const next = companyRowToVisitSchedulingConfig(company);
+    setVisitSchedulingConfig(next);
+    setVisitDraft(next);
   }, [company]);
 
   useEffect(() => {
@@ -231,149 +272,131 @@ export function AiConfigurationView() {
       ai_rules: form.aiRules,
       ai_additional_info: form.aiAdditionalInfo,
     });
-    if (ok) toast.success('Configurações salvas');
+    if (ok) {
+      setLastSavedAt(new Date().toISOString());
+      toast.success('Configurações salvas');
+    }
   };
 
-  const handleDiscard = () => {
-    if (!company) return;
-    setForm(formFromCompany(company));
+  const goTest = () => {
+    window.location.assign('/ai-test');
+  };
+
+  const goHistory = () => {
+    toast.message('Histórico de alterações da IA ainda não está disponível nesta versão.');
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex min-h-[50dvh] items-center justify-center bg-[#F7F5F0] dark:bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-700" />
       </div>
     );
   }
 
-  const sectionMeta = AI_CONFIG_SECTION_META[section];
+  const showSidebar = section !== 'etiquetas';
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div
-        className={`mx-auto max-w-5xl space-y-4 px-1 sm:px-0 ${hasChanges ? 'pb-24' : 'pb-6'}`}
-      >
-        <header className="flex items-start gap-3">
-          <Bot className="mt-0.5 h-7 w-7 shrink-0 text-blue-600 dark:text-blue-400" />
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
-              Configuração para IA
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Textos e contexto usados pela assistente no atendimento.
-            </p>
-          </div>
-        </header>
-
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
-          <AiConfigSectionNav
-            section={section}
-            onSectionChange={setSection}
-            aiEnabled={aiEnabled}
-            hasChanges={hasChanges}
-            labelsCount={labels.length}
-          />
-
-          <div className="min-w-0 flex-1 space-y-3">
-            <div className="md:hidden">
-              <h2 className="text-sm font-medium text-foreground">{sectionMeta.label}</h2>
-              <p className="text-xs text-muted-foreground">{sectionMeta.description}</p>
+      <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col min-w-0">
+        <div className="border-b border-border/70">
+          <div className="px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+            <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm px-3 py-2 space-y-2 sm:px-4 sm:py-3 sm:space-y-3 md:px-6 md:py-4 md:space-y-4">
+              <AiConfigTopBar />
+              <AiConfigToolbar
+                saving={updating}
+                canSave={isManager && hasChanges}
+                onHistory={goHistory}
+                onTest={goTest}
+                onSave={() => void handleSave()}
+              />
             </div>
-
-            {section === 'geral' && (
-              <AiConfigGeralSection
-                aiEnabled={aiEnabled}
-                isManager={isManager}
-                isOfficialApi={isOfficialApi}
-                togglingAi={togglingAi}
-                updating={updating}
-                activationBlockers={activationBlockers}
-                canEnableAi={canEnableAi}
-                onToggleAi={handleToggleAi}
-              />
-            )}
-
-            {section === 'identidade' && (
-              <AiConfigIdentidadeSection
-                form={form}
-                isManager={isManager}
-                onChange={patchForm}
-              />
-            )}
-
-            {section === 'contexto' && (
-              <AiConfigContextoSection
-                form={form}
-                isManager={isManager}
-                onChange={patchForm}
-                onChangeDay={updateSchedule}
-              />
-            )}
-
-            {section === 'etiquetas' && <AiConfigEtiquetasSection />}
-
-            {section === 'visitas' && (
-              <AiConfigVisitasSection
-                companyId={company?.id}
-                isManager={isManager}
-                initialConfig={visitSchedulingConfig}
-                externalSaving={updating}
-                onSave={async (config) =>
-                  updateCompany({
-                    ai_visit_broker_mode: config.mode,
-                    ai_visit_priority_criterion: config.priorityCriterion,
-                    ai_visit_broker_priorities: config.brokerPriorities,
-                  })
-                }
-              />
-            )}
           </div>
         </div>
 
-        {hasChanges && (
-          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="mx-auto flex max-w-5xl flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-              <p className="text-sm text-muted-foreground">
-                Você tem alterações não salvas
-                {section !== 'identidade' && section !== 'contexto'
-                  ? ' em Identidade/Contexto'
-                  : ''}
-                .
+        <div className="p-3 sm:p-5 space-y-4 bg-[#F7F5F0] dark:bg-background">
+          <AiConfigStatusBar
+            aiEnabled={aiEnabled}
+            isManager={isManager}
+            toggling={togglingAi}
+            updating={updating}
+            savedAtLabel={lastSavedAt ? formatSavedAt(lastSavedAt) : undefined}
+            hasChanges={hasChanges}
+            activationBlockers={activationBlockers}
+            onToggleAi={(checked) => void handleToggleAi(checked)}
+          />
+
+          <AiConfigSectionNav
+            section={section === 'etiquetas' ? 'identidade' : section}
+            fillPercent={percent}
+            onSectionChange={setSection}
+          />
+
+          {section === 'etiquetas' ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Etiquetas da IA ({labels.length}) — acessível via{' '}
+                <code className="rounded bg-muted px-1">?section=etiquetas</code>.
               </p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleDiscard}
-                  disabled={updating}
-                  className="flex-1 sm:flex-none"
-                >
-                  <X className="mr-2 h-4 w-4" />
-                  Descartar
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={!isManager || updating}
-                  className="flex-1 bg-blue-600 text-white hover:bg-blue-700 sm:flex-none"
-                >
-                  {updating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Salvar
-                    </>
-                  )}
-                </Button>
-              </div>
+              <AiConfigEtiquetasSection />
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.85fr)] gap-4 items-start">
+              <div className="min-w-0 space-y-4">
+                {section === 'identidade' && (
+                  <AiConfigIdentidadeSection
+                    form={form}
+                    isManager={isManager}
+                    onChange={patchForm}
+                  />
+                )}
+                {section === 'contexto' && (
+                  <AiConfigContextoSection
+                    form={form}
+                    isManager={isManager}
+                    onChange={patchForm}
+                  />
+                )}
+                {section === 'horario' && (
+                  <AiConfigHorarioSection
+                    form={form}
+                    isManager={isManager}
+                    onChange={patchForm}
+                    onChangeDay={updateSchedule}
+                  />
+                )}
+                {section === 'visitas' && (
+                  <AiConfigVisitasSection
+                    companyId={company?.id}
+                    isManager={isManager}
+                    initialConfig={visitSchedulingConfig}
+                    externalSaving={updating}
+                    onDraftChange={setVisitDraft}
+                    onSave={async (config) =>
+                      updateCompany({
+                        ai_visit_broker_mode: config.mode,
+                        ai_visit_priority_criterion: config.priorityCriterion,
+                        ai_visit_broker_priorities: config.brokerPriorities,
+                      })
+                    }
+                  />
+                )}
+              </div>
+
+              {showSidebar && (
+                <aside className="space-y-4 min-w-0 xl:sticky xl:top-4">
+                  <AiConfigPreview
+                    assistantName={form.aiAssistantName}
+                    companyName={company?.name || ''}
+                    initialMessage={form.aiInitialMessage}
+                  />
+                  <AiConfigChecklist items={checklist} />
+                  <AiConfigImpactCard metrics={impactMetrics} />
+                </aside>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </TooltipProvider>
   );

@@ -1,9 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { AppointmentCalendar } from "@/components/AppointmentCalendar";
 import { AddEventModal } from "@/components/AddEventModal";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Calendar, Link2Off } from "lucide-react";
 import { useProperties } from "@/hooks/useProperties";
 import { logAudit } from "@/lib/audit/logger";
 import { useClients } from "@/hooks/useClients";
@@ -12,6 +9,18 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { invokeEdge } from "@/integrations/supabase/invoke";
 import { toast } from "sonner";
 import { resolveAgendaEventCorretor } from "@/lib/agendaCorretor";
+import { AgendaTopBar } from "@/components/agenda/AgendaTopBar";
+import { AgendaToolbar } from "@/components/agenda/AgendaToolbar";
+import { AgendaKpis } from "@/components/agenda/AgendaKpis";
+import { AgendaFilters } from "@/components/agenda/AgendaFilters";
+import {
+  buildAgendaKpis,
+  filterEventsByStatus,
+  getAgentDotClass,
+  resolveAgendaEventStatus,
+  type AgendaStatusFilter,
+  type AgendaViewMode,
+} from "@/components/agenda/helpers";
 
 interface AgendaEvent {
   id: number | string;
@@ -24,6 +33,8 @@ interface AgendaEvent {
   corretor?: string; // Campo opcional para identificar o corretor
   calendarId?: string; // ID do Google Calendar associado ao evento
   channel?: string; // Canal de origem do agendamento (WhatsApp, Instagram, Facebook, etc)
+  phone?: string;
+  leadId?: string;
 }
 
 type AgendaCalendarOption = {
@@ -80,6 +91,9 @@ export function AgendaView() {
   const [selectedAgendaName, setSelectedAgendaName] = useState<string>("Todos os calendários");
   const [corretores, setCorretores] = useState<AgendaCalendarOption[]>([]);
   const [loadingCorretores, setLoadingCorretores] = useState(false);
+  const [viewMode, setViewMode] = useState<AgendaViewMode>("month");
+  const [statusFilter, setStatusFilter] = useState<AgendaStatusFilter>("all");
+  const [syncing, setSyncing] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const fetchInFlightRef = useRef(false);
 
@@ -537,6 +551,7 @@ export function AgendaView() {
           // 3. Extrair cliente da description com múltiplas estratégias
           let clientName = UNKNOWN_CLIENT;
           let eventChannel = '';
+          let clientPhone = '';
 
           // Estratégia 0 (PRIORIDADE): extendedProperties.private.client_name (fonte canônica da API)
           if (event.extendedProperties?.private?.client_name) {
@@ -589,6 +604,9 @@ export function AgendaView() {
 
           // 3.5. Se ainda não encontrou o cliente, buscar na tabela leads pelo email do evento
           // Também buscar nome_instagram_cliente como fallback e source para o canal
+          let resolvedLeadId = event.extendedProperties?.private?.lead_id
+            ? String(event.extendedProperties.private.lead_id)
+            : '';
           if (profile?.company_id) {
             try {
               let eventEmail: string | null = null;
@@ -608,7 +626,7 @@ export function AgendaView() {
               if (leadId) {
                 const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
+                  .select('id, name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('id', leadId)
                   .eq('company_id', profile.company_id)
                   .maybeSingle();
@@ -618,7 +636,7 @@ export function AgendaView() {
               if (!lead && eventEmail) {
                 const { data: leadByEmail } = await supabase
                   .from('leads')
-                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
+                  .select('id, name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
@@ -627,6 +645,7 @@ export function AgendaView() {
               }
 
               if (lead) {
+                if (lead.id) resolvedLeadId = String(lead.id);
                 // Preencher nome se ainda não encontrado
                 if (isUnknownClientName(clientName)) {
                   clientName = pickLeadDisplayName(lead) || UNKNOWN_CLIENT;
@@ -634,6 +653,9 @@ export function AgendaView() {
                 // Preencher canal de origem
                 if (lead.source) {
                   eventChannel = lead.source;
+                }
+                if (lead.phone) {
+                  clientPhone = String(lead.phone).trim();
                 }
               }
             } catch (error) {
@@ -696,10 +718,12 @@ export function AgendaView() {
             property: summary,
             address: location,
             type: eventType,
-            status: attendeeStatus,
+            status: resolveAgendaEventStatus(attendeeStatus, event.extendedProperties?.private),
             corretor: corretor,
             calendarId: calendarId || (selectedAgenda !== 'Todos' ? selectedAgenda : undefined),
-            channel: eventChannel || undefined
+            channel: eventChannel || undefined,
+            phone: clientPhone || undefined,
+            leadId: resolvedLeadId || undefined,
           };
 
           // Evento processado com sucesso
@@ -716,7 +740,10 @@ export function AgendaView() {
           // Extrair cliente: prioridade extendedProperties > leads.name > leads.nome_instagram_cliente
           let clientName = event.extendedProperties?.private?.client_name || UNKNOWN_CLIENT;
           let eventChannel = '';
-          
+          let clientPhone = '';
+          let resolvedLeadId = event.extendedProperties?.private?.lead_id
+            ? String(event.extendedProperties.private.lead_id)
+            : '';
           if (profile?.company_id) {
             try {
               let eventEmail: string | null = null;
@@ -733,7 +760,7 @@ export function AgendaView() {
               if (leadId) {
                 const { data: leadById } = await supabase
                   .from('leads')
-                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
+                  .select('id, name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('id', leadId)
                   .eq('company_id', profile.company_id)
                   .maybeSingle();
@@ -742,7 +769,7 @@ export function AgendaView() {
               if (!lead && eventEmail) {
                 const { data: leadByEmail } = await supabase
                   .from('leads')
-                  .select('name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
+                  .select('id, name, email, phone, nome_instagram_cliente, arroba_instagram_cliente, source')
                   .eq('company_id', profile.company_id)
                   .ilike('email', eventEmail)
                   .limit(1)
@@ -750,10 +777,12 @@ export function AgendaView() {
                 lead = leadByEmail;
               }
               if (lead) {
+                if (lead.id) resolvedLeadId = String(lead.id);
                 if (isUnknownClientName(clientName)) {
                   clientName = pickLeadDisplayName(lead) || UNKNOWN_CLIENT;
                 }
                 if (lead.source) eventChannel = lead.source;
+                if (lead.phone) clientPhone = String(lead.phone).trim();
               }
             } catch (error) {
               console.debug('Erro ao buscar cliente na tabela leads:', error);
@@ -787,10 +816,15 @@ export function AgendaView() {
             property: summary,
             address: 'Endereço será confirmado',
             type: 'Visita',
-            status: event.status === 'confirmed' ? 'confirmada' : 'agendada',
+            status: resolveAgendaEventStatus(
+              event.status === 'confirmed' ? 'confirmada' : 'agendada',
+              event.extendedProperties?.private,
+            ),
             corretor: corretor,
             calendarId,
-            channel: eventChannel || undefined
+            channel: eventChannel || undefined,
+            phone: clientPhone || undefined,
+            leadId: resolvedLeadId || undefined,
           };
         }));
       } else {
@@ -935,6 +969,7 @@ export function AgendaView() {
 
   const handleRefreshAgenda = async () => {
     try {
+      setSyncing(true);
       const loadedCorretores = await loadCorretores();
       const calendarIds =
         selectedAgenda === 'Todos'
@@ -944,6 +979,8 @@ export function AgendaView() {
     } catch (e) {
       console.warn('⚠️ Falha ao atualizar agenda:', e);
       toast.error('Não foi possível atualizar a agenda');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -954,6 +991,12 @@ export function AgendaView() {
         ? corretores.map((c) => c.id).filter(Boolean)
         : [selectedAgenda];
     fetchAgendaEvents(currentMonth, true, calendarIds);
+  };
+
+  const handleEventStatusChange = (eventId: number | string, status: string) => {
+    setEvents((prev) =>
+      prev.map((event) => (event.id === eventId ? { ...event, status } : event)),
+    );
   };
 
   const handleAddEvent = async (eventData: {
@@ -1281,304 +1324,155 @@ export function AgendaView() {
     }
   };
 
-  // Sempre mostrar a agenda, mesmo com erro ou carregando
+  const filteredEvents = useMemo(
+    () => filterEventsByStatus(events, statusFilter),
+    [events, statusFilter],
+  );
 
-  // Função para calcular estatísticas
-  const getEventStats = () => {
+  const sortedAgentNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of events) {
+      if (e.corretor?.trim()) names.add(e.corretor.trim());
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  }, [events]);
+
+  const agentChips = useMemo(() => {
+    const chips = [
+      {
+        id: 'Todos',
+        label: 'Todos',
+        count: events.length,
+        dotClass: 'bg-muted-foreground/50',
+      },
+    ];
+    for (const cal of corretores) {
+      const name = cal.full_name;
+      const count = events.filter(
+        (e) => e.calendarId === cal.id || e.corretor === name,
+      ).length;
+      chips.push({
+        id: cal.id,
+        label: name,
+        count,
+        dotClass: getAgentDotClass(name, sortedAgentNames),
+      });
+    }
+    return chips;
+  }, [events, corretores, sortedAgentNames]);
+
+  const kpis = useMemo(() => buildAgendaKpis(events), [events]);
+
+  const handleGoToday = () => {
     const today = new Date();
-    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    const todayEvents = events.filter(e => e.date.toDateString() === today.toDateString());
-    const weekEvents = events.filter(e => e.date >= thisWeek);
-    const monthEvents = events.filter(e => e.date >= thisMonth);
-    const confirmedEvents = events.filter(e => e.status === 'confirmada' || e.status === 'Confirmado');
-
-    return {
-      today: todayEvents.length,
-      thisWeek: weekEvents.length,
-      thisMonth: monthEvents.length,
-      confirmed: confirmedEvents.length,
-      total: events.length
-    };
+    setSelectedDate(today);
+    handleDateChange(today);
   };
 
-  const stats = getEventStats();
+  const handleGoTomorrow = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setSelectedDate(tomorrow);
+    handleDateChange(tomorrow);
+  };
+
+  const handleGoNextWeek = () => {
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    setSelectedDate(nextWeek);
+    handleDateChange(nextWeek);
+  };
+
+  const handleAgentChange = (id: string) => {
+    setSelectedAgenda(id);
+    if (id === 'Todos') {
+      setSelectedAgendaName('Todos os calendários');
+    } else {
+      const found = corretores.find((c) => c.id === id);
+      setSelectedAgendaName(found?.full_name || 'Calendário');
+    }
+  };
 
   return (
-    <div className="space-y-4 sm:space-y-6 md:space-y-8 min-w-0">
-      {/* Header Modernizado */}
-      <div className="bg-gradient-to-r from-blue-600/15 to-emerald-600/25 rounded-xl p-4 sm:p-6 border border-emerald-500/25">
-        <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-start">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
-              <div className="bg-emerald-500/15 p-2 rounded-lg shrink-0">
-                <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600 dark:text-emerald-400" />
+    <div className="w-full bg-[#F7F5F0] dark:bg-background text-foreground relative flex flex-col min-w-0">
+      <div className="border-b border-border/70">
+        <div className="px-3 py-2 sm:px-5 sm:py-3 md:py-4">
+          <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm px-3 py-2 space-y-2 sm:px-4 sm:py-3 sm:space-y-3 md:px-6 md:py-4 md:space-y-4">
+            <AgendaTopBar />
+            <AgendaToolbar
+              isConnected={isConnected}
+              connectedEmail={connectedGoogleEmail}
+              lastSync={lastUpdate}
+              loading={loading}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onSync={() => void handleRefreshAgenda()}
+              onNewEvent={() => setIsAddEventModalOpen(true)}
+              syncing={syncing || loadingCorretores}
+            />
+            {!isConnected ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleConnectGoogle()}
+                  disabled={connectingGoogle}
+                  className="text-sm font-medium text-emerald-800 hover:underline dark:text-emerald-400 disabled:opacity-50"
+                >
+                  {connectingGoogle ? 'Conectando…' : 'Conectar Google Calendar'}
+                </button>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-                Agenda Inteligente
-              </h1>
-              {loading && (
-                <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-blue-500"></div>
-              )}
-            </div>
-
-            <p className="text-muted-foreground mb-3 sm:mb-4 text-sm sm:text-base">
-              Gerencie seus agendamentos e compromissos de forma inteligente
-            </p>
-
-            {/* Status da conexão */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
-              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${isConnected ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'
-                }`}>
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-orange-400'
-                  } animate-pulse`}></div>
-                {isConnected ? 'Online' : 'Offline'}
-              </div>
-
-              {lastUpdate && (
-                <span className="text-muted-foreground">
-                  Última atualização: {lastUpdate.toLocaleTimeString('pt-BR')}
-                </span>
-              )}
-              {isConnected && connectedGoogleEmail && (
-                <span className="text-emerald-400 break-all sm:break-normal">
-                  Google: {connectedGoogleEmail}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-col xs:flex-row sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
-            <Button
-              onClick={() => setIsAddEventModalOpen(true)}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto"
-            >
-              <Plus className="h-5 w-5" />
-              Novo Evento
-            </Button>
-            {isConnected ? (
-              <Button
-                onClick={handleDisconnectGoogle}
-                variant="outline"
-                className="border-red-500/30 text-red-300 hover:bg-red-500/10 w-full sm:w-auto"
-                disabled={connectingGoogle}
-              >
-                <Link2Off className="h-4 w-4 mr-2" />
-                {connectingGoogle ? "Desconectando..." : "Desconectar Google"}
-              </Button>
             ) : (
-              <Button
-                onClick={handleConnectGoogle}
-                variant="outline"
-                className="border-blue-500/30 text-blue-300 hover:bg-blue-500/10 w-full sm:w-auto"
-                disabled={connectingGoogle}
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4 mr-2" aria-hidden="true">
-                  <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 6.9 2.4 2.7 6.6 2.7 11.7S6.9 21 12 21c6.9 0 8.6-4.8 8.6-7.3 0-.5-.1-.9-.1-1.2H12z" />
-                  <path fill="#34A853" d="M3.7 7.8l3.2 2.3c.9-1.8 2.8-3 5.1-3 1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4c-3.9 0-7.2 2.2-8.9 5.4z" />
-                  <path fill="#4A90E2" d="M12 21c2.6 0 4.8-.9 6.4-2.4l-3-2.5c-.8.6-1.9 1.1-3.4 1.1-3.8 0-5.2-2.6-5.5-3.8l-3.2 2.5C5 18.9 8.2 21 12 21z" />
-                  <path fill="#FBBC05" d="M3.5 13.4c-.2-.6-.3-1.1-.3-1.7s.1-1.2.3-1.7L.3 7.8C-.4 9.1-.8 10.4-.8 11.7c0 1.3.3 2.6 1.1 3.9l3.2-2.2z" />
-                </svg>
-                {connectingGoogle ? "Conectando..." : "Conectar Google"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleDisconnectGoogle()}
+                  disabled={connectingGoogle}
+                  className="text-xs text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-50"
+                >
+                  {connectingGoogle ? 'Desconectando…' : 'Desconectar Google'}
+                </button>
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Dashboard de Estatísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
-        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 rounded-xl p-3 sm:p-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="bg-blue-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
-              <span className="text-xl sm:text-2xl">📅</span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-medium truncate">Hoje</p>
-              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.today}</p>
-            </div>
-          </div>
-        </div>
+      <div className="p-3 sm:p-5 space-y-4 bg-[#F7F5F0] dark:bg-background">
+        <AgendaKpis items={kpis} />
 
-        <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/20 rounded-xl p-3 sm:p-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="bg-green-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
-              <span className="text-xl sm:text-2xl">📊</span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-green-700 dark:text-green-400 text-xs sm:text-sm font-medium truncate">Esta Semana</p>
-              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.thisWeek}</p>
-            </div>
-          </div>
-        </div>
+        <AgendaFilters
+          agents={agentChips}
+          selectedAgentId={selectedAgenda}
+          onAgentChange={handleAgentChange}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          onGoToday={handleGoToday}
+          onGoTomorrow={handleGoTomorrow}
+          onGoNextWeek={handleGoNextWeek}
+          disableAgentFilter={profile?.role === 'corretor'}
+        />
 
-        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-xl p-3 sm:p-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="bg-purple-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
-              <span className="text-xl sm:text-2xl">🗓️</span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-purple-700 dark:text-purple-400 text-xs sm:text-sm font-medium truncate">Este Mês</p>
-              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.thisMonth}</p>
-            </div>
+        {error ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            {error}
           </div>
-        </div>
+        ) : null}
 
-        <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-3 sm:p-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="bg-emerald-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
-              <span className="text-xl sm:text-2xl">✅</span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm font-medium truncate">Confirmados</p>
-              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.confirmed}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border border-orange-500/20 rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="bg-orange-500/20 p-1.5 sm:p-2 rounded-lg shrink-0">
-              <span className="text-xl sm:text-2xl">🎯</span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-orange-700 dark:text-orange-400 text-xs sm:text-sm font-medium truncate">Total</p>
-              <p className="text-xl sm:text-2xl font-bold text-foreground">{stats.total}</p>
-            </div>
-          </div>
-        </div>
+        <AppointmentCalendar
+          appointments={filteredEvents}
+          onDateChange={handleDateChange}
+          onMonthChange={handleMonthChange}
+          onRefreshRequested={refreshEvents}
+          onEventStatusChange={handleEventStatusChange}
+          selectedDate={selectedDate}
+          currentMonth={currentMonth}
+          selectedAgenda={selectedAgenda}
+          selectedAgendaName={selectedAgendaName}
+          viewMode={viewMode}
+          sortedAgentNames={sortedAgentNames}
+        />
       </div>
 
-      {/* Filtros Modernizados */}
-      <div className="bg-card rounded-xl p-4 sm:p-6 border border-border min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <h3 className="text-base sm:text-xl font-semibold text-foreground flex items-center gap-2 min-w-0">
-            <span className="text-xl sm:text-2xl shrink-0">🎛️</span>
-            <span className="truncate">Filtros da Agenda</span>
-          </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleRefreshAgenda()}
-            disabled={loading || loadingCorretores}
-            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 shrink-0"
-          >
-            🔄 Atualizar
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-          {/* Seletor de Calendário (desabilitado para corretor) */}
-          <div className="space-y-2 min-w-0">
-            <label className="text-sm font-medium text-muted-foreground">Corretor</label>
-            <Select value={selectedAgenda} disabled={profile?.role === 'corretor'} onValueChange={(val) => {
-              setSelectedAgenda(val);
-              if (val === 'Todos') {
-                setSelectedAgendaName('Todos os calendários');
-              } else {
-                const found = corretores.find(c => c.id === val);
-                setSelectedAgendaName(found?.full_name || 'Calendário');
-              }
-            }}>
-              <SelectTrigger className="bg-background border-border text-foreground hover:bg-muted/80 transition-colors">
-                <SelectValue placeholder={loadingCorretores ? "Carregando calendários..." : "Selecione o calendário"} />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                <SelectItem value="Todos" className="focus:bg-muted">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📋</span>
-                    <span>Todos os calendários</span>
-                  </div>
-                </SelectItem>
-                {loadingCorretores ? (
-                  <SelectItem value="loading" disabled className="text-gray-400">
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                      <span>Carregando calendários...</span>
-                    </div>
-                  </SelectItem>
-                ) : corretores.length === 0 ? (
-                  <SelectItem value="no-corretores" disabled className="text-gray-400">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">⚠️</span>
-                      <span>Nenhum calendário encontrado</span>
-                    </div>
-                  </SelectItem>
-                ) : (
-                  corretores.map((corretor) => (
-                    <SelectItem
-                      key={corretor.id}
-                      value={corretor.id}
-                      className="focus:bg-muted"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">👤</span>
-                        <span>{corretor.full_name}</span>
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Indicador visual */}
-          <div className="space-y-2 min-w-0">
-            <label className="text-sm font-medium text-muted-foreground">Status</label>
-            <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border min-w-0">
-              <div className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${selectedAgenda === 'Todos' ? 'bg-blue-500' : 'bg-green-500'
-                }`}></div>
-              <span className="text-sm text-muted-foreground truncate">
-                {selectedAgenda === 'Todos'
-                  ? `Todos os calendários (${events.length} eventos)`
-                  : `${selectedAgendaName} (${events.length} eventos)`
-                }
-              </span>
-            </div>
-          </div>
-
-          {/* Ações rápidas */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-muted-foreground">Ações Rápidas</label>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedDate(new Date())}
-                className="bg-background border-border text-foreground hover:bg-muted flex-1"
-              >
-                🌅 Hoje
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const tomorrow = new Date();
-                  tomorrow.setDate(tomorrow.getDate() + 1);
-                  setSelectedDate(tomorrow);
-                }}
-                className="bg-background border-border text-foreground hover:bg-muted flex-1"
-              >
-                🌄 Amanhã
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Calendário Principal */}
-      <AppointmentCalendar
-        appointments={events}
-        onDateChange={handleDateChange}
-        onMonthChange={handleMonthChange}
-        onRefreshRequested={refreshEvents}
-        selectedDate={selectedDate}
-        currentMonth={currentMonth}
-        selectedAgenda={selectedAgenda}
-        selectedAgendaName={selectedAgendaName}
-      />
-
-      {/* Modal de Adicionar Evento */}
       <AddEventModal
         isOpen={isAddEventModalOpen}
         onClose={() => setIsAddEventModalOpen(false)}

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Instagram, Shield } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Instagram, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +11,7 @@ function maskToken(token: string): string {
   const s = token.trim();
   if (!s) return '—';
   if (s.length <= 6) return '••••••';
-  return `${'•'.repeat(8)}${s.slice(-4)}`;
+  return `${'•'.repeat(12)}${s.slice(-4)}`;
 }
 
 /**
@@ -81,74 +80,129 @@ export function CompanyInstagramConnectionsSection() {
     }
   };
 
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(idInstagram);
+      toast.success('ID copiado.');
+    } catch {
+      toast.error('Não foi possível copiar.');
+    }
+  };
+
+  const handleRenewTokenInfo = () => {
+    toast.info(
+      'A renovação do token Instagram é feita pelo fluxo n8n. Atualize token_instagram na empresa ou acione o integrador.',
+      { duration: 6000 },
+    );
+  };
+
   return (
-    <Card className="border border-pink-500/25 bg-gradient-to-br from-pink-950/30 via-purple-950/20 to-indigo-950/25 text-foreground shadow-md">
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-3">
-          <div
-            className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)',
-            }}
-          >
-            <Instagram className="h-5 w-5 text-white" />
+    <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="p-4 sm:p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                background:
+                  'linear-gradient(135deg,#feda75 0%,#fa7e1e 20%,#d62976 45%,#962fbf 75%,#4f5bd5 100%)',
+              }}
+            >
+              <Instagram className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold text-foreground">Instagram</h2>
+                <Badge className="rounded-md bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-100 text-[10px] font-bold uppercase tracking-wide dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800">
+                  Graph / Direct
+                </Badge>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
-              Instagram (IA)
-              <Badge variant="secondary" className="text-[10px] font-normal">
-                Graph / Direct
-              </Badge>
-            </CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Conta vinculada à empresa para mensagens e fotos de perfil dos leads.
-            </CardDescription>
-          </div>
+          <Badge className="rounded-md bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100 text-[10px] font-bold uppercase tracking-wide dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 mr-1.5 inline-block" />
+            Ativo
+          </Badge>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-          <span className="text-muted-foreground shrink-0">ID Instagram (empresa)</span>
-          <code className="rounded-md bg-background/80 px-2 py-1 text-xs font-mono break-all border border-border">
-            {idInstagram}
-          </code>
-        </div>
+
         <div className="space-y-2">
-          <p className="text-muted-foreground text-xs">
-            Exibido no site vitrine (contato). O <span className="text-foreground font-medium">@</span> é adicionado automaticamente na página pública se você salvar sem ele.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <Input
-              value={arrobaEmpresa}
-              onChange={(e) => setArrobaEmpresa(e.target.value)}
-              placeholder="minhaimobiliaria ou @minhaimobiliaria"
-              className="sm:max-w-md font-mono text-sm"
-            />
-            <Button type="button" size="sm" onClick={() => void saveArroba()} disabled={savingArroba}>
-              {savingArroba ? 'Salvando…' : 'Salvar @'}
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            ID Instagram (empresa)
+          </label>
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2">
+            <code className="flex-1 text-sm font-mono text-foreground break-all">{idInstagram}</code>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void copyId()}
+              className="shrink-0 text-emerald-800 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
+            >
+              <Copy className="h-3.5 w-3.5 mr-1.5" />
+              Copiar
             </Button>
           </div>
         </div>
-        <div className="flex items-start gap-2 text-muted-foreground">
-          <Shield className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-medium text-foreground">Token Instagram</span>
-            <p className="mt-0.5">
-              {hasToken ? (
-                <>
-                  Configurado <span className="font-mono text-xs ml-1">{tokenPreview}</span>
-                  <span className="block text-xs mt-1">
-                    Usado pelo fluxo n8n para renovar <code className="text-[11px]">profile_pic_url_instagram</code> dos
-                    leads.
-                  </span>
-                </>
-              ) : (
-                <>Não configurado — inclua <code className="text-xs">token_instagram</code> em empresas para o webhook de foto.</>
-              )}
-            </p>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            @ exibido no site vitrine
+          </label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+              <Input
+                value={arrobaEmpresa.replace(/^@+/, '')}
+                onChange={(e) => setArrobaEmpresa(e.target.value.replace(/^@+/, ''))}
+                placeholder="minhaimobiliaria"
+                className="pl-7 rounded-xl bg-card font-mono text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void saveArroba()}
+              disabled={savingArroba}
+              className="btn-on-emerald rounded-xl bg-emerald-800 text-white hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600 sm:min-w-[96px]"
+            >
+              {savingArroba ? 'Salvando…' : 'Salvar'}
+            </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Token Instagram
+            </span>
+            {hasToken ? (
+              <Badge className="rounded-md bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-semibold dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                Configurado
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="rounded-md text-[10px] font-semibold">
+                Não configurado
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2">
+            <code className="flex-1 text-sm font-mono text-muted-foreground truncate">
+              {hasToken ? tokenPreview : '—'}
+            </code>
+            {hasToken ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleRenewTokenInfo}
+                className="shrink-0 text-emerald-800 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
+              >
+                Renovar
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

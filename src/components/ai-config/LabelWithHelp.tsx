@@ -5,20 +5,29 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { tooltipContentClass } from './constants';
 
 export function LabelWithHelp({
   label,
   tooltip,
   htmlFor,
+  className,
 }: {
   label: string;
   tooltip: string;
   htmlFor?: string;
+  className?: string;
 }) {
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <Label className="text-sm text-foreground mb-0" htmlFor={htmlFor}>
+      <Label
+        className={cn(
+          'mb-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground',
+          className,
+        )}
+        htmlFor={htmlFor}
+      >
         {label}
       </Label>
       <Tooltip>

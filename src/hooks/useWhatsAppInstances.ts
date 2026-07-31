@@ -316,7 +316,10 @@ export function useWhatsAppInstances() {
       let externalInstances: any[] = [];
       let webhookUnavailable = false;
 
-      const fetchWebhookInstances = async (url: URL): Promise<any[]> => {
+      /** Distinguishes HTTP/network failure from a valid empty list (not "server down"). */
+      const fetchWebhookInstances = async (
+        url: URL,
+      ): Promise<{ ok: boolean; items: any[] }> => {
         const response = await fetch(url.toString(), {
           method: 'GET',
           headers: {
@@ -327,10 +330,10 @@ export function useWhatsAppInstances() {
         });
         if (!response.ok) {
           console.warn(`⚠️ whatsapp-instances HTTP ${response.status}`);
-          return [];
+          return { ok: false, items: [] };
         }
         const responseData = await parseWebhookResponse(response);
-        return buildListFromWebhookPayload(responseData);
+        return { ok: true, items: buildListFromWebhookPayload(responseData) };
       };
 
       try {
@@ -339,12 +342,16 @@ export function useWhatsAppInstances() {
         scopedUrl.searchParams.append('company_id', profile.company_id);
         scopedUrl.searchParams.append('company_name', settings?.display_name || '');
 
-        externalInstances = await fetchWebhookInstances(scopedUrl);
+        let scopedFetch = await fetchWebhookInstances(scopedUrl);
+        let anyFetchOk = scopedFetch.ok;
+        externalInstances = scopedFetch.items;
 
         if (externalInstances.length === 0) {
           console.warn('⚠️ Lista vazia com filtro da empresa. Tentando fallback sem filtros...');
           const rawUrl = new URL(`${WHATSAPP_API_BASE}/whatsapp-instances`);
-          externalInstances = await fetchWebhookInstances(rawUrl);
+          const rawFetch = await fetchWebhookInstances(rawUrl);
+          anyFetchOk = anyFetchOk || rawFetch.ok;
+          externalInstances = rawFetch.items;
 
           const { data: companyUsers } = await supabase
             .from('user_profiles')
@@ -374,9 +381,8 @@ export function useWhatsAppInstances() {
           );
         }
 
-        if (externalInstances.length === 0) {
-          webhookUnavailable = true;
-        }
+        // Empty list after a successful HTTP response ≠ server down (local registry may still be fine).
+        webhookUnavailable = !anyFetchOk;
       } catch (webhookErr) {
         webhookUnavailable = true;
         console.warn('⚠️ Falha ao consultar whatsapp-instances:', webhookErr);

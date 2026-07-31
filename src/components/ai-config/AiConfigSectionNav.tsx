@@ -1,153 +1,70 @@
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import {
-  AI_CONFIG_SECTIONS,
-  AI_CONFIG_SECTION_META,
-  type AiConfigSectionId,
-} from './constants';
+import { AI_CONFIG_NAV_SECTIONS, type AiConfigSectionId } from './constants';
+import { SECTION_NAV } from './helpers';
 
-type AiConfigSectionNavProps = {
+type Props = {
   section: AiConfigSectionId;
+  fillPercent: number;
   onSectionChange: (section: AiConfigSectionId) => void;
-  aiEnabled: boolean;
-  hasChanges: boolean;
-  labelsCount: number | null;
 };
 
-export function AiConfigSectionNav({
-  section,
-  onSectionChange,
-  aiEnabled,
-  hasChanges,
-  labelsCount,
-}: AiConfigSectionNavProps) {
-  return (
-    <>
-      {/* Mobile: horizontal tabs */}
-      <div className="md:hidden -mx-1 overflow-x-auto pb-1">
-        <Tabs
-          value={section}
-          onValueChange={(value) => onSectionChange(value as AiConfigSectionId)}
-        >
-          <TabsList className="h-auto w-max min-w-full justify-start gap-1 bg-muted/60 p-1">
-            {AI_CONFIG_SECTIONS.map((id) => (
-              <TabsTrigger
-                key={id}
-                value={id}
-                className="shrink-0 gap-1.5 px-3 py-1.5 text-xs sm:text-sm"
-              >
-                {AI_CONFIG_SECTION_META[id].label}
-                <SectionBadge
-                  id={id}
-                  aiEnabled={aiEnabled}
-                  hasChanges={hasChanges}
-                  labelsCount={labelsCount}
-                  compact
-                />
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Desktop: vertical nav */}
-      <nav
-        className="hidden md:flex md:w-52 lg:w-56 shrink-0 flex-col gap-0.5"
-        aria-label="Seções da configuração para IA"
-      >
-        {AI_CONFIG_SECTIONS.map((id) => {
-          const active = section === id;
-          const meta = AI_CONFIG_SECTION_META[id];
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              onClick={() => onSectionChange(id)}
-              className={cn(
-                'flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors',
-                active
-                  ? 'bg-muted text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-              )}
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">{meta.label}</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground leading-snug">
-                  {meta.description}
-                </span>
-              </span>
-              <SectionBadge
-                id={id}
-                aiEnabled={aiEnabled}
-                hasChanges={hasChanges}
-                labelsCount={labelsCount}
-              />
-            </button>
-          );
-        })}
-      </nav>
-    </>
+export function AiConfigSectionNav({ section, fillPercent, onSectionChange }: Props) {
+  const items = SECTION_NAV.filter((s) =>
+    (AI_CONFIG_NAV_SECTIONS as readonly string[]).includes(s.id),
   );
-}
 
-function SectionBadge({
-  id,
-  aiEnabled,
-  hasChanges,
-  labelsCount,
-  compact,
-}: {
-  id: AiConfigSectionId;
-  aiEnabled: boolean;
-  hasChanges: boolean;
-  labelsCount: number | null;
-  compact?: boolean;
-}) {
-  if (id === 'geral') {
-    return (
-      <Badge
-        variant="outline"
-        className={cn(
-          'shrink-0 font-medium',
-          compact ? 'px-1.5 py-0 text-[10px]' : 'text-[10px] px-1.5 py-0',
-          aiEnabled
-            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-            : 'border-border bg-muted text-muted-foreground',
-        )}
-      >
-        {aiEnabled ? 'Ativa' : 'Inativa'}
-      </Badge>
-    );
-  }
+  return (
+    <div className="rounded-2xl border border-border/70 bg-white dark:bg-card px-3 py-3 sm:px-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Seção
+          </p>
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {items.map(({ id, label, Icon }) => {
+              const isActive = section === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onSectionChange(id)}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors border',
+                    isActive
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900 font-medium dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100'
+                      : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      'h-4 w-4',
+                      isActive ? 'text-emerald-700 dark:text-emerald-400' : '',
+                    )}
+                  />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-  if ((id === 'identidade' || id === 'contexto') && hasChanges) {
-    return (
-      <span
-        className={cn(
-          'shrink-0 rounded-full bg-amber-500',
-          compact ? 'h-1.5 w-1.5' : 'mt-1.5 h-2 w-2',
-        )}
-        title="Alterações não salvas"
-        aria-label="Alterações não salvas"
-      />
-    );
-  }
-
-  if (id === 'etiquetas' && labelsCount != null) {
-    return (
-      <Badge
-        variant="secondary"
-        className={cn(
-          'shrink-0 font-normal tabular-nums',
-          compact ? 'px-1.5 py-0 text-[10px]' : 'text-[10px] px-1.5 py-0',
-        )}
-      >
-        {labelsCount}
-      </Badge>
-    );
-  }
-
-  return null;
+        <div className="shrink-0 w-full lg:w-44">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Completo
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {fillPercent}%
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-emerald-700 transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, fillPercent))}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

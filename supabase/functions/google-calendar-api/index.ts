@@ -1362,6 +1362,99 @@ serve(async (req) => {
       });
     }
 
+    // Atualiza RSVP do attendee ou status customizado (ex.: Visitado) via extendedProperties.
+    if (action === "update_event_status") {
+      const calendarId = String(body?.calendar_id || "").trim();
+      const eventId = String(body?.evento_id || body?.event_id || "").trim();
+      const responseStatus = String(body?.response_status || "").trim();
+      const customStatus = String(body?.custom_status || body?.status || "").trim();
+
+      if (!calendarId || !eventId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "calendar_id e evento_id são obrigatórios",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const existing = await gFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      );
+
+      const customNorm = customStatus
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+      const isVisitMark =
+        customNorm === "visitado" ||
+        customNorm === "visita realizada" ||
+        customNorm === "realizado";
+
+      let patch: Record<string, unknown> = {};
+
+      if (isVisitMark) {
+        const privateProps = {
+          ...(existing?.extendedProperties?.private || {}),
+          event_status: "Visitado",
+        };
+        patch = { extendedProperties: { private: privateProps } };
+      } else if (responseStatus && Array.isArray(existing?.attendees) && existing.attendees.length > 0) {
+        const attendees = existing.attendees.map((attendee: any, index: number) =>
+          index === 0 ? { ...attendee, responseStatus } : attendee,
+        );
+        patch = { attendees };
+      } else if (responseStatus) {
+        const statusMap: Record<string, string> = {
+          needsAction: "Aguardando confirmação",
+          accepted: "Confirmado",
+          declined: "Recusado",
+          tentative: "Talvez",
+        };
+        const privateProps = {
+          ...(existing?.extendedProperties?.private || {}),
+          event_status: statusMap[responseStatus] || customStatus || responseStatus,
+        };
+        patch = { extendedProperties: { private: privateProps } };
+      }
+
+      if (Object.keys(patch).length === 0) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Nenhuma alteração de status aplicável",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const updated = await gFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      );
+
+      try {
+        if (isVisitMark) {
+          await service
+            .from("oncall_events")
+            .update({
+              status: "Visitado",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("company_id", profile.company_id)
+            .eq("google_event_id", eventId);
+        }
+      } catch {
+        // best-effort mirror
+      }
+
+      return new Response(JSON.stringify({ success: true, event: updated }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Atualiza data/hora/título/etc. de um evento existente (UI do calendário).
     if (action === "update_event") {
       const calendarId = String(body?.calendar_id || "").trim();
