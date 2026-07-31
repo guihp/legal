@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { normalizeBrandDisplayName } from '@/lib/brandingDisplay';
 import type { PeriodPreset } from '@/components/dashboard/helpers';
 import { ReportsTopBar } from './ReportsTopBar';
 import { ReportsToolbar } from './ReportsToolbar';
@@ -163,7 +164,10 @@ function ReportsView() {
         reportId,
         bundle: bundle.dashboard,
         extras: bundle.extras,
-        companyName: settings?.display_name || 'Imobiliária',
+        companyName:
+          normalizeBrandDisplayName(settings?.display_name) ||
+          settings?.display_name ||
+          'Imobiliária',
         userName: profile?.full_name || profile?.email || 'Usuário',
       });
       const next = pushExportHistory(companyId, {

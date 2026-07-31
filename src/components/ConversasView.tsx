@@ -185,6 +185,27 @@ export function ConversasView() {
   }, [profile, safeParse]);
 
   const handleFollowUp = useCallback(async (conversation: any) => {
+    if (profile?.company_id && conversation?.sessionId) {
+      const { resolveFollowUpStageGate, FOLLOW_UP_STAGE_BLOCKED_TOAST } = await import(
+        '@/lib/followUp'
+      );
+      const gate = await resolveFollowUpStageGate({
+        companyId: profile.company_id,
+        channel: 'whatsapp',
+        sessionId: conversation.sessionId,
+        crmStage: conversation.crmStage,
+        leadId: conversation.leadId,
+      });
+      if (!gate.allowed) {
+        toast({
+          title: FOLLOW_UP_STAGE_BLOCKED_TOAST.title,
+          description: FOLLOW_UP_STAGE_BLOCKED_TOAST.description,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     try {
       const response = await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/follow-up-chats', {
         method: 'POST',
@@ -199,10 +220,20 @@ export function ConversasView() {
           role: profile?.role || '',
           plataforma: 'WhatsApp',
           rota: 'whatsapp',
+          source: 'manual',
         }),
       });
 
       if (response.ok) {
+        if (profile?.company_id && conversation.sessionId) {
+          // Etiqueta follow_up fica a cargo do n8n/API — não sobrescrever ai_ativa.
+          const { cancelFollowUpJobs } = await import('@/lib/followUp');
+          await cancelFollowUpJobs({
+            companyId: profile.company_id,
+            channel: 'whatsapp',
+            sessionId: conversation.sessionId,
+          });
+        }
         toast({
           title: "Sucesso",
           description: "Follow up solicitado com sucesso.",

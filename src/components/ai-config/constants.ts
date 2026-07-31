@@ -1,23 +1,26 @@
 import type { DaySchedule } from '@/lib/businessHours';
 import { DEFAULT_BUSINESS_SCHEDULE } from '@/lib/businessHours';
 
-/** Primary cream-nav sections (mockups). `etiquetas` kept for URL/back-compat. */
+/** Primary cream-nav sections (mockups). */
 export const AI_CONFIG_SECTIONS = [
   'identidade',
   'contexto',
   'horario',
   'visitas',
+  'followup',
   'etiquetas',
 ] as const;
 
 export type AiConfigSectionId = (typeof AI_CONFIG_SECTIONS)[number];
 
-/** Sections shown in the horizontal SEÇÃO nav (mockups). */
+/** Sections shown in the horizontal SEÇÃO nav. */
 export const AI_CONFIG_NAV_SECTIONS: readonly AiConfigSectionId[] = [
   'identidade',
   'contexto',
   'horario',
   'visitas',
+  'followup',
+  'etiquetas',
 ];
 
 export const AI_CONFIG_SECTION_META: Record<
@@ -39,6 +42,10 @@ export const AI_CONFIG_SECTION_META: Record<
   visitas: {
     label: 'Agendamento de visitas',
     description: 'Como a assistente escolhe o corretor da visita',
+  },
+  followup: {
+    label: 'Follow-up',
+    description: 'Horários e orientações da IA quando o cliente fica em silêncio',
   },
   etiquetas: {
     label: 'Etiquetas',

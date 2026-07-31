@@ -5,7 +5,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
 import { useCompanyApiMode } from '@/hooks/useCompanyApiMode';
-import { useCompanyAiLabels } from '@/hooks/useCompanyAiLabels';
 import { useCompanyUsers } from '@/hooks/useCompanyUsers';
 import {
   clearLegacyLocalVisitSchedulingConfig,
@@ -34,6 +33,7 @@ import { AiConfigIdentidadeSection } from './sections/AiConfigIdentidadeSection'
 import { AiConfigContextoSection } from './sections/AiConfigContextoSection';
 import { AiConfigHorarioSection } from './sections/AiConfigHorarioSection';
 import { AiConfigEtiquetasSection } from './sections/AiConfigEtiquetasSection';
+import { AiConfigFollowUpSection } from './sections/AiConfigFollowUpSection';
 import { AiConfigVisitasSection } from './sections/AiConfigVisitasSection';
 import {
   EMPTY_AI_CONFIG_FORM,
@@ -113,7 +113,6 @@ function isFormDirty(
 export function AiConfigurationView() {
   const { company, loading, updating, isManager, updateCompany } = useOwnCompany();
   const { isOfficialApi, loadingApiMode } = useCompanyApiMode();
-  const { labels } = useCompanyAiLabels();
   const { users, loadUsers } = useCompanyUsers();
   const [searchParams, setSearchParams] = useSearchParams();
   const section = parseAiConfigSection(searchParams.get('section'));
@@ -294,7 +293,7 @@ export function AiConfigurationView() {
     );
   }
 
-  const showSidebar = section !== 'etiquetas';
+  const showSidebar = section !== 'etiquetas' && section !== 'followup';
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -327,18 +326,18 @@ export function AiConfigurationView() {
           />
 
           <AiConfigSectionNav
-            section={section === 'etiquetas' ? 'identidade' : section}
+            section={section}
             fillPercent={percent}
             onSectionChange={setSection}
           />
 
           {section === 'etiquetas' ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Etiquetas da IA ({labels.length}) — acessível via{' '}
-                <code className="rounded bg-muted px-1">?section=etiquetas</code>.
-              </p>
               <AiConfigEtiquetasSection />
+            </div>
+          ) : section === 'followup' ? (
+            <div className="space-y-3">
+              <AiConfigFollowUpSection />
             </div>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.85fr)] gap-4 items-start">

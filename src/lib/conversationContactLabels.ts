@@ -30,6 +30,7 @@ export const SYSTEM_AI_LABELS_FALLBACK: Pick<CompanyAiLabel, 'slug' | 'name' | '
   { slug: 'ai_ativa', name: 'AI ATIVA', color: 'emerald', is_system: true, sort_order: 10 },
   { slug: 'humano', name: 'Humano', color: 'amber', is_system: true, sort_order: 20 },
   { slug: 'humano_solicitado', name: 'Humano solicitado', color: 'orange', is_system: true, sort_order: 30 },
+  { slug: 'follow_up', name: 'Follow-UP', color: 'sky', is_system: true, sort_order: 40 },
 ];
 
 const LIST_BADGE_BY_COLOR: Record<AiLabelColor, string> = {
@@ -91,7 +92,45 @@ export function resolveCompanyAiLabel(
       color: isAiLabelColor(found.color) ? found.color : 'slate',
     };
   }
+  // Follow-up timed sem catálogo: nome amigável
+  if (slug.startsWith('follow_up_')) {
+    const rest = slug.replace(/^follow_up_/, '').replace(/_/g, ' ');
+    return { slug, name: `Follow-up-${rest}`, color: 'sky' };
+  }
   return { slug, name: slug, color: 'slate' };
+}
+
+/** Etiquetas de modo de atendimento — mutuamente exclusivas. */
+export const ATTENDANCE_LABEL_SLUGS = ['ai_ativa', 'humano', 'humano_solicitado'] as const;
+
+export function isAttendanceLabelSlug(slug: string | null | undefined): boolean {
+  const s = String(slug || '').toLowerCase().trim();
+  return (ATTENDANCE_LABEL_SLUGS as readonly string[]).includes(s);
+}
+
+export type ContactLabelBadge = {
+  slug: string;
+  name: string;
+  color: AiLabelColor | string;
+};
+
+/** Ordena: atendimento primeiro, depois tags (follow-up / custom). */
+export function sortContactLabelBadges(labels: ContactLabelBadge[]): ContactLabelBadge[] {
+  return [...labels].sort((a, b) => {
+    const aAtt = isAttendanceLabelSlug(a.slug) ? 0 : 1;
+    const bAtt = isAttendanceLabelSlug(b.slug) ? 0 : 1;
+    if (aAtt !== bAtt) return aAtt - bAtt;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
+}
+
+export function resolveContactLabelsForSession(
+  statuses: string[],
+  catalog: Array<Pick<CompanyAiLabel, 'slug' | 'name' | 'color'>> | null | undefined,
+): ContactLabelBadge[] {
+  const unique = [...new Set(statuses.map((s) => String(s || '').toLowerCase().trim()).filter(Boolean))];
+  if (unique.length === 0) unique.push('ai_ativa');
+  return sortContactLabelBadges(unique.map((slug) => resolveCompanyAiLabel(slug, catalog)));
 }
 
 /** Texto exibido na lista / header (UI). */

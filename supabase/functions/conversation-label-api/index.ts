@@ -132,7 +132,7 @@ serve(async (req) => {
       if (id) {
         const { data: existing, error: existingError } = await service
           .from("company_ai_labels")
-          .select("id, is_system, slug")
+          .select("id, is_system, slug, name")
           .eq("id", id)
           .eq("company_id", profile.company_id)
           .maybeSingle();
@@ -140,8 +140,10 @@ serve(async (req) => {
         if (existingError) return json({ success: false, error: existingError.message }, 400);
         if (!existing) return json({ success: false, error: "Etiqueta não encontrada" }, 404);
 
-        const patch: Record<string, unknown> = { name, color, sort_order: sortOrder };
-        if (!existing.is_system) patch.slug = slug;
+        // Sistema: só cor (e sort_order). Nome/slug fixos no banco.
+        const patch: Record<string, unknown> = existing.is_system
+          ? { color, sort_order: sortOrder }
+          : { name, color, slug, sort_order: sortOrder };
 
         const { data, error } = await service
           .from("company_ai_labels")
@@ -240,9 +242,21 @@ serve(async (req) => {
         updated_by: profile.id,
       };
 
+      // Atendimento: exclusivos entre si; tags (follow_up_*, custom) são aditivas.
+      const attendance = new Set(["ai_ativa", "humano", "humano_solicitado"]);
+      if (attendance.has(status)) {
+        await service
+          .from("conversation_contact_labels")
+          .delete()
+          .eq("company_id", profile.company_id)
+          .eq("channel", channel)
+          .eq("session_id", sessionId)
+          .in("status", [...attendance].filter((s) => s !== status));
+      }
+
       const { data, error } = await service
         .from("conversation_contact_labels")
-        .upsert(payload, { onConflict: "company_id,channel,session_id" })
+        .upsert(payload, { onConflict: "company_id,channel,session_id,status" })
         .select("id, company_id, channel, session_id, status, updated_at")
         .single();
 

@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { DashboardBundle } from '@/components/dashboard/fetchDashboardData';
 import { formatMoneyMil } from '@/components/dashboard/helpers';
+import { normalizeBrandDisplayName } from '@/lib/brandingDisplay';
 import { REPORT_DEFS, type ReportId } from './constants';
 import type { ReportsExtras } from './helpers';
 import { estimatePdfSizeKb } from './helpers';
@@ -42,7 +43,11 @@ function header(doc: JsPdfDoc, title: string, ctx: ExportCtx) {
   doc.text(title, 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(ctx.companyName || 'Imobiliária', 14, 26);
+  doc.text(
+    normalizeBrandDisplayName(ctx.companyName) || ctx.companyName || 'Imobiliária',
+    14,
+    26,
+  );
   doc.text(`Período: ${range}`, 14, 32);
   doc.text(`Gerado em: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR })}`, 14, 38);
   if (ctx.userName) doc.text(`Por: ${ctx.userName}`, 14, 44);

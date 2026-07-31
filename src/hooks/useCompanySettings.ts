@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { normalizeBrandDisplayName } from '@/lib/brandingDisplay';
 import { useUserProfile } from './useUserProfile';
 import { toast } from 'sonner';
 
@@ -24,6 +25,15 @@ export interface CompanySettings {
   logo_size: number;
   created_at: string;
   updated_at: string;
+}
+
+/** Remove marca legada ImobiPro de campos exibidos (PDFs, sidebar, etc.). */
+function sanitizeCompanySettings(data: CompanySettings): CompanySettings {
+  return {
+    ...data,
+    display_name: normalizeBrandDisplayName(data.display_name) || data.display_name,
+    display_subtitle: normalizeBrandDisplayName(data.display_subtitle) || data.display_subtitle,
+  };
 }
 
 const DEFAULT_SETTINGS: Partial<CompanySettings> = {
@@ -76,7 +86,7 @@ export function useCompanySettings() {
         throw error;
       }
 
-      setSettings(data);
+      setSettings(sanitizeCompanySettings(data as CompanySettings));
     } catch (error: any) {
       console.error('Erro ao carregar configurações:', error);
       setError(error.message);
@@ -104,7 +114,7 @@ export function useCompanySettings() {
 
       if (error) throw error;
 
-      setSettings(data);
+      setSettings(sanitizeCompanySettings(data as CompanySettings));
       toast.success('Configurações inicializadas com sucesso');
     } catch (error: any) {
       console.error('Erro ao criar configurações padrão:', error);
@@ -126,6 +136,11 @@ export function useCompanySettings() {
       setUpdating(field);
       setError(null);
 
+      const persistValue =
+        field === 'display_name' || field === 'display_subtitle'
+          ? normalizeBrandDisplayName(String(value ?? '')) || value
+          : value;
+
       // Verificar se a sessão está válida e renovar se necessário
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -139,7 +154,7 @@ export function useCompanySettings() {
 
       const { data, error } = await supabase
         .from('company_settings')
-        .update({ [field]: value })
+        .update({ [field]: persistValue })
         .eq('company_id', profile.company_id)
         .select()
         .single();
@@ -156,18 +171,18 @@ export function useCompanySettings() {
           // Tentar novamente com sessão renovada
           const { data: retryData, error: retryError } = await supabase
             .from('company_settings')
-            .update({ [field]: value })
+            .update({ [field]: persistValue })
             .eq('company_id', profile.company_id)
             .select()
             .single();
 
           if (retryError) throw retryError;
-          setSettings(retryData);
+          setSettings(sanitizeCompanySettings(retryData as CompanySettings));
         } else {
           throw error;
         }
       } else {
-        setSettings(data);
+        setSettings(sanitizeCompanySettings(data as CompanySettings));
       }
 
       // Toast específico por tipo de configuração
@@ -347,7 +362,7 @@ export function useCompanySettings() {
 
       if (error) throw error;
 
-      setSettings(data);
+      setSettings(sanitizeCompanySettings(data as CompanySettings));
       toast.success('Configurações restauradas para o padrão');
       return true;
 

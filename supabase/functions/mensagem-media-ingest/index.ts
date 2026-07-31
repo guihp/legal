@@ -25,6 +25,10 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  hookFollowUpOnMensagem,
+  parseFromFollowUpFlag,
+} from "../_shared/followUpCycle.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -271,12 +275,15 @@ function parseMeta(
   text: string;
   msgType: string;
   plataforma: string;
+  instancia: string;
   mensageType: string;
   sourceUrl: string;
   fetchAuthorization: string;
   bucket: string;
   mimetype: string;
   mediaBase64: string;
+  fromFollowUp: string;
+  source: string;
 } {
   const get = (k: string) => {
     const v = raw[k];
@@ -295,12 +302,15 @@ function parseMeta(
     text: caption,
     msgType: get("type").trim() || "lead",
     plataforma: get("plataforma").trim() || "WhatsApp",
+    instancia: get("instancia").trim(),
     mensageType: normalizeMensageType(get("mensage_type").trim() || "image"),
     sourceUrl: get("source_url").trim(),
     fetchAuthorization: get("fetch_authorization").trim(),
     bucket: get("bucket").trim() || env("CHAT_MEDIA_BUCKET", DEFAULT_BUCKET),
     mimetype: get("mimetype").trim() || get("mime_type").trim(),
     mediaBase64: get("media_base64").trim(),
+    fromFollowUp: get("from_follow_up").trim(),
+    source: get("source").trim(),
   };
 }
 
@@ -512,6 +522,26 @@ serve(async (req) => {
     }
     if (!saved) {
       return json({ ok: false, error: "mensagens_row_not_found" }, 404);
+    }
+
+    try {
+      await hookFollowUpOnMensagem(service, {
+        companyId: meta.companyId,
+        phone: meta.phone,
+        plataforma: meta.plataforma,
+        instancia: meta.instancia,
+        type: meta.msgType,
+        mensageType: meta.mensageType,
+        fromFollowUp: parseFromFollowUpFlag({
+          from_follow_up: meta.fromFollowUp,
+          source: meta.source,
+        }),
+      });
+    } catch (hookErr) {
+      console.warn(
+        "[mensagem-media-ingest] follow-up hook:",
+        hookErr instanceof Error ? hookErr.message : hookErr,
+      );
     }
 
     return json({

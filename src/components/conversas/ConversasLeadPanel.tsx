@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Phone, UserRound, Building2, CalendarDays, MessageSquareText, X } from 'lucide-react';
+import { Phone, UserRound, Building2, CalendarDays, MessageSquareText, X, RotateCcw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { ChatContactAvatar } from '@/components/chat/ChatContactAvatar';
@@ -34,6 +34,27 @@ type PropertyBrief = {
   suites?: number | null;
 };
 
+type FollowUpJobRow = {
+  id: string;
+  label_slug: string | null;
+  delay_minutes: number | null;
+  status: string;
+  trigger_at: string | null;
+  sent_at: string | null;
+  recovered_at: string | null;
+  last_error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type FollowUpHistoryEvent = {
+  id: string;
+  kind: 'sent' | 'recovered' | 'pending' | 'cancelled' | 'failed';
+  title: string;
+  at: string | null;
+  detail?: string | null;
+};
+
 const FUNNEL_STEPS = ['Novo', 'Qualificado', 'Visita', 'Proposta'] as const;
 
 function funnelIndexFromStage(stage: string | null | undefined): number {
@@ -62,6 +83,96 @@ function formatMoney(v: number | null | undefined) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
+function formatDateTimeShort(iso: string | null | undefined) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function labelSlugToTitle(slug: string | null | undefined) {
+  const s = String(slug || '').trim();
+  if (!s) return 'Follow-up';
+  if (s === 'follow_up') return 'Follow-up';
+  return s
+    .replace(/^follow_up_?/i, 'Follow-up ')
+    .replace(/_/g, '-')
+    .trim();
+}
+
+function cancelReasonLabel(reason: string | null | undefined) {
+  const r = String(reason || '').trim().toLowerCase();
+  if (!r) return null;
+  if (r.includes('client_replied')) return 'Cliente respondeu';
+  if (r === 'stage_not_allowed') return 'Saiu de Novo Lead / Qualificado';
+  if (r.includes('disabled') || r.includes('channel_off')) return 'Follow-up desligado';
+  if (r.includes('deferred')) return 'Adiado (horário)';
+  return reason;
+}
+
+function buildFollowUpHistoryEvents(jobs: FollowUpJobRow[]): FollowUpHistoryEvent[] {
+  const events: FollowUpHistoryEvent[] = [];
+  for (const job of jobs) {
+    const label = labelSlugToTitle(job.label_slug);
+    if (job.status === 'sent' && job.sent_at) {
+      events.push({
+        id: `${job.id}-sent`,
+        kind: 'sent',
+        title: `${label} enviado`,
+        at: job.sent_at,
+      });
+    }
+    if (job.recovered_at) {
+      events.push({
+        id: `${job.id}-recovered`,
+        kind: 'recovered',
+        title: 'Lead recuperado',
+        at: job.recovered_at,
+        detail: `Cliente respondeu após ${label}`,
+      });
+    }
+    if (job.status === 'pending') {
+      events.push({
+        id: `${job.id}-pending`,
+        kind: 'pending',
+        title: `${label} agendado`,
+        at: job.trigger_at,
+        detail: job.delay_minutes != null ? `Em ${job.delay_minutes} min de silêncio` : null,
+      });
+    }
+    if (job.status === 'cancelled') {
+      const reason = cancelReasonLabel(job.last_error);
+      // Skip pure cycle-refresh cancels without reason — noise in UI
+      if (!reason && !job.last_error) continue;
+      events.push({
+        id: `${job.id}-cancelled`,
+        kind: 'cancelled',
+        title: `${label} cancelado`,
+        at: job.updated_at || job.created_at,
+        detail: reason,
+      });
+    }
+    if (job.status === 'failed') {
+      events.push({
+        id: `${job.id}-failed`,
+        kind: 'failed',
+        title: `${label} falhou`,
+        at: job.updated_at || job.created_at,
+        detail: job.last_error,
+      });
+    }
+  }
+  return events.sort((a, b) => {
+    const ta = a.at ? new Date(a.at).getTime() : 0;
+    const tb = b.at ? new Date(b.at).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 export type ConversasLeadPanelProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,6 +183,10 @@ export type ConversasLeadPanelProps = {
   profilePicUrl?: string | null;
   messageCount?: number;
   labelStage?: string | null;
+  /** Session key for follow-up history (phone / IG id). */
+  sessionId?: string | null;
+  companyId?: string | null;
+  channel?: 'whatsapp' | 'instagram';
   onViewFicha?: () => void;
   /** Optional: transfer not wired in chat — hide when absent. */
   onTransfer?: () => void;
@@ -89,6 +204,8 @@ function LeadPanelBody({
   labelStage,
   property,
   brokerName,
+  followUpEvents,
+  followUpLoading,
   onViewFicha,
   onTransfer,
   onClose,
@@ -103,6 +220,8 @@ function LeadPanelBody({
   labelStage?: string | null;
   property: PropertyBrief | null;
   brokerName: string | null;
+  followUpEvents: FollowUpHistoryEvent[];
+  followUpLoading: boolean;
   onViewFicha?: () => void;
   onTransfer?: () => void;
   onClose?: () => void;
@@ -279,6 +398,55 @@ function LeadPanelBody({
               </ul>
             </section>
 
+            <section>
+              <h4 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[var(--cv-text-muted)] mb-2">
+                Histórico de Follow-up
+              </h4>
+              {followUpLoading ? (
+                <div className="h-16 rounded-xl bg-[var(--cv-panel-muted)] animate-pulse" />
+              ) : followUpEvents.length === 0 ? (
+                <p className="text-xs text-[var(--cv-text-muted)]">
+                  Nenhum follow-up registrado nesta conversa.
+                </p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {followUpEvents.slice(0, 12).map((ev) => (
+                    <li
+                      key={ev.id}
+                      className="flex gap-2.5 items-start rounded-xl border border-[var(--cv-border)] bg-[var(--cv-panel)] px-3 py-2.5"
+                    >
+                      <span
+                        className={cn(
+                          'mt-1.5 h-2 w-2 rounded-full shrink-0',
+                          ev.kind === 'sent' && 'bg-sky-500',
+                          ev.kind === 'recovered' && 'bg-emerald-500',
+                          ev.kind === 'pending' && 'bg-amber-500',
+                          ev.kind === 'cancelled' && 'bg-slate-400',
+                          ev.kind === 'failed' && 'bg-rose-500',
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-1.5">
+                          {ev.kind === 'recovered' ? (
+                            <RotateCcw className="h-3 w-3 mt-0.5 text-emerald-600 shrink-0" />
+                          ) : null}
+                          <p className="text-xs font-semibold leading-snug">{ev.title}</p>
+                        </div>
+                        <p className="text-[11px] text-[var(--cv-text-muted)] mt-0.5">
+                          {formatDateTimeShort(ev.at)}
+                        </p>
+                        {ev.detail ? (
+                          <p className="text-[11px] text-[var(--cv-text-muted)] mt-0.5 leading-snug">
+                            {ev.detail}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             {showListingSection && (
               <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[var(--cv-text-muted)] mb-2">
@@ -360,6 +528,9 @@ export function ConversasLeadPanel({
   profilePicUrl,
   messageCount,
   labelStage,
+  sessionId,
+  companyId,
+  channel = 'whatsapp',
   onViewFicha,
   onTransfer,
   className,
@@ -369,6 +540,10 @@ export function ConversasLeadPanel({
   const [property, setProperty] = useState<PropertyBrief | null>(null);
   const [brokerName, setBrokerName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [followUpJobs, setFollowUpJobs] = useState<FollowUpJobRow[]>([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+
+  const resolvedSessionId = String(sessionId || phone || '').trim();
 
   useEffect(() => {
     let cancelled = false;
@@ -437,6 +612,41 @@ export function ConversasLeadPanel({
     };
   }, [leadId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFollowUp() {
+      if (!open || !companyId || !resolvedSessionId) {
+        setFollowUpJobs([]);
+        return;
+      }
+      setFollowUpLoading(true);
+      try {
+        const { data, error } = await (supabase as any)
+          .from('conversation_follow_up_jobs')
+          .select(
+            'id, label_slug, delay_minutes, status, trigger_at, sent_at, recovered_at, last_error, created_at, updated_at',
+          )
+          .eq('company_id', companyId)
+          .eq('channel', channel)
+          .eq('session_id', resolvedSessionId)
+          .order('created_at', { ascending: false })
+          .limit(30);
+        if (error) throw error;
+        if (!cancelled) setFollowUpJobs((data as FollowUpJobRow[]) || []);
+      } catch {
+        if (!cancelled) setFollowUpJobs([]);
+      } finally {
+        if (!cancelled) setFollowUpLoading(false);
+      }
+    }
+    void loadFollowUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, companyId, channel, resolvedSessionId]);
+
+  const followUpEvents = useMemo(() => buildFollowUpHistoryEvents(followUpJobs), [followUpJobs]);
+
   const body = useMemo(
     () => (
       <LeadPanelBody
@@ -450,6 +660,8 @@ export function ConversasLeadPanel({
         labelStage={labelStage}
         property={property}
         brokerName={brokerName}
+        followUpEvents={followUpEvents}
+        followUpLoading={followUpLoading}
         onViewFicha={onViewFicha}
         onTransfer={onTransfer}
         onClose={!isXlUp ? () => onOpenChange(false) : undefined}
@@ -466,6 +678,8 @@ export function ConversasLeadPanel({
       labelStage,
       property,
       brokerName,
+      followUpEvents,
+      followUpLoading,
       onViewFicha,
       onTransfer,
       isXlUp,

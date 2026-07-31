@@ -15,6 +15,7 @@ const loadJSZip = () => import('jszip').then(m => m.default);
 import { convertGoogleDriveUrl } from '@/utils/imageUtils';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { useOwnCompany } from '@/hooks/useOwnCompany';
+import { normalizeBrandDisplayName } from '@/lib/brandingDisplay';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 interface MarketingActionCardsProps {
@@ -431,11 +432,9 @@ export function MarketingActionCards({ property }: MarketingActionCardsProps) {
   const { company: loggedCompany } = useOwnCompany();
 
   /* ---------------- Company/branding defaults ---------------- */
-  const companyName = (
-    loggedCompany?.name ||
-    settings?.display_name ||
-    'Sua Imobiliária'
-  ).toString().trim();
+  const companyName = normalizeBrandDisplayName(
+    loggedCompany?.name || settings?.display_name || 'Sua Imobiliária',
+  ) || (loggedCompany?.name || settings?.display_name || 'Sua Imobiliária').toString().trim();
   const companyLogo = (
     loggedCompany?.logo_url ||
     settings?.logo_url ||

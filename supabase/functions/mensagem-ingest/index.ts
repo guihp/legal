@@ -16,6 +16,10 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  hookFollowUpOnMensagem,
+  parseFromFollowUpFlag,
+} from "../_shared/followUpCycle.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -132,6 +136,17 @@ serve(async (req) => {
       console.error("[mensagem-ingest]", error.message);
       return json({ ok: false, error: error.message, code: error.code }, 400);
     }
+
+    const msgType = body.type != null ? String(body.type) : "lead";
+    await hookFollowUpOnMensagem(service, {
+      companyId,
+      phone,
+      plataforma: body.plataforma != null ? String(body.plataforma) : "WhatsApp",
+      instancia: body.instancia != null ? String(body.instancia) : null,
+      type: msgType,
+      mensageType: body.mensage_type != null ? String(body.mensage_type) : null,
+      fromFollowUp: parseFromFollowUpFlag(body),
+    });
 
     return json({ ok: true, row: data, duplicate_handled: true });
   } catch (e) {

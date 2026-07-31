@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
 import { resolveConversationListPreview } from '@/lib/conversaMedia';
 import type { ConversationPreviewKind } from '@/lib/conversaMedia';
-import { resolveCompanyAiLabel } from '@/lib/conversationContactLabels';
+import { resolveCompanyAiLabel, resolveContactLabelsForSession, isAttendanceLabelSlug } from '@/lib/conversationContactLabels';
+import type { ContactLabelBadge } from '@/lib/conversationContactLabels';
 import { filterConversasByLeadAssignment } from '@/lib/conversaLeadScope';
 import { mensagemWhatsappPreviewType } from '@/lib/mensagensWhatsapp';
 import { normalizePhoneDigits } from '@/lib/normalizePhone';
@@ -28,6 +29,8 @@ export interface Conversa {
   labelColor?: string | null;
   /** Slug persistido em `conversation_contact_labels.status`. */
   labelSlug?: string | null;
+  /** Todas as etiquetas da conversa (atendimento + tags). */
+  contactLabels?: ContactLabelBadge[];
   crmStage?: string | null;
   hasCrmLead?: boolean;
   /** URL da foto de perfil WhatsApp do lead (pode expirar). */
@@ -139,18 +142,26 @@ export function useConversasList(selectedInstance?: string | null) {
             .eq('channel', 'whatsapp')
             .in('session_id', scopedList.map((l) => l.sessionId) as string[]);
 
-          const statusBySession = new Map<string, string>();
+          const statusesBySession = new Map<string, string[]>();
           (labels || []).forEach((row: { session_id?: string; status?: string }) => {
             if (!row?.session_id) return;
-            statusBySession.set(String(row.session_id), String(row.status || 'ai_ativa').toLowerCase());
+            const sid = String(row.session_id);
+            const st = String(row.status || 'ai_ativa').toLowerCase();
+            const arr = statusesBySession.get(sid) || [];
+            arr.push(st);
+            statusesBySession.set(sid, arr);
           });
 
           scopedList.forEach((item) => {
-            const st = statusBySession.get(item.sessionId) || 'ai_ativa';
-            const meta = resolveCompanyAiLabel(st, aiLabels);
-            item.labelSlug = meta.slug;
-            item.leadStage = meta.name;
-            item.labelColor = meta.color;
+            const statuses = statusesBySession.get(item.sessionId) || ['ai_ativa'];
+            const badges = resolveContactLabelsForSession(statuses, aiLabels);
+            item.contactLabels = badges;
+            const primary =
+              badges.find((b) => isAttendanceLabelSlug(b.slug)) || badges[0] ||
+              resolveCompanyAiLabel('ai_ativa', aiLabels);
+            item.labelSlug = primary.slug;
+            item.leadStage = primary.name;
+            item.labelColor = primary.color;
           });
         } catch {
           scopedList.forEach((item) => {
@@ -158,6 +169,7 @@ export function useConversasList(selectedInstance?: string | null) {
             item.labelSlug = meta.slug;
             item.leadStage = meta.name;
             item.labelColor = meta.color;
+            item.contactLabels = [meta];
           });
         }
       } else {
@@ -166,6 +178,7 @@ export function useConversasList(selectedInstance?: string | null) {
           item.labelSlug = meta.slug;
           item.leadStage = meta.name;
           item.labelColor = meta.color;
+          item.contactLabels = [meta];
         });
       }
 

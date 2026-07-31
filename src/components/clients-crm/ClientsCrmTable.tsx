@@ -307,7 +307,7 @@ export function ClientsCrmTable({
                   aria-label={`Selecionar ${lead.nome}`}
                   className="mt-1 shrink-0"
                 />
-                <LeadAvatar photoUrl={lead.profile_pic_url_instagram} />
+                <LeadAvatar photoUrl={lead.profile_pic_url_instagram || lead.profile_pic_url_whatsapp} />
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <p className="font-semibold text-sm text-foreground truncate">{lead.nome}</p>
                   {lead.arroba_instagram_cliente ? (
@@ -408,7 +408,7 @@ export function ClientsCrmTable({
                     </td>
                     <td className="px-3 py-3 align-middle">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <LeadAvatar photoUrl={lead.profile_pic_url_instagram} />
+                        <LeadAvatar photoUrl={lead.profile_pic_url_instagram || lead.profile_pic_url_whatsapp} />
                         <div className="min-w-0">
                           <p className="font-semibold text-sm text-foreground truncate">
                             {lead.nome}

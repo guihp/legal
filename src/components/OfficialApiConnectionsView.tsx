@@ -97,11 +97,20 @@ export function OfficialApiConnectionsView() {
         if (rawPhone) {
           const cleanPhone = String(rawPhone).replace(/\D/g, '');
           if (cleanPhone) {
-            const tableName = `imobipro_messages_${cleanPhone}`;
-            const { count, error: mErr } = await supabase
-              .from(tableName as any)
-              .select('*', { count: 'exact', head: true });
-            if (!mErr && count !== null) waCount = count;
+            // Preferir crm_*; fallback ao nome legado se o shard ainda não foi renomeado.
+            const candidates = [
+              `crm_whatsapp_messages_${cleanPhone}`,
+              `imobipro_messages_${cleanPhone}`,
+            ];
+            for (const tableName of candidates) {
+              const { count, error: mErr } = await supabase
+                .from(tableName as any)
+                .select('*', { count: 'exact', head: true });
+              if (!mErr && count !== null) {
+                waCount = count;
+                break;
+              }
+            }
           }
         }
 

@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import { ConversationListPreview } from '@/components/chat/ConversationListPreview';
 import type { ConversationPreviewKind } from '@/lib/conversaMedia';
-import { conversationLabelListBadgeClasses, labelColorListBadgeClasses } from '@/lib/conversationContactLabels';
+import {
+  conversationLabelListBadgeClasses,
+  labelColorListBadgeClasses,
+  type ContactLabelBadge,
+} from '@/lib/conversationContactLabels';
 import { crmStageBadgeClasses } from '@/lib/crmKanbanStages';
 
 export type ConversationListItemProps = {
@@ -11,6 +15,8 @@ export type ConversationListItemProps = {
   leadStage?: string | null;
   /** Cor do catálogo; se omitida, infere pelo nome legado. */
   labelColor?: string | null;
+  /** Múltiplas etiquetas de contato (ai_ativa + follow_up_*, etc.). */
+  contactLabels?: ContactLabelBadge[] | null;
   crmStage?: string | null;
   hasCrmLead?: boolean;
   timeLabel?: string;
@@ -26,8 +32,8 @@ export type ConversationListItemProps = {
 function ListBadge({ className, children, title }: { className: string; children: string; title?: string }) {
   return (
     <span
-      title={title}
-      className={`conversas-list-badge inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold leading-tight tracking-wide border-0 ${className}`}
+      title={title || children}
+      className={`conversas-list-badge inline-flex max-w-[7.5rem] items-center truncate rounded px-1.5 py-0 text-[9px] font-semibold leading-tight tracking-normal border-0 ${className}`}
     >
       {children}
     </span>
@@ -40,6 +46,7 @@ export function ConversationListItem({
   displayName,
   leadStage,
   labelColor,
+  contactLabels,
   crmStage,
   hasCrmLead,
   timeLabel,
@@ -51,9 +58,16 @@ export function ConversationListItem({
 }: ConversationListItemProps) {
   const labelStage = leadStage || 'AI ATIVA';
   const crmLabel = crmStage?.trim() || 'CRM';
-  const labelBadgeClass = labelColor
-    ? labelColorListBadgeClasses(labelColor)
-    : conversationLabelListBadgeClasses(labelStage);
+  const badges: ContactLabelBadge[] =
+    contactLabels && contactLabels.length > 0
+      ? contactLabels
+      : [
+          {
+            slug: 'legacy',
+            name: labelStage,
+            color: labelColor || 'emerald',
+          },
+        ];
 
   return (
     <button
@@ -82,7 +96,18 @@ export function ConversationListItem({
 
         <div className="conversas-list-item__badges-row">
           <div className="conversas-list-item__badges">
-            <ListBadge className={labelBadgeClass}>{labelStage}</ListBadge>
+            {badges.map((b) => (
+              <ListBadge
+                key={b.slug}
+                className={
+                  b.color
+                    ? labelColorListBadgeClasses(b.color)
+                    : conversationLabelListBadgeClasses(b.name)
+                }
+              >
+                {b.name}
+              </ListBadge>
+            ))}
             {hasCrmLead ? (
               <ListBadge
                 className={crmStageBadgeClasses(crmLabel)}

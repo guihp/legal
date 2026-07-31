@@ -92,17 +92,23 @@ export function useCompanyAiLabels() {
         if (input.id && !input.id.startsWith('fallback-')) {
           const { data: existing } = await supabase
             .from('company_ai_labels')
-            .select('is_system, slug')
+            .select('is_system, slug, name')
             .eq('id', input.id)
             .eq('company_id', companyId)
             .maybeSingle();
 
-          const patch: Record<string, unknown> = {
-            name,
-            color: input.color,
-            sort_order: input.sort_order ?? 100,
-          };
-          if (!existing?.is_system) patch.slug = slug;
+          // Sistema: só cor (e sort_order opcional). Nome/slug fixos.
+          const patch: Record<string, unknown> = existing?.is_system
+            ? {
+                color: input.color,
+                ...(input.sort_order != null ? { sort_order: input.sort_order } : {}),
+              }
+            : {
+                name,
+                color: input.color,
+                slug,
+                sort_order: input.sort_order ?? 100,
+              };
 
           const { data, error: uError } = await supabase
             .from('company_ai_labels')

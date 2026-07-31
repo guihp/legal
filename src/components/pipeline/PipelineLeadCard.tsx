@@ -69,7 +69,9 @@ export const PipelineDragPreview = memo(function PipelineDragPreview({
   return (
     <div className="w-[280px] rounded-xl border border-border/40 bg-card p-3.5 shadow-lg rotate-1 cursor-grabbing">
       <div className="flex items-start gap-2.5">
-        <LeadAvatar photoUrl={lead.profile_pic_url_instagram} />
+        <LeadAvatar
+          photoUrl={lead.profile_pic_url_instagram || lead.profile_pic_url_whatsapp}
+        />
         <div className="min-w-0 flex-1">
           <h4 className="font-semibold text-sm text-foreground truncate leading-tight">{lead.nome}</h4>
           {interest ? <p className="text-xs text-muted-foreground truncate">{interest}</p> : null}
@@ -125,7 +127,9 @@ function PipelineLeadCardInner({ lead, isDragging = false, availableBrokers = []
       >
         {/* Top: avatar + name + menu */}
         <div className="flex items-start gap-2.5">
-          <LeadAvatar photoUrl={lead.profile_pic_url_instagram} />
+          <LeadAvatar
+            photoUrl={lead.profile_pic_url_instagram || lead.profile_pic_url_whatsapp}
+          />
 
           <div className="min-w-0 flex-1 pr-6">
             <h4 className="font-semibold text-sm text-foreground truncate leading-tight">{lead.nome}</h4>

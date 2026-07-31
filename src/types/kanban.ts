@@ -46,6 +46,7 @@ export interface DatabaseLead {
   nome_instagram_cliente?: string | null;
   arroba_instagram_cliente?: string | null;
   profile_pic_url_instagram?: string | null;
+  profile_pic_url_whatsapp?: string | null;
 }
 
 export interface KanbanLead {
@@ -82,6 +83,7 @@ export interface KanbanLead {
   nome_instagram_cliente?: string;
   arroba_instagram_cliente?: string;
   profile_pic_url_instagram?: string;
+  profile_pic_url_whatsapp?: string;
 }
 
 export interface KanbanStage {
@@ -141,6 +143,7 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     nome_instagram_cliente: igName || undefined,
     arroba_instagram_cliente: igHandle || undefined,
     profile_pic_url_instagram: String(dbLead?.profile_pic_url_instagram || '').trim() || undefined,
+    profile_pic_url_whatsapp: String(dbLead?.profile_pic_url_whatsapp || '').trim() || undefined,
     // Incluir informações do corretor se disponível
     corretor: dbLead.corretor ? {
       id: dbLead.corretor.id,

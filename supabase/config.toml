@@ -32,5 +32,8 @@ verify_jwt = false
 [functions.visit-reminder-dispatch]
 verify_jwt = false
 
+[functions.follow-up-dispatch]
+verify_jwt = false
+
 [functions.ai-test-api]
 verify_jwt = false

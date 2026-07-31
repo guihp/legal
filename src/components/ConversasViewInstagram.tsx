@@ -435,18 +435,31 @@ export function ConversasViewInstagram({
 
   const setConversationLabel = useCallback(async (sessionId: string, status: string) => {
     if (!profile?.company_id) return;
-    const { error } = await supabase
-      .from('conversation_contact_labels')
-      .upsert(
-        {
-          company_id: profile.company_id,
-          channel: 'instagram',
-          session_id: sessionId,
-          status,
-          updated_by: profile.id || null,
-        },
-        { onConflict: 'company_id,channel,session_id' }
-      );
+    const { isAttendanceLabelSlug, ATTENDANCE_LABEL_SLUGS } = await import(
+      '@/lib/conversationContactLabels'
+    );
+    if (isAttendanceLabelSlug(status)) {
+      await supabase
+        .from('conversation_contact_labels')
+        .delete()
+        .eq('company_id', profile.company_id)
+        .eq('channel', 'instagram')
+        .eq('session_id', sessionId)
+        .in(
+          'status',
+          ATTENDANCE_LABEL_SLUGS.filter((s) => s !== status),
+        );
+    }
+    const { error } = await supabase.from('conversation_contact_labels').upsert(
+      {
+        company_id: profile.company_id,
+        channel: 'instagram',
+        session_id: sessionId,
+        status,
+        updated_by: profile.id || null,
+      },
+      { onConflict: 'company_id,channel,session_id,status' },
+    );
     if (error) throw error;
     refetchConversas();
   }, [profile?.company_id, profile?.id, refetchConversas]);
@@ -571,6 +584,26 @@ export function ConversasViewInstagram({
   const handleFollowUp = useCallback(
     async (conversation: any) => {
       const instancia = resolveIgInstancia();
+      if (profile?.company_id && conversation?.sessionId) {
+        const { resolveFollowUpStageGate, FOLLOW_UP_STAGE_BLOCKED_TOAST } = await import(
+          '@/lib/followUp'
+        );
+        const gate = await resolveFollowUpStageGate({
+          companyId: profile.company_id,
+          channel: 'instagram',
+          sessionId: conversation.sessionId,
+          crmStage: conversation.crmStage,
+          leadId: conversation.leadId,
+        });
+        if (!gate.allowed) {
+          toast({
+            title: FOLLOW_UP_STAGE_BLOCKED_TOAST.title,
+            description: FOLLOW_UP_STAGE_BLOCKED_TOAST.description,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
       try {
         await fetch('https://n8n-sgo8ksokg404ocg8sgc4sooc.vemprajogo.com/webhook/follow-up-chats', {
           method: 'POST',
@@ -583,8 +616,18 @@ export function ConversasViewInstagram({
             role: profile?.role || '',
             plataforma: 'Instagram',
             rota: 'instagram',
+            source: 'manual',
           }),
         });
+        if (profile?.company_id && conversation.sessionId) {
+          // Etiqueta follow_up fica a cargo do n8n/API — não sobrescrever ai_ativa.
+          const { cancelFollowUpJobs } = await import('@/lib/followUp');
+          await cancelFollowUpJobs({
+            companyId: profile.company_id,
+            channel: 'instagram',
+            sessionId: conversation.sessionId,
+          });
+        }
         toast({
           title: 'Follow up solicitado',
           description: 'Follow up solicitado com sucesso.',
@@ -597,7 +640,7 @@ export function ConversasViewInstagram({
         });
       }
     },
-    [profile?.company_id, profile?.email, profile?.role, resolveIgInstancia, toast]
+    [profile?.company_id, profile?.email, profile?.role, resolveIgInstancia, setConversationLabel, toast]
   );
 
   // Sem canal IG: nem ID na empresa (legado Imobi) nem contas em `company_instagram_accounts`
@@ -1078,6 +1121,7 @@ export function ConversasViewInstagram({
                     displayName={conv.displayName}
                     leadStage={conv.leadStage}
                     labelColor={conv.labelColor}
+                    contactLabels={conv.contactLabels}
                     crmStage={conv.crmStage}
                     hasCrmLead={conv.hasCrmLead}
                     timeLabel={conv.lastMessageDate ? formatConversationListTime(conv.lastMessageDate) : undefined}
@@ -1376,6 +1420,9 @@ export function ConversasViewInstagram({
           displayName={currentConversation?.displayName || selectedConversation}
           phone={currentConversation?.leadPhone}
           channelLabel="Instagram"
+          channel="instagram"
+          companyId={profile?.company_id || null}
+          sessionId={currentConversation?.sessionId || selectedConversation || null}
           profilePicUrl={currentConversation?.profilePicUrlInstagram}
           messageCount={messages.length || currentConversation?.messageCount}
           labelStage={currentConversation?.leadStage}

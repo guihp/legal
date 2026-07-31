@@ -1,8 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import { CalendarDays, Clock, MessageSquareText, ScrollText } from 'lucide-react';
+import { CalendarDays, Clock, MessageSquareText, RefreshCw, ScrollText, Tags } from 'lucide-react';
 import type { DaySchedule } from '@/lib/businessHours';
 import type { AiVisitSchedulingConfig } from '@/lib/aiVisitScheduling';
 import type { AiConfigFormState, AiConfigSectionId } from './constants';
+import { AI_CONFIG_SECTION_META } from './constants';
 
 /** Forest green for AI bubbles / impact card (match cream mockups). */
 export const AI_CONFIG_EMERALD = '#0C2919';
@@ -72,6 +73,20 @@ export const SECTION_NAV: ReadonlyArray<{
     Icon: CalendarDays,
     iconBg: 'bg-violet-100 dark:bg-violet-950/40',
     iconClass: 'text-violet-800 dark:text-violet-300',
+  },
+  {
+    id: 'followup',
+    label: AI_CONFIG_SECTION_META.followup.label,
+    Icon: RefreshCw,
+    iconBg: 'bg-sky-100 dark:bg-sky-950/40',
+    iconClass: 'text-sky-800 dark:text-sky-300',
+  },
+  {
+    id: 'etiquetas',
+    label: AI_CONFIG_SECTION_META.etiquetas.label,
+    Icon: Tags,
+    iconBg: 'bg-rose-100 dark:bg-rose-950/40',
+    iconClass: 'text-rose-800 dark:text-rose-300',
   },
 ];
 

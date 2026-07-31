@@ -1,5 +1,87 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-07-31 — Follow-up: fix loop 7m (sequence cancelada pelo ingest)
+
+- **Causa:** após `sent` do 7m + `enqueue_next` (15m), o n8n gravava a resposta da IA **sem** `from_follow_up` → `start_or_refresh` cancelava o 15m e recriava 7m (~a cada 7–8s pós-send).
+- **Fix:** `start_or_refresh_follow_up_cycle` ignora refresh mid-sequence (pending next após sent recente) e tenta restaurar o próximo step se o race já cancelou. Migration `follow_up_skip_refresh_after_sent_sequence`.
+- **Repair** sessão teste `5519981941604`: stray 7m cancelado; 15m restaurado no ciclo do último 7m `sent`.
+- **Ops:** n8n `follow-up-chats` → ingest deve mandar `from_follow_up: true` (ainda recomendado).
+
+## 2026-07-31 — Follow-up: limpar etiqueta na resposta + histórico no painel
+
+- **Regra:** etiqueta timed continua via n8n/`set_label`; sistema **não** aplica label no dispatch.
+- **Reply do cliente:** RPC `handle_client_reply_follow_up` — cancela pending, `recovered_at` nos `sent`, delete `follow_up`/`follow_up_*` em `conversation_contact_labels`. Stage gate também limpa labels.
+- **UI:** seção **Histórico de Follow-up** no `ConversasLeadPanel` (enviado / recuperado / agendado / cancelado).
+- Migration `follow_up_cancel_clear_labels_recovered`; edges `mensagem-ingest` / `mensagem-media-ingest` / `follow-up-dispatch` usam o novo RPC.
+
+## 2026-07-31 — Etiquetas múltiplas: ai_ativa + follow_up_*
+
+- UNIQUE `(company_id, channel, session_id, status)` — várias etiquetas por conversa.
+- `set_label` / UI: tags aditivas; `ai_ativa`/`humano`/`humano_solicitado` exclusivos entre si.
+- Lista Conversas renderiza `contactLabels[]` (AI ATIVA + FOLLOW-UP-7M + CRM).
+- Backfill: sessões só com `follow_up_*` ganharam `ai_ativa` de novo.
+
+## 2026-07-31 — Follow-up: não sobrescrever etiqueta ai_ativa
+
+- `follow-up-dispatch` deixa de fazer upsert em `conversation_contact_labels` (etiqueta timed fica no n8n/API).
+- Manual “Fazer follow up” (Premium/IG/legacy) também não seta mais `follow_up` no painel — preserva `ai_ativa`.
+- Payload ainda envia `label_slug` para o n8n aplicar se quiser.
+- **Cleanup:** 3 rows Jastelo com `follow_up_7m`/`follow_up_15m` revertidas para `ai_ativa`.
+
+## 2026-07-31 — Follow-up: sequência + quiet hours 07–21 BRT
+
+- **Sequência:** `start_or_refresh_follow_up_cycle` agenda só o 1º horário enabled; após `sent`, `enqueue_next_follow_up_job` cria o próximo (mesmo `cycle_id` / `cycle_anchor_at`). Reply do cliente continua cancelando pending.
+- **Quiet hours:** `clamp_to_follow_up_window` (07:00–21:00 America/Sao_Paulo). Fora da janela o dispatch **adia** (`deferred_quiet_hours`) sem chamar n8n.
+- **Migration** `follow_up_sequence_quiet_hours` + redeploy Edge `follow-up-dispatch` (count `deferred` + enqueue após sent).
+- **UI/docs:** copy na seção Follow-up; `FOLLOW_UP_WINDOW` em `src/lib/followUp.ts`; `docs/events.md` sequence + quiet hours.
+
+## 2026-07-31 — Follow-up Jastelo: webhook 7m disparou + fix media reset
+
+- **Investigação (sessão `559885112445`):** zero `sent` até ~16:08 UTC porque IA enviou **8 imagens** (15:55:33–15:55:56) + textos em rajada — cada ingest IA chamava `start_or_refresh_follow_up_cycle` e cancelava o pending anterior (~ciclos a cada 3–4s). Relógio de 7m nunca maturava.
+- **Disparo real:** ciclo `a1b8dc9c…` criado 16:00:59 (última msg texto IA); job `follow_up_7m` `trigger_at` 16:07:59 → cron 16:08 → Edge `sent:1` (`0705ab42…`, `sent_at` 16:08:01). pg_net HTTP 200 `{processed:1,sent:1}`. **n8n `follow-up-chats` recebeu POST** (res.ok exigido para marcar `sent`).
+- **Settings OK** (enabled + whatsapp); cron a cada 1 min succeeded; invoke manual pós-send: `{processed:0,sent:0}`.
+- **Fix:** `_shared/followUpCycle.ts` — `isMediaOnlyMensageType` → hook **não** reinicia ciclo em IA image/audio/video/document/sticker. `mensagem-ingest` + `mensagem-media-ingest` passam `mensageType`. Redeploy das duas edges.
+- **Nota:** rajadas de **texto** IA ainda reiniciam (silêncio conta a partir da última fala). Próximo: `follow_up_15m` ~16:15:59 / `1h` ~17:00:59 no mesmo ciclo.
+
+## 2026-07-31 — Follow-up: pg_cron live (root cause fix)
+
+- **Root cause:** jobs `conversation_follow_up_jobs` eram criados, mas nada invocava `follow-up-dispatch` (mesmo gap documentado em visit-reminder).
+- **Fix (user-imobi / `bfcssdogttmqeujgmxdf`):** habilitou `pg_cron` + `pg_net`; vault `supabase_anon_key`; cron job `follow-up-dispatch` a cada **1 min** → `POST /functions/v1/follow-up-dispatch`.
+- **Smoke:** curl + pg_net → `200` `{success:true, processed:0, sent:0}` (0 due no momento; Jastelo tinha 3 pending futuros / muitos cancelled por refresh de ciclo, não por dispatch).
+- **Auth:** sem `FOLLOW_UP_CRON_SECRET`/`VISIT_REMINDER_CRON_SECRET` na Edge, dispatch aceita open; se setar secret depois, adicionar vault `follow_up_cron_secret` + header `x-cron-secret` no cron SQL.
+- **Repo:** migrations `enable_pg_cron_and_pg_net` + `schedule_follow_up_dispatch_cron` (SQL espelho; secret não commitado).
+- **Ops next (opcional):** setar `FOLLOW_UP_CRON_SECRET` na Edge + vault; espelhar cron para `visit-reminder-dispatch`.
+
+## 2026-07-31 — Follow-up: stage gate (Novo Lead / Qualificado)
+
+- **Regra:** auto + manual follow-up só se `leads.stage` ∈ {Novo Lead, Qualificado} (slug `novo-lead`/`qualificado`, normalização accent/case).
+- **SQL** `follow_up_stage_gate`: helpers `normalize_lead_stage_slug` / `is_follow_up_allowed_stage` / `resolve_follow_up_lead_stage`; gate em `start_or_refresh_follow_up_cycle` (cancela pending + não cria); `cancel_follow_up_jobs_for_lead` + trigger `trg_cancel_follow_up_on_lead_stage` ao sair das colunas permitidas.
+- **Edge** `follow-up-dispatch`: revalida stage antes do webhook; cancela com `last_error=stage_not_allowed`.
+- **UI:** Premium / IG / ConversasView — `resolveFollowUpStageGate` + toast bloqueia “Fazer follow up”. Shared: `src/lib/followUp.ts`.
+- **Docs:** `docs/events.md` — nota stage gate em `conversation.follow_up.request`.
+
+## 2026-07-31 — Follow-up: seção Config IA + agendador backend
+
+- **Migration** `company_follow_up_system`: `company_follow_up_settings`, `company_follow_up_schedules`, `conversation_follow_up_jobs`; seed labels `follow_up` / `follow_up_15m` / `follow_up_1h` (system) + schedules 15m/1h; backfill; promoveu `follow_up` custom da Jastelo para `is_system`; RPCs `start_or_refresh_follow_up_cycle` / `cancel_follow_up_jobs`.
+- **Hooks:** `mensagem-ingest` + `mensagem-media-ingest` iniciam ciclo em msg IA e cancelam em msg cliente (`from_follow_up`/`source:auto` não reinicia).
+- **Edge** `follow-up-dispatch` (espelha visit-reminder): aplica etiqueta timed, POST n8n `follow-up-chats` com `source/ai_description/label_slug/…`. Cron: Dashboard (~1–2 min) + `FOLLOW_UP_CRON_SECRET`.
+- **UI:** nav Config IA `followup` + `AiConfigFollowUpSection`; Etiquetas filtra sub-labels timed; Conversas (Premium/IG/legacy) em **Fazer follow up** → label `follow_up` + cancela jobs pending. Dialog atraso: row `flex-col sm:flex-row` + toggle `shrink-0` (min|h sem clip).
+- **Docs:** `docs/events.md` — payload auto/manual + notas n8n.
+
+## 2026-07-31 — Config IA: Etiquetas de volta no nav SEÇÃO
+
+- `AI_CONFIG_NAV_SECTIONS` + `SECTION_NAV` incluem `etiquetas` (ícone Tags).
+- Nav destaca a seção corretamente; removido hack que mapeava etiquetas→identidade e o aviso `?section=etiquetas`.
+- `AiLabelsCard` no visual cream: `rounded-2xl` branco, ícone rose, CTA emerald, rows `#F7F5F0`, badge Sistema emerald.
+- Sistema (`ai_ativa` / `humano` / `humano_solicitado`): fixas em todas as empresas; só cor editável. Migration `protect_system_ai_label_names` trava `name` no trigger; hook + `conversation-label-api` não enviam rename.
+
+## 2026-07-31 — Remoção marca legada ImobiPro (PDFs / settings)
+
+- **Banco:** `company_settings.display_name` da Jastelo Empreendimentos (`ImobiPro` → `Jastelo Empreendimentos`).
+- **Front:** `useCompanySettings` sanitiza `display_name`/`display_subtitle` via `normalizeBrandDisplayName` (load/save/reset); PDFs de Relatórios (`ReportsView` + `exportReportPdf`) e Marketing Action Cards também normalizam.
+- Contagem WhatsApp em conexões oficiais: tenta `crm_whatsapp_messages_{phone}` antes do shard legado.
+- **Nota:** ainda existem tabelas físicas `imobipro_messages_*` (WhatsApp/Instagram legado) — renomear exige migration + alinhamento n8n; RPCs já fazem fallback.
+
 ## 2026-07-31 — Login: redesign cream (mockup split-screen)
 
 - Split 50/50: painel forest `#0C2919` (logo iA, headline, stats decorativos, checks, footer v1.0.0) + cream `#F7F5F0` com card “Entrar na plataforma”.

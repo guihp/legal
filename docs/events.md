@@ -131,8 +131,13 @@ Persistência (LeadViewModal): `leads.conversation_summary` (text).
 |-------|--------|
 | **Name** | `conversation.follow_up.request` |
 | **Channel** | n8n webhook `follow-up-chats` |
-| **When** | User clicks **Fazer follow up** in conversation actions menu |
+| **When** | (1) User clicks **Fazer follow up** (manual); (2) Edge `follow-up-dispatch` when a timed job fires (auto) |
 | **URL** | `…/webhook/follow-up-chats` |
+| **Related tables** | `company_follow_up_settings`, `company_follow_up_schedules`, `conversation_follow_up_jobs` |
+| **Stage gate** | Only when linked lead `leads.stage` is **Novo Lead** or **Qualificado** (slug `novo-lead` / `qualificado`; accents/case ignored). Else: RPC does not schedule; dispatch cancels with `last_error=stage_not_allowed`; manual UI toasts and blocks webhook. Stage leave → trigger cancels pending jobs. |
+| **Sequence** | Cycle start queues **only the first** enabled schedule (lowest `delay_minutes`). Next step is created via `enqueue_next_follow_up_job` **only after** previous job is `sent` (webhook OK). Client reply still cancels all pending. |
+| **Quiet hours** | Global window **07:00–21:00** `America/Sao_Paulo`. Outside window: dispatch **defers** (`trigger_at` → next open via `clamp_to_follow_up_window`, `last_error=deferred_quiet_hours`) — does **not** cancel or call n8n. Jobs also get `cycle_anchor_at` at cycle start. |
+| **Cron** | **Live (pg_cron + pg_net):** job `follow-up-dispatch` a cada 1 min → `POST /functions/v1/follow-up-dispatch`. Vault `supabase_anon_key`. Opcional: `x-cron-secret` (= `FOLLOW_UP_CRON_SECRET` ou `VISIT_REMINDER_CRON_SECRET`) quando o secret estiver setado na Edge |
 
 ### Body
 
@@ -141,10 +146,27 @@ Persistência (LeadViewModal): `leads.conversation_summary` (text).
 | `session_id` | string | Phone / conversation key |
 | `instancia` | string | WhatsApp/IG instance |
 | `company_id` | string (uuid) | Tenant company id |
-| `user_email` | string | Actor email |
-| `role` | string | Actor role |
+| `user_email` | string | Actor email (`system@follow-up-dispatch` no auto) |
+| `role` | string | Actor role (`system` no auto) |
 | `plataforma` | string | `WhatsApp` ou `Instagram` |
 | `rota` | string | `whatsapp` ou `instagram` (canal da UI) |
+| `source` | string | **`manual`** (menu) ou **`auto`** (dispatch) |
+| `delay_minutes` | number | (auto) atraso do horário que disparou |
+| `label_slug` | string | (auto) slug sugerido no payload (`follow_up_15m`, …); **etiqueta no chat é aplicada pelo n8n/API do cliente** (não pelo dispatch, para não sobrescrever `ai_ativa`) |
+| **Client reply** | — | Ingest chama `handle_client_reply_follow_up`: cancela pending (`last_error=client_replied`), grava `recovered_at` nos jobs `sent`, e **remove** labels `follow_up` / `follow_up_*` da sessão. Histórico no painel do lead (Conversas). |
+| **Sequence guard** | — | Após `sent` + `enqueue_next`, se o ingest da resposta IA **não** mandar `from_follow_up`, o `start_or_refresh` **não** reinicia no 1º step (evita loop de 7m). n8n ainda deve enviar `from_follow_up: true`. |
+| `ai_description` | string | (auto) orientação configurada no horário — **n8n deve usar como prompt/contexto da IA** |
+| `cycle_id` | string (uuid) | (auto) ciclo de silêncio |
+| `schedule_id` | string (uuid) | (auto) id do schedule |
+| `job_id` | string (uuid) | (auto) id do job |
+
+### Notas para integradores n8n
+
+1. Ler `source` / `ai_description` / `label_slug` / `delay_minutes` no workflow `follow-up-chats`.
+2. No auto-disparo, ao gravar a resposta da IA via `mensagem-ingest` / `mensagem-media-ingest`, enviar `from_follow_up: true` (ou `source: auto`) para **não** reiniciar o ciclo de jobs. Mensagens IA **só de mídia** (image/audio/video/document/sticker) também **não** reiniciam o timer de silêncio — só texto/conversation.
+3. Manual: o painel aplica etiqueta `follow_up` e cancela jobs `pending` da sessão após o webhook.
+4. Stage gate (Novo Lead / Qualificado): se o lead saiu dessas colunas, jobs são cancelados (`stage_not_allowed`) e o webhook **não** deve ser esperado; n8n não precisa tratar o gate — o painel/dispatch já bloqueiam.
+5. Sequência + quiet hours: n8n recebe **um** disparo por vez; o próximo horário só é enfileirado após `sent`. Fora de 07–21 BRT o cron **adia** (sem POST).
 
 ---
 
@@ -161,7 +183,7 @@ Persistência (LeadViewModal): `leads.conversation_summary` (text).
 
 | `action` | Descrição |
 |----------|-----------|
-| `set_label` | Upsert em `conversation_contact_labels`; `status` deve existir em `company_ai_labels.slug` da empresa |
+| `set_label` | Upsert aditivo em `conversation_contact_labels` (unique por session+status). Tags (`follow_up_*`, custom) **não** removem `ai_ativa`. Modos `ai_ativa`/`humano`/`humano_solicitado` são exclusivos entre si. |
 | `get_labels` | Lista `{ session_id, status }` por canal + `session_ids[]` |
 | `list_catalog` | Lista catálogo `company_ai_labels` da empresa |
 | `upsert_catalog` | Cria/edita etiqueta (gestor/admin/service_role); system: não altera slug/`is_system` |
