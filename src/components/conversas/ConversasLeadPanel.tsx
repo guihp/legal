@@ -305,7 +305,7 @@ function LeadPanelBody({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 space-y-5">
+      <div className="flex-1 overflow-y-auto conversas-scrollbar px-4 py-4 space-y-5">
         {loading ? (
           <div className="space-y-3 animate-pulse">
             <div className="h-16 rounded-xl bg-[var(--cv-panel-muted)]" />
