@@ -5,6 +5,10 @@ const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi)$/i;
 const AUDIO_EXT = /\.(ogg|opus|mp3|m4a|wav|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
+/** Limite WhatsApp / Instagram para vídeo no envio pelo painel. */
+export const CHAT_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
+export const CHAT_VIDEO_MAX_LABEL = "16 MB";
+
 /**
  * Classifica anexo pelo MIME do browser e/ou extensão do nome.
  * Safari/Firefox às vezes entregam `file.type === ""` — não rejeitar nesses casos.
@@ -56,12 +60,39 @@ export function isPassThroughChatMp4(file: File): boolean {
 }
 
 /**
- * Precisa de ffmpeg **somente** acima do limite de bytes da API.
- * MOV/WebM ≤ limite são enviados como estão: o container é aceito no envio e
- * transcodificar no browser custa minutos por vídeo.
+ * Formatos de vídeo que o painel não envia (MOV/WebM etc.).
+ * Compressão no browser era lenta demais — pedimos MP4 ≤ 16 MB.
+ */
+export function isUnsupportedChatVideoFormat(file: File): boolean {
+  return !isPassThroughChatMp4(file);
+}
+
+export function formatChatVideoSizeMb(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Valida vídeo antes do preview/envio. Lança Error com mensagem amigável. */
+export function assertChatVideoAllowed(file: File): void {
+  if (isUnsupportedChatVideoFormat(file)) {
+    throw new Error(
+      `"${file.name}" é .MOV/WebM e não pode ser enviado pelo painel. ` +
+        `Exporte ou converta para MP4 (até ${CHAT_VIDEO_MAX_LABEL}) e tente de novo.`,
+    );
+  }
+  if (file.size > CHAT_VIDEO_MAX_BYTES) {
+    throw new Error(
+      `"${file.name}" tem ${formatChatVideoSizeMb(file.size)} e o limite é ${CHAT_VIDEO_MAX_LABEL}. ` +
+        `Envie um vídeo mais curto ou em resolução menor.`,
+    );
+  }
+}
+
+/**
+ * Mantido para compressChatVideo legado / testes.
+ * Agora true = formato ou tamanho que o painel rejeita (não comprime mais).
  */
 export function needsChatVideoTranscode(file: File, maxBytes: number): boolean {
-  return file.size > maxBytes;
+  return file.size > maxBytes || isUnsupportedChatVideoFormat(file);
 }
 
 /** Garante File com nome .mp4 e MIME video/mp4 (sem reencode). */

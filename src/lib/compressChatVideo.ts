@@ -4,13 +4,15 @@ import {
   ensureMp4FileMeta,
   isPassThroughChatMp4,
   needsChatVideoTranscode as needsTranscodeWithLimit,
+  CHAT_VIDEO_MAX_BYTES,
+  CHAT_VIDEO_MAX_LABEL,
 } from "@/lib/chatMediaKind";
 
-/** Limite WhatsApp / Instagram para vídeo no envio pelo painel. */
-export const CHAT_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
-export const CHAT_VIDEO_MAX_LABEL = "16 MB";
-
-export { ensureMp4FileMeta } from "@/lib/chatMediaKind";
+export {
+  CHAT_VIDEO_MAX_BYTES,
+  CHAT_VIDEO_MAX_LABEL,
+  ensureMp4FileMeta,
+} from "@/lib/chatMediaKind";
 
 export function needsChatVideoTranscode(file: File): boolean {
   return needsTranscodeWithLimit(file, CHAT_VIDEO_MAX_BYTES);

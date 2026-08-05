@@ -925,21 +925,7 @@ export function ConversasViewInstagram({
           file: item.file,
           type: item.type,
           caption: item.caption || '',
-          needsVideoPrepare: item.needsVideoPrepare,
         })),
-        {
-          onVideoProgress: (p) => {
-            if (p.phase === 'done') {
-              composerMedia.setSendProgress(null);
-              return;
-            }
-            composerMedia.setSendProgress({
-              fileName: p.fileName,
-              phase: p.phase,
-              ratio: p.ratio,
-            });
-          },
-        },
       );
 
       composerMedia.setSendProgress({
@@ -1006,13 +992,17 @@ export function ConversasViewInstagram({
         refetchConversas();
       }, 2000);
     } catch (err: any) {
-      const title =
-        err instanceof ChatVideoSizeLimitError
+      const message = err?.message || 'Erro ao enviar';
+      const isFormat =
+        /MOV|WebM|MP4/i.test(message) && /não pode ser enviado|Exporte|converta/i.test(message);
+      const title = isFormat
+        ? 'Formato de vídeo não suportado'
+        : err instanceof ChatVideoSizeLimitError
           ? 'Vídeo acima do limite'
           : err instanceof ChatVideoPrepareError
             ? 'Erro ao preparar vídeo'
             : 'Erro ao enviar';
-      toast({ title, description: err.message, variant: 'destructive' });
+      toast({ title, description: message, variant: 'destructive' });
     } finally {
       composerMedia.setSendProgress(null);
       setBusy(false);

@@ -1562,21 +1562,7 @@ export function ConversasViewPremium({
           file: item.file,
           type: item.type,
           caption: item.caption || "",
-          needsVideoPrepare: item.needsVideoPrepare,
         })),
-        {
-          onVideoProgress: (p) => {
-            if (p.phase === "done") {
-              composerMedia.setSendProgress(null);
-              return;
-            }
-            composerMedia.setSendProgress({
-              fileName: p.fileName,
-              phase: p.phase,
-              ratio: p.ratio,
-            });
-          },
-        },
       );
 
       composerMedia.setSendProgress({
@@ -1653,15 +1639,19 @@ export function ConversasViewPremium({
       }
     } catch (err: any) {
       console.error("Erro ao enviar mídia:", err);
-      const title =
-        err instanceof ChatVideoSizeLimitError
+      const message = err?.message || "Falha ao enviar";
+      const isFormat =
+        /MOV|WebM|MP4/i.test(message) && /não pode ser enviado|Exporte|converta/i.test(message);
+      const title = isFormat
+        ? "Formato de vídeo não suportado"
+        : err instanceof ChatVideoSizeLimitError
           ? "Vídeo acima do limite"
           : err instanceof ChatVideoPrepareError
             ? "Erro ao preparar vídeo"
             : "Falha ao enviar";
       toast({
         title,
-        description: err.message,
+        description: message,
         variant: "destructive",
       });
     } finally {

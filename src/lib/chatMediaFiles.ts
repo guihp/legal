@@ -1,15 +1,8 @@
 import { convertImageFileToPng } from "@/lib/chatImage";
 import {
-  ChatVideoPrepareError,
-  ChatVideoSizeLimitError,
-  compressVideoForChat,
-  needsChatVideoTranscode,
-  type CompressVideoProgress,
-} from "@/lib/compressChatVideo";
-import {
+  assertChatVideoAllowed,
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
-  isPassThroughChatMp4,
   type ChatMediaItemType,
 } from "@/lib/chatMediaKind";
 import { normalizeAudioFileForInstagram } from "@/lib/voiceAudioInstagram";
@@ -23,25 +16,21 @@ export type ChatPreviewItem = {
   previewUrl: string;
   type: ChatMediaItemType;
   caption: string;
-  /** Vídeo ainda precisa de transcode/compressão — feito só no envio. */
-  needsVideoPrepare?: boolean;
 };
 
-/** Aceita MP4 + MOV/WebM comuns; MIME vazio ainda é coberto por extensão no normalize. */
+/** Só MP4 para vídeo — .MOV/WebM são rejeitados com aviso (sem compressão no browser). */
 export const CHAT_FILE_ACCEPT: Record<ChatSurface, string> = {
-  whatsapp:
-    "image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,audio/ogg,audio/webm,application/pdf",
-  instagram:
-    "image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,audio/mp4,audio/x-m4a,.m4a,application/pdf",
+  whatsapp: "image/*,video/mp4,.mp4,audio/ogg,audio/webm,application/pdf",
+  instagram: "image/*,video/mp4,.mp4,audio/mp4,audio/x-m4a,.m4a,application/pdf",
 };
 
 export async function normalizeAttachmentForChat(
   file: File,
   surface: ChatSurface,
-): Promise<{ file: File; type: ChatMediaItemType; needsVideoPrepare?: boolean }> {
+): Promise<{ file: File; type: ChatMediaItemType }> {
   const kind = inferChatMediaKindFromFileMeta(file);
   if (!kind) {
-    throw new Error("Arquivo deve ser imagem, áudio, vídeo (MP4/MOV/WebM) ou PDF");
+    throw new Error("Arquivo deve ser imagem, áudio, vídeo MP4 (até 16 MB) ou PDF");
   }
 
   if (kind === "imagem") {
@@ -60,13 +49,9 @@ export async function normalizeAttachmentForChat(
     return { file: normalized, type: "audio" };
   }
 
-  // Vídeo: preview usa o arquivo original; transcode acontece só no envio.
   if (kind === "video") {
-    return {
-      file,
-      type: "video",
-      needsVideoPrepare: needsChatVideoTranscode(file),
-    };
+    assertChatVideoAllowed(file);
+    return { file: ensureMp4FileMeta(file), type: "video" };
   }
 
   // pdf
@@ -79,62 +64,33 @@ export async function buildChatPreviewItems(
 ): Promise<ChatPreviewItem[]> {
   return Promise.all(
     files.map(async (file) => {
-      const { file: normalizedFile, type, needsVideoPrepare } =
-        await normalizeAttachmentForChat(file, surface);
+      const { file: normalizedFile, type } = await normalizeAttachmentForChat(file, surface);
       return {
         file: normalizedFile,
         previewUrl: URL.createObjectURL(normalizedFile),
         type,
         caption: "",
-        needsVideoPrepare,
       };
     }),
   );
 }
 
 /**
- * Transcodifica/comprime os vídeos pendentes imediatamente antes do upload.
- * Chamado no envio para que o preview apareça na hora.
+ * Valida itens imediatamente antes do upload (sem ffmpeg).
+ * Vídeos inválidos já devem ter sido barrados no preview; revalida por segurança.
  */
 export async function prepareChatItemsForSend(
-  items: Array<{ file: File; type: ChatMediaItemType; caption: string; needsVideoPrepare?: boolean }>,
-  options?: {
-    onVideoProgress?: (p: CompressVideoProgress & { fileName: string }) => void;
-  },
+  items: Array<{ file: File; type: ChatMediaItemType; caption: string }>,
 ): Promise<Array<{ file: File; type: ChatMediaItemType; caption: string }>> {
-  const prepared: Array<{ file: File; type: ChatMediaItemType; caption: string }> = [];
-
-  for (const item of items) {
-    if (item.type !== "video") {
-      prepared.push({ file: item.file, type: item.type, caption: item.caption });
-      continue;
-    }
-
-    // Dentro do limite: envia o arquivo original, sem reencode.
-    if (!item.needsVideoPrepare) {
-      prepared.push({
-        file: isPassThroughChatMp4(item.file) ? ensureMp4FileMeta(item.file) : item.file,
+  return items.map((item) => {
+    if (item.type === "video") {
+      assertChatVideoAllowed(item.file);
+      return {
+        file: ensureMp4FileMeta(item.file),
         type: "video",
         caption: item.caption,
-      });
-      continue;
+      };
     }
-
-    try {
-      const compressed = await compressVideoForChat(item.file, {
-        onProgress: (p) => options?.onVideoProgress?.({ ...p, fileName: item.file.name }),
-      });
-      prepared.push({ file: compressed, type: "video", caption: item.caption });
-    } catch (err) {
-      if (err instanceof ChatVideoSizeLimitError) throw err;
-      if (err instanceof ChatVideoPrepareError) throw err;
-      const detail = err instanceof Error ? err.message : "erro desconhecido";
-      throw new ChatVideoPrepareError(
-        `Não foi possível preparar o vídeo "${item.file.name}" para envio. ${detail}`,
-        { cause: err },
-      );
-    }
-  }
-
-  return prepared;
+    return { file: item.file, type: item.type, caption: item.caption };
+  });
 }

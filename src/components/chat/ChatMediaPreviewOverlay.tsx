@@ -47,17 +47,7 @@ export function ChatMediaPreviewOverlay({
 
   const isWorking = Boolean(busy || sending);
   const canAddMore = Boolean(onAddFiles) && previewData.items.length < MAX_PREVIEW_ITEMS;
-  const progressPercent =
-    sendProgress?.phase === "compressing" && typeof sendProgress.ratio === "number"
-      ? Math.round(Math.min(1, Math.max(0, sendProgress.ratio)) * 100)
-      : null;
-  const progressLabel = !sendProgress
-    ? null
-    : sendProgress.phase === "loading"
-      ? "Carregando compressor de vídeo (primeira vez pode demorar)…"
-      : sendProgress.phase === "compressing"
-        ? `Comprimindo ${sendProgress.fileName}${progressPercent !== null ? ` · ${progressPercent}%` : ""}`
-        : `Enviando ${sendProgress.fileName}…`;
+  const progressLabel = sendProgress ? `Enviando ${sendProgress.fileName}…` : null;
   const thumbActiveBorder =
     surface === "instagram" ? "border-[#d62976]" : "border-[var(--cv-accent)]";
   const mediaLabel =
@@ -145,9 +135,7 @@ export function ChatMediaPreviewOverlay({
                     {active.file.name}
                   </p>
                   <p className="text-xs text-[var(--cv-text-muted)]">
-                    {active.needsVideoPrepare
-                      ? "Este navegador não reproduz o formato original. O vídeo será convertido no envio."
-                      : "Este navegador não reproduz o formato original, mas o arquivo será enviado como está."}
+                    Este navegador não reproduz o preview, mas o arquivo MP4 será enviado normalmente.
                   </p>
                 </div>
               ) : (
@@ -277,13 +265,7 @@ export function ChatMediaPreviewOverlay({
             <div className="mb-2.5 rounded-xl border border-[var(--cv-accent)]/25 bg-[var(--cv-accent)]/[0.07] px-3 py-2">
               <p className="truncate text-xs font-medium text-[var(--cv-text)]">{progressLabel}</p>
               <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--cv-border)]">
-                <div
-                  className={cn(
-                    "h-full rounded-full bg-[var(--cv-accent)] transition-[width]",
-                    progressPercent === null && "w-1/3 animate-pulse",
-                  )}
-                  style={progressPercent !== null ? { width: `${progressPercent}%` } : undefined}
-                />
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--cv-accent)]" />
               </div>
             </div>
           ) : null}

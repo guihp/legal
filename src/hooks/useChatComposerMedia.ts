@@ -21,10 +21,10 @@ export type PreparingAttachment = {
   kind: "imagem" | "video" | "audio" | "pdf" | "arquivo";
 };
 
-/** Progresso do transcode de vídeo, exibido no overlay durante o envio. */
+/** Progresso de upload no overlay (sem compressão no browser). */
 export type PreviewSendProgress = {
   fileName: string;
-  phase: "loading" | "compressing" | "uploading";
+  phase: "uploading";
   ratio?: number;
 };
 
@@ -105,13 +105,17 @@ export function useChatComposerMedia(options: {
           return { items: merged, activeIndex: Math.min(prev.items.length, merged.length - 1) };
         });
       } catch (err: unknown) {
-        const title =
-          err instanceof ChatVideoSizeLimitError
+        const message = err instanceof Error ? err.message : "Erro ao processar arquivo";
+        const isFormat =
+          /MOV|WebM|MP4/i.test(message) && /não pode ser enviado|Exporte|converta/i.test(message);
+        const isSize = /limite|MB/i.test(message) && /mais curto|resolução/i.test(message);
+        const title = isFormat
+          ? "Formato de vídeo não suportado"
+          : isSize || err instanceof ChatVideoSizeLimitError
             ? "Vídeo acima do limite"
             : err instanceof ChatVideoPrepareError
               ? "Erro ao preparar vídeo"
               : "Erro ao processar arquivo";
-        const message = err instanceof Error ? err.message : "Erro ao processar arquivo";
         toast({ title, description: message, variant: "destructive" });
       } finally {
         setPreparingAttachment(null);
