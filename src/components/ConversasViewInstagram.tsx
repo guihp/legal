@@ -58,6 +58,11 @@ import {
 import { insertMensagemOptimistic } from '@/lib/insertMensagemOptimistic';
 import { resolveWebhookMediaMessage } from '@/lib/chatMediaCaption';
 import { formatConteudoMediaForDb } from '@/lib/chatMediaStorage';
+import { prepareChatItemsForSend } from '@/lib/chatMediaFiles';
+import {
+  ChatVideoPrepareError,
+  ChatVideoSizeLimitError,
+} from '@/lib/compressChatVideo';
 import {
   insertOptimisticChatMediaRows,
   resolveBatchWebhookTipo,
@@ -915,12 +920,35 @@ export function ConversasViewInstagram({
     const targetInstancia = resolveIgInstancia();
     try {
       setBusy(true);
-      const uploadedItems = await uploadAndBuildChatMediaItems(
+      const preparedItems = await prepareChatItemsForSend(
         composerMedia.previewData.items.map((item) => ({
           file: item.file,
           type: item.type,
           caption: item.caption || '',
+          needsVideoPrepare: item.needsVideoPrepare,
         })),
+        {
+          onVideoProgress: (p) => {
+            if (p.phase === 'done') {
+              composerMedia.setSendProgress(null);
+              return;
+            }
+            composerMedia.setSendProgress({
+              fileName: p.fileName,
+              phase: p.phase,
+              ratio: p.ratio,
+            });
+          },
+        },
+      );
+
+      composerMedia.setSendProgress({
+        fileName: preparedItems[0]?.file.name || '',
+        phase: 'uploading',
+      });
+
+      const uploadedItems = await uploadAndBuildChatMediaItems(
+        preparedItems,
         'instagram',
         profile?.company_id,
       );
@@ -978,8 +1006,15 @@ export function ConversasViewInstagram({
         refetchConversas();
       }, 2000);
     } catch (err: any) {
-      toast({ title: 'Erro ao enviar', description: err.message, variant: 'destructive' });
+      const title =
+        err instanceof ChatVideoSizeLimitError
+          ? 'Vídeo acima do limite'
+          : err instanceof ChatVideoPrepareError
+            ? 'Erro ao preparar vídeo'
+            : 'Erro ao enviar';
+      toast({ title, description: err.message, variant: 'destructive' });
     } finally {
+      composerMedia.setSendProgress(null);
       setBusy(false);
     }
   };
@@ -1397,6 +1432,7 @@ export function ConversasViewInstagram({
               onSendText={() => void sendText()}
               placeholder="Escreva uma mensagem..."
               busy={busy || composerMedia.busy}
+              preparingAttachment={composerMedia.preparingAttachment}
               sending={sending}
               recording={recording}
               recordingLevels={recordingLevels}
@@ -1500,10 +1536,13 @@ export function ConversasViewInstagram({
             previewData={composerMedia.previewData}
             busy={busy}
             sending={sending}
+            sendProgress={composerMedia.sendProgress}
             onCancel={composerMedia.clearPreview}
             onSend={() => void sendPreview()}
             onUpdateCaption={composerMedia.updateCaption}
             onSelectIndex={composerMedia.setActivePreviewIndex}
+            onAddFiles={(files) => void composerMedia.processFilesForPreview(files)}
+            onRemoveIndex={composerMedia.removePreviewItem}
           />
         )}
       </AnimatePresence>

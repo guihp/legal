@@ -74,6 +74,11 @@ import {
   uploadAndBuildChatMediaItems,
   toWebhookMidiasPayload,
 } from '@/lib/sendChatMediaItems';
+import { prepareChatItemsForSend } from '@/lib/chatMediaFiles';
+import {
+  ChatVideoPrepareError,
+  ChatVideoSizeLimitError,
+} from '@/lib/compressChatVideo';
 import { resolveWebhookMediaMessage } from '@/lib/chatMediaCaption';
 import { formatConteudoMediaForDb } from '@/lib/chatMediaStorage';
 import { uploadChatMediaAndGetPublicUrl } from '@/lib/uploadChatMedia';
@@ -1552,12 +1557,35 @@ export function ConversasViewPremium({
 
       if (!targetSession) throw new Error("Sessão inválida");
 
-      const uploadedItems = await uploadAndBuildChatMediaItems(
+      const preparedItems = await prepareChatItemsForSend(
         itemsSnapshot.map((item) => ({
           file: item.file,
           type: item.type,
           caption: item.caption || "",
+          needsVideoPrepare: item.needsVideoPrepare,
         })),
+        {
+          onVideoProgress: (p) => {
+            if (p.phase === "done") {
+              composerMedia.setSendProgress(null);
+              return;
+            }
+            composerMedia.setSendProgress({
+              fileName: p.fileName,
+              phase: p.phase,
+              ratio: p.ratio,
+            });
+          },
+        },
+      );
+
+      composerMedia.setSendProgress({
+        fileName: preparedItems[0]?.file.name || "",
+        phase: "uploading",
+      });
+
+      const uploadedItems = await uploadAndBuildChatMediaItems(
+        preparedItems,
         "whatsapp",
         profile?.company_id,
       );
@@ -1625,12 +1653,19 @@ export function ConversasViewPremium({
       }
     } catch (err: any) {
       console.error("Erro ao enviar mídia:", err);
+      const title =
+        err instanceof ChatVideoSizeLimitError
+          ? "Vídeo acima do limite"
+          : err instanceof ChatVideoPrepareError
+            ? "Erro ao preparar vídeo"
+            : "Falha ao enviar";
       toast({
-        title: "Falha ao enviar",
+        title,
         description: err.message,
         variant: "destructive",
       });
     } finally {
+      composerMedia.setSendProgress(null);
       setBusy(false);
     }
   };
@@ -2455,6 +2490,7 @@ export function ConversasViewPremium({
               textareaReadOnly={Boolean(lockedOfficialTemplate)}
               textareaClassName={disableFreeText && !lockedOfficialTemplate ? "placeholder:text-red-400/80" : undefined}
               busy={busy || composerMedia.busy}
+              preparingAttachment={composerMedia.preparingAttachment}
               recording={recording}
               recordingLevels={recordingLevels}
               recordingSec={sec}
@@ -2625,10 +2661,13 @@ export function ConversasViewPremium({
             surface="whatsapp"
             previewData={composerMedia.previewData}
             busy={busy}
+            sendProgress={composerMedia.sendProgress}
             onCancel={composerMedia.clearPreview}
             onSend={sendPreview}
             onUpdateCaption={composerMedia.updateCaption}
             onSelectIndex={composerMedia.setActivePreviewIndex}
+            onAddFiles={(files) => void composerMedia.processFilesForPreview(files)}
+            onRemoveIndex={composerMedia.removePreviewItem}
           />
         )}
       </AnimatePresence>

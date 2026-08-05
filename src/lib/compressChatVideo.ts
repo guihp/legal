@@ -122,7 +122,7 @@ async function runCompressPass(
       "-c:v",
       "libx264",
       "-preset",
-      "medium",
+      "veryfast",
       "-crf",
       String(opts.crf),
       "-vf",
@@ -175,7 +175,7 @@ export async function compressVideoForChat(
     const ffmpeg = await getFfmpeg(onProgress);
     const inputBytes = new Uint8Array(await file.arrayBuffer());
 
-    const passes: Array<{ crf: number; maxWidth: number }> = [
+    const allPasses: Array<{ crf: number; maxWidth: number }> = [
       { crf: 23, maxWidth: 1280 },
       { crf: 26, maxWidth: 1280 },
       { crf: 28, maxWidth: 960 },
@@ -183,6 +183,12 @@ export async function compressVideoForChat(
       { crf: 32, maxWidth: 640 },
       { crf: 34, maxWidth: 480 },
     ];
+
+    // Arquivos muito acima do limite nunca passam nos primeiros níveis:
+    // começar mais agressivo evita passes inteiros de ffmpeg descartados.
+    const ratioOverLimit = file.size / CHAT_VIDEO_MAX_BYTES;
+    const startIndex = ratioOverLimit > 8 ? 3 : ratioOverLimit > 4 ? 2 : ratioOverLimit > 2 ? 1 : 0;
+    const passes = allPasses.slice(startIndex);
 
     for (const pass of passes) {
       const out = await runCompressPass(ffmpeg, inputBytes, pass, (ratio) => {

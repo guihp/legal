@@ -1,5 +1,14 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat: preview de mídia instantâneo + múltiplos anexos + legenda por item
+
+- **Causa do "carregando infinito":** `buildChatPreviewItems` rodava `ffmpeg.wasm` (transcode de `.mov`) **antes** de abrir o preview. Vídeo de celular levava minutos.
+- **Fix:** preview usa o arquivo original (`needsVideoPrepare`); transcode/compressão movidos para `prepareChatItemsForSend`, executados no clique de enviar com barra de progresso.
+- **Múltiplos anexos:** `processFilesForPreview` agora **acrescenta** ao preview aberto (limite `MAX_PREVIEW_ITEMS = 10`); overlay ganhou botão “+”, remover item e thumb rail sempre visível.
+- **Legenda por item:** input do overlay grava na thumb ativa; thumbs mostram a legenda salva.
+- **Perf ffmpeg:** preset `veryfast` e escolha de pass inicial pelo tamanho (evita passes descartados).
+- Fallback: `.mov` que o navegador não reproduz mostra card “será convertido para MP4 no envio”.
+
 ## 2026-07-31 — Follow-up: fix loop 7m (sequence cancelada pelo ingest)
 
 - **Causa:** após `sent` do 7m + `enqueue_next` (15m), o n8n gravava a resposta da IA **sem** `from_follow_up` → `start_or_refresh` cancelava o 15m e recriava 7m (~a cada 7–8s pós-send).

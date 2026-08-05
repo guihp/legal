@@ -16,6 +16,20 @@ export type ChatPreviewState = {
   activeIndex: number;
 };
 
+export type PreparingAttachment = {
+  name: string;
+  kind: "imagem" | "video" | "audio" | "pdf" | "arquivo";
+};
+
+/** Progresso do transcode de vídeo, exibido no overlay durante o envio. */
+export type PreviewSendProgress = {
+  fileName: string;
+  phase: "loading" | "compressing" | "uploading";
+  ratio?: number;
+};
+
+export const MAX_PREVIEW_ITEMS = 10;
+
 type ToastFn = (opts: {
   title: string;
   description?: string;
@@ -36,16 +50,32 @@ export function useChatComposerMedia(options: {
   } = options;
 
   const [previewData, setPreviewData] = useState<ChatPreviewState | null>(null);
+  const [preparingAttachment, setPreparingAttachment] =
+    useState<PreparingAttachment | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sendProgress, setSendProgress] = useState<PreviewSendProgress | null>(null);
   const imgInputRef = useRef<HTMLInputElement | null>(null);
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const clearPreview = useCallback(() => {
+    setSendProgress(null);
     setPreviewData((prev) => {
       (prev?.items || []).forEach((item) => {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       });
       return null;
+    });
+  }, []);
+
+  const removePreviewItem = useCallback((index: number) => {
+    setPreviewData((prev) => {
+      if (!prev) return prev;
+      const target = prev.items[index];
+      if (!target) return prev;
+      if (target.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      const items = prev.items.filter((_, idx) => idx !== index);
+      if (!items.length) return null;
+      return { items, activeIndex: Math.min(prev.activeIndex, items.length - 1) };
     });
   }, []);
 
@@ -57,31 +87,23 @@ export function useChatComposerMedia(options: {
         return;
       }
       try {
-        setBusy(true);
-        const hasVideo = files.some((f) => inferChatMediaKindFromFileMeta(f) === "video");
-        if (hasVideo) {
-          toast({
-            title: "Preparando vídeo",
-            description: "Comprimindo para até 16 MB, se necessário. Aguarde…",
-          });
-        }
-        const items = await buildChatPreviewItems(files, surface, {
-          onVideoCompressProgress: (p) => {
-            if (p.phase === "loading") {
-              toast({
-                title: "Preparando vídeo",
-                description: "Carregando compressor (primeira vez pode demorar)…",
-              });
-            }
-          },
+        const firstFile = files[0];
+        setPreparingAttachment({
+          name: firstFile?.name || "Arquivo",
+          kind: inferChatMediaKindFromFileMeta(firstFile) || "arquivo",
         });
-        setPreviewData({ items, activeIndex: 0 });
-        if (hasVideo) {
-          toast({
-            title: "Vídeo pronto",
-            description: "Revise o preview e envie quando quiser.",
-          });
-        }
+        const items = await buildChatPreviewItems(files, surface);
+        setPreviewData((prev) => {
+          if (!prev) return { items, activeIndex: 0 };
+          const merged = [...prev.items, ...items].slice(0, MAX_PREVIEW_ITEMS);
+          if (prev.items.length + items.length > MAX_PREVIEW_ITEMS) {
+            toast({
+              title: `Máximo de ${MAX_PREVIEW_ITEMS} anexos`,
+              description: "Os arquivos excedentes foram ignorados.",
+            });
+          }
+          return { items: merged, activeIndex: Math.min(prev.items.length, merged.length - 1) };
+        });
       } catch (err: unknown) {
         const title =
           err instanceof ChatVideoSizeLimitError
@@ -92,7 +114,7 @@ export function useChatComposerMedia(options: {
         const message = err instanceof Error ? err.message : "Erro ao processar arquivo";
         toast({ title, description: message, variant: "destructive" });
       } finally {
-        setBusy(false);
+        setPreparingAttachment(null);
       }
     },
     [hasActiveConversation, noConversationTitle, surface, toast],
@@ -117,14 +139,13 @@ export function useChatComposerMedia(options: {
     [processFilesForPreview],
   );
 
-  const updateCaption = useCallback((caption: string) => {
+  const updateCaption = useCallback((caption: string, index?: number) => {
     setPreviewData((prev) => {
       if (!prev) return prev;
+      const target = index ?? prev.activeIndex;
       return {
         ...prev,
-        items: prev.items.map((item, idx) =>
-          idx === prev.activeIndex ? { ...item, caption } : item,
-        ),
+        items: prev.items.map((item, idx) => (idx === target ? { ...item, caption } : item)),
       };
     });
   }, []);
@@ -136,14 +157,18 @@ export function useChatComposerMedia(options: {
   return {
     previewData,
     setPreviewData,
+    preparingAttachment,
     busy,
     setBusy,
+    sendProgress,
+    setSendProgress,
     imgInputRef,
     messageTextareaRef,
     processFilesForPreview,
     onPickFile,
     onPasteMedia,
     clearPreview,
+    removePreviewItem,
     updateCaption,
     setActivePreviewIndex,
   };

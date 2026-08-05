@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect } from "react";
-import { Mic, Paperclip, Send } from "lucide-react";
+import { FileText, Image, LoaderCircle, Mic, Paperclip, Send, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CHAT_FILE_ACCEPT, type ChatSurface } from "@/lib/chatMediaFiles";
@@ -35,6 +35,10 @@ export type ChatComposerProps = {
   textareaReadOnly?: boolean;
   /** Permite enviar sem texto (ex.: template oficial só com mídia). */
   sendWithoutText?: boolean;
+  preparingAttachment?: {
+    name: string;
+    kind: "imagem" | "video" | "audio" | "pdf" | "arquivo";
+  } | null;
   className?: string;
   zClassName?: string;
 };
@@ -63,6 +67,7 @@ export function ChatComposer({
   composerNotice,
   textareaReadOnly,
   sendWithoutText,
+  preparingAttachment,
   className,
   zClassName = "z-10",
 }: ChatComposerProps) {
@@ -150,6 +155,35 @@ export function ChatComposer({
               }}
             />
           )}
+
+          {preparingAttachment ? (
+            <div
+              className="mt-2 flex min-w-0 items-center gap-2.5 rounded-xl border border-[var(--cv-accent)]/20 bg-[var(--cv-accent)]/[0.07] px-3 py-2"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--cv-accent)]/15 text-[var(--cv-accent)]">
+                {preparingAttachment.kind === "video" ? (
+                  <Video className="h-4 w-4" />
+                ) : preparingAttachment.kind === "imagem" ? (
+                  <Image className="h-4 w-4" />
+                ) : preparingAttachment.kind === "pdf" ? (
+                  <FileText className="h-4 w-4" />
+                ) : (
+                  <Paperclip className="h-4 w-4" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-[var(--cv-text)]">
+                  {preparingAttachment.name}
+                </p>
+                <p className="text-[10px] text-[var(--cv-text-muted)]">
+                  Abrindo pré-visualização…
+                </p>
+              </div>
+              <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-[var(--cv-accent)]" />
+            </div>
+          ) : null}
 
           <div className="mt-1 flex sm:mt-1.5 items-center justify-between gap-1.5 sm:gap-2 min-w-0">
             <div className="flex items-center gap-0 min-w-0 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
