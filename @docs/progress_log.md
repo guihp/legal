@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat: rejeita .MOV/WebM e vídeos >16 MB (sem compressão)
+
+- Compressão no browser com ffmpeg.wasm demorava demais / travava em .MOV.
+- Painel agora **só aceita MP4 ≤ 16 MB**. `.MOV`/WebM e arquivos maiores são barrados na anexação com toast claro (“Formato não suportado” / “acima do limite”).
+- `prepareChatItemsForSend` só valida — zero ffmpeg no fluxo de envio.
+- `accept` do file picker limitado a `video/mp4,.mp4`.
+
 ## 2026-08-05 — Chat: vídeo enviado sem compressão até 16 MB
 
 - **Causa do travamento em "Carregando compressor":** `@ffmpeg/core` não está no `package.json` e o `@ffmpeg/ffmpeg@0.12.15` sob Vite/ESM precisa de `classWorkerURL` — sem ele o worker não sobe e `load()` fica pendente para sempre.
