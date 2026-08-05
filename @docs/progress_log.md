@@ -1,5 +1,11 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Android: reload cancelava a seleção de arquivo
+
+- **Causa:** abrir o seletor de arquivos no Android deixa a página `hidden`; ao voltar, o `visibilitychange` do `versionChecker` rodava `checkForUpdate()` e um hash novo disparava `location.reload()` no meio da seleção — o usuário voltava pra tela recarregada e repetia o ciclo.
+- Check por visibilidade agora só roda se a aba ficou ≥ 5 min em segundo plano (o caso real de "deixei aberto por horas"), não em retorno rápido de seletor/troca de app.
+- Novo `blockVersionReload()`: o reload por deploy fica pendente enquanto há anexo em preview, arquivo sendo processado ou upload em curso, e só acontece ao liberar.
+
 ## 2026-08-05 — Chat: upload de vídeo sempre com Content-Type video/mp4
 
 - **Erro real da API:** `Invalid file format: 'video/quicktime'. Only 'video/mp4' are accepted` — o `.MOV` do iPhone subia com o MIME original e o n8n repassava o header do storage.

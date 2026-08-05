@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getImageFilesFromClipboard } from "@/lib/clipboardImages";
+import { blockVersionReload } from "@/lib/versionChecker";
 import {
   buildChatPreviewItems,
   type ChatPreviewItem,
@@ -56,6 +57,13 @@ export function useChatComposerMedia(options: {
   const [sendProgress, setSendProgress] = useState<PreviewSendProgress | null>(null);
   const imgInputRef = useRef<HTMLInputElement | null>(null);
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Um deploy novo não pode recarregar a página no meio de um anexo.
+  const hasPendingMediaWork = Boolean(previewData) || busy || Boolean(preparingAttachment);
+  useEffect(() => {
+    if (!hasPendingMediaWork) return;
+    return blockVersionReload();
+  }, [hasPendingMediaWork]);
 
   const clearPreview = useCallback(() => {
     setSendProgress(null);
