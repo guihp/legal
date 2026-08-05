@@ -99,6 +99,10 @@ export function contentTypeForChatUpload(
   file: File,
   mediaType: ChatMediaItemType,
 ): string {
+  // Vídeo nunca herda o MIME do arquivo: a API só aceita `video/mp4` e o
+  // `video/quicktime` do iPhone era rejeitado com erro 500.
+  if (mediaType === "video") return "video/mp4";
+
   const t = (file.type || "").trim();
   if (t && t !== "application/octet-stream") return t;
   switch (mediaType) {

@@ -1,13 +1,8 @@
 import { convertImageFileToPng } from "@/lib/chatImage";
 import {
-  convertVideoToMp4ForChat,
-  type CompressVideoProgress,
-} from "@/lib/compressChatVideo";
-import {
   assertChatVideoAllowed,
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
-  isPassThroughChatMp4,
   type ChatMediaItemType,
 } from "@/lib/chatMediaKind";
 import { normalizeAudioFileForInstagram } from "@/lib/voiceAudioInstagram";
@@ -57,10 +52,11 @@ export async function normalizeAttachmentForChat(
     return { file: normalized, type: "audio" };
   }
 
-  // Container original é preservado (.MOV do iOS inclusive) — sem reencode.
+  // MOV e MP4 compartilham o container ISO-BMFF, então rotular como MP4 basta
+  // para a API aceitar (só `video/mp4`) sem recodificar no browser.
   if (kind === "video") {
     assertChatVideoAllowed(file);
-    return { file: isPassThroughChatMp4(file) ? ensureMp4FileMeta(file) : file, type: "video" };
+    return { file: ensureMp4FileMeta(file), type: "video" };
   }
 
   // pdf
@@ -86,32 +82,17 @@ export async function buildChatPreviewItems(
 
 /**
  * Valida e normaliza itens antes do upload.
- * Todo vídeo sai como arquivo real MP4 + MIME video/mp4.
+ * Vídeo sempre sai com nome `.mp4` e MIME `video/mp4` — a API rejeita
+ * qualquer outro formato (`Invalid file format: 'video/quicktime'`).
  */
 export async function prepareChatItemsForSend(
   items: Array<{ file: File; type: ChatMediaItemType; caption: string }>,
-  options?: {
-    onVideoProgress?: (progress: CompressVideoProgress & { fileName: string }) => void;
-  },
 ): Promise<Array<{ file: File; type: ChatMediaItemType; caption: string }>> {
-  const prepared: Array<{ file: File; type: ChatMediaItemType; caption: string }> = [];
-
-  for (const item of items) {
+  return items.map((item) => {
     if (item.type === "video") {
       assertChatVideoAllowed(item.file);
-      const mp4 = await convertVideoToMp4ForChat(item.file, {
-        onProgress: (progress) =>
-          options?.onVideoProgress?.({ ...progress, fileName: item.file.name }),
-      });
-      prepared.push({
-        file: mp4,
-        type: "video",
-        caption: item.caption,
-      });
-      continue;
+      return { file: ensureMp4FileMeta(item.file), type: "video" as const, caption: item.caption };
     }
-    prepared.push({ file: item.file, type: item.type, caption: item.caption });
-  }
-
-  return prepared;
+    return { file: item.file, type: item.type, caption: item.caption };
+  });
 }

@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat: upload de vídeo sempre com Content-Type video/mp4
+
+- **Erro real da API:** `Invalid file format: 'video/quicktime'. Only 'video/mp4' are accepted` — o `.MOV` do iPhone subia com o MIME original e o n8n repassava o header do storage.
+- `contentTypeForChatUpload` agora **força `video/mp4`** para qualquer vídeo, independente do `file.type`.
+- Anexação e envio aplicam `ensureMp4FileMeta` em todo vídeo (nome `.mp4` + MIME correto). MOV e MP4 compartilham o container ISO-BMFF, então rotular basta e é instantâneo.
+- Conversão via `ffmpeg.wasm` removida do fluxo de envio: nunca chegou a rodar no browser do usuário e era o que travava. Transcode real, se necessário, deve ser server-side.
+
 ## 2026-08-05 — Chat: todo vídeo enviado como MP4 real
 
 - `prepareChatItemsForSend` agora converte todo vídeo não-MP4 antes do upload; saída sempre `.mp4` + `video/mp4`.

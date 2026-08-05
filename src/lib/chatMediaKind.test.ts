@@ -44,6 +44,18 @@ describe("chatMediaKind", () => {
     assert.equal(contentTypeForChatUpload(fakeFile("x.mp4", ""), "video"), "video/mp4");
   });
 
+  it("contentTypeForChatUpload força video/mp4 mesmo em quicktime", () => {
+    // API rejeita: "Invalid file format: 'video/quicktime'".
+    assert.equal(
+      contentTypeForChatUpload(fakeFile("IMG_7860.mov", "video/quicktime"), "video"),
+      "video/mp4",
+    );
+    assert.equal(
+      contentTypeForChatUpload(fakeFile("screen.webm", "video/webm"), "video"),
+      "video/mp4",
+    );
+  });
+
   it("needsChatVideoTranscode para MOV ou tamanho > 16MB", () => {
     assert.equal(
       needsChatVideoTranscode(fakeFile("a.mov", "video/quicktime"), CHAT_VIDEO_MAX_BYTES),

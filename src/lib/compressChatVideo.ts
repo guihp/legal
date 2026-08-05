@@ -43,7 +43,7 @@ export class ChatVideoPrepareError extends Error {
 }
 
 export type CompressVideoProgress = {
-  phase: "loading" | "converting" | "compressing" | "done";
+  phase: "loading" | "compressing" | "done";
   ratio?: number;
 };
 
@@ -52,16 +52,19 @@ type FfmpegInstance = FFmpeg;
 let ffmpegLoadPromise: Promise<FfmpegInstance> | null = null;
 
 const FFMPEG_CORE_VERSION = "0.12.6";
+const FFMPEG_PKG_VERSION = "0.12.15";
 const FFMPEG_LOAD_TIMEOUT_MS = 90_000;
 
-type FfmpegCdn = { core: string };
+type FfmpegCdn = { core: string; worker: string };
 
 const FFMPEG_CDN_BASES: readonly FfmpegCdn[] = [
   {
     core: `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+    worker: `https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@${FFMPEG_PKG_VERSION}/dist/esm/worker.js`,
   },
   {
     core: `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+    worker: `https://unpkg.com/@ffmpeg/ffmpeg@${FFMPEG_PKG_VERSION}/dist/esm/worker.js`,
   },
 ] as const;
 
@@ -73,20 +76,21 @@ function outputName(inputName: string): string {
 async function loadFfmpegFromBase(cdn: FfmpegCdn): Promise<FfmpegInstance> {
   const ffmpeg = new FFmpeg();
 
-  // Worker principal fica por conta do bundle do @ffmpeg/ffmpeg. Transformá-lo
-  // em blob quebra imports relativos (./const.js, ./errors.js) no Safari.
-  const [coreURL, wasmURL] = await Promise.all([
+  // `classWorkerURL` é obrigatório sob Vite/ESM: sem ele o worker não sobe e
+  // `load()` fica pendente para sempre.
+  const [coreURL, wasmURL, classWorkerURL] = await Promise.all([
     toBlobURL(`${cdn.core}/ffmpeg-core.js`, "text/javascript"),
     toBlobURL(`${cdn.core}/ffmpeg-core.wasm`, "application/wasm"),
+    toBlobURL(cdn.worker, "text/javascript"),
   ]);
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      ffmpeg.load({ coreURL, wasmURL }),
+      ffmpeg.load({ coreURL, wasmURL, classWorkerURL }),
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(
-          () => reject(new Error("timeout ao carregar o conversor de vídeo")),
+          () => reject(new Error("timeout ao carregar o compressor de vídeo")),
           FFMPEG_LOAD_TIMEOUT_MS,
         );
       }),
@@ -119,7 +123,7 @@ async function getFfmpeg(onProgress?: (p: CompressVideoProgress) => void): Promi
       }
       throw lastErr instanceof Error
         ? lastErr
-        : new Error("Falha ao carregar conversor de vídeo (ffmpeg)");
+        : new Error("Falha ao carregar compressor de vídeo (ffmpeg)");
     })().catch((err) => {
       // Permite nova tentativa na próxima anexação (CDN flake / rede).
       ffmpegLoadPromise = null;
@@ -132,134 +136,6 @@ async function getFfmpeg(onProgress?: (p: CompressVideoProgress) => void): Promi
 /** Expõe reset para testes / recuperação após falha grave no exec. */
 export function resetChatVideoFfmpegCache(): void {
   ffmpegLoadPromise = null;
-}
-
-async function deleteFfmpegFiles(ffmpeg: FfmpegInstance, names: string[]): Promise<void> {
-  for (const name of names) {
-    try {
-      await ffmpeg.deleteFile(name);
-    } catch {
-      /* arquivo pode não ter sido criado */
-    }
-  }
-}
-
-function bytesFromFfmpegData(data: Uint8Array | string): Uint8Array {
-  return data instanceof Uint8Array ? data : new TextEncoder().encode(String(data));
-}
-
-/**
- * Converte qualquer container de vídeo para MP4.
- * 1. Tenta remux (`-c copy`): rápido, sem perda de qualidade.
- * 2. Se codec/container não permitir, recodifica H.264 + AAC.
- */
-export async function convertVideoToMp4ForChat(
-  file: File,
-  options?: { onProgress?: (p: CompressVideoProgress) => void },
-): Promise<File> {
-  const onProgress = options?.onProgress;
-
-  if (isPassThroughChatMp4(file)) {
-    onProgress?.({ phase: "done", ratio: 1 });
-    return ensureMp4FileMeta(file);
-  }
-
-  if (file.size > CHAT_VIDEO_MAX_BYTES) {
-    throw new ChatVideoSizeLimitError(file.size);
-  }
-
-  const ffmpeg = await getFfmpeg(onProgress);
-  const extension = file.name.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase() || ".bin";
-  const inputName = `input-video${extension}`;
-  const outputFile = "converted-video.mp4";
-  const inputBytes = new Uint8Array(await file.arrayBuffer());
-
-  const onFfmpegProgress = ({ progress }: { progress: number }) => {
-    if (typeof progress === "number" && progress >= 0 && progress <= 1) {
-      onProgress?.({ phase: "converting", ratio: progress });
-    }
-  };
-
-  ffmpeg.on("progress", onFfmpegProgress);
-  onProgress?.({ phase: "converting", ratio: 0 });
-
-  try {
-    await ffmpeg.writeFile(inputName, inputBytes);
-
-    const remuxCode = await ffmpeg.exec(
-      [
-        "-i",
-        inputName,
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a?",
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        "-y",
-        outputFile,
-      ],
-      60_000,
-    );
-
-    if (remuxCode !== 0) {
-      await deleteFfmpegFiles(ffmpeg, [outputFile]);
-      const transcodeCode = await ffmpeg.exec(
-        [
-          "-i",
-          inputName,
-          "-map",
-          "0:v:0",
-          "-map",
-          "0:a?",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-crf",
-          "24",
-          "-pix_fmt",
-          "yuv420p",
-          "-vf",
-          "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-          "-c:a",
-          "aac",
-          "-b:a",
-          "96k",
-          "-movflags",
-          "+faststart",
-          "-y",
-          outputFile,
-        ],
-        180_000,
-      );
-      if (transcodeCode !== 0) {
-        throw new Error("ffmpeg não conseguiu converter o vídeo para MP4");
-      }
-    }
-
-    const output = bytesFromFfmpegData(await ffmpeg.readFile(outputFile));
-    if (!output.byteLength) throw new Error("conversão gerou um arquivo vazio");
-    if (output.byteLength > CHAT_VIDEO_MAX_BYTES) {
-      throw new ChatVideoSizeLimitError(output.byteLength);
-    }
-
-    onProgress?.({ phase: "done", ratio: 1 });
-    return new File([output], outputName(file.name), { type: "video/mp4" });
-  } catch (err) {
-    resetChatVideoFfmpegCache();
-    if (err instanceof ChatVideoSizeLimitError) throw err;
-    const detail = err instanceof Error ? err.message : String(err);
-    throw new ChatVideoPrepareError(
-      `Não foi possível converter "${file.name}" para MP4. Detalhe: ${detail}`,
-      { cause: err },
-    );
-  } finally {
-    ffmpeg.off("progress", onFfmpegProgress);
-    await deleteFfmpegFiles(ffmpeg, [inputName, outputFile]);
-  }
 }
 
 async function runCompressPass(

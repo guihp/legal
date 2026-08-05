@@ -21,10 +21,10 @@ export type PreparingAttachment = {
   kind: "imagem" | "video" | "audio" | "pdf" | "arquivo";
 };
 
-/** Progresso de conversão/upload exibido no overlay. */
+/** Progresso de upload exibido no overlay. */
 export type PreviewSendProgress = {
   fileName: string;
-  phase: "loading" | "converting" | "uploading";
+  phase: "uploading";
   ratio?: number;
 };
 

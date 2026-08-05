@@ -1563,21 +1563,6 @@ export function ConversasViewPremium({
           type: item.type,
           caption: item.caption || "",
         })),
-        {
-          onVideoProgress: (progress) => {
-            if (progress.phase === "done") {
-              composerMedia.setSendProgress(null);
-              return;
-            }
-            if (progress.phase === "loading" || progress.phase === "converting") {
-              composerMedia.setSendProgress({
-                fileName: progress.fileName,
-                phase: progress.phase,
-                ratio: progress.ratio,
-              });
-            }
-          },
-        },
       );
 
       composerMedia.setSendProgress({
