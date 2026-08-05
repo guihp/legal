@@ -6,7 +6,6 @@ import {
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
   isPassThroughChatMp4,
-  isUnsupportedChatVideoFormat,
   needsChatVideoTranscode,
   CHAT_VIDEO_MAX_BYTES,
 } from "./chatMediaKind.ts";
@@ -63,11 +62,12 @@ describe("chatMediaKind", () => {
     );
   });
 
-  it("assertChatVideoAllowed bloqueia MOV e arquivos grandes", () => {
-    assert.throws(
-      () => assertChatVideoAllowed(fakeFile("IMG_7860.mov", "video/quicktime")),
-      /MOV\/WebM/,
+  it("assertChatVideoAllowed bloqueia só por tamanho", () => {
+    // iPhone grava em .MOV: precisa passar.
+    assert.doesNotThrow(() =>
+      assertChatVideoAllowed(fakeFile("IMG_7860.mov", "video/quicktime")),
     );
+    assert.doesNotThrow(() => assertChatVideoAllowed(fakeFile("ok.mp4", "video/mp4")));
     assert.throws(
       () =>
         assertChatVideoAllowed(
@@ -75,12 +75,13 @@ describe("chatMediaKind", () => {
         ),
       /limite é 16 MB/,
     );
-    assert.doesNotThrow(() => assertChatVideoAllowed(fakeFile("ok.mp4", "video/mp4")));
-  });
-
-  it("isUnsupportedChatVideoFormat marca MOV", () => {
-    assert.equal(isUnsupportedChatVideoFormat(fakeFile("a.mov", "video/quicktime")), true);
-    assert.equal(isUnsupportedChatVideoFormat(fakeFile("a.mp4", "video/mp4")), false);
+    assert.throws(
+      () =>
+        assertChatVideoAllowed(
+          largeFakeFile("big.mov", "video/quicktime", CHAT_VIDEO_MAX_BYTES + 1),
+        ),
+      /limite é 16 MB/,
+    );
   });
 
   it("ensureMp4FileMeta normaliza nome e MIME", () => {

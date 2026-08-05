@@ -59,26 +59,16 @@ export function isPassThroughChatMp4(file: File): boolean {
   return name.endsWith(".mp4") || mime === "video/mp4" || mime === "video/mpeg";
 }
 
-/**
- * Formatos de vídeo que o painel não envia (MOV/WebM etc.).
- * Compressão no browser era lenta demais — pedimos MP4 ≤ 16 MB.
- */
-export function isUnsupportedChatVideoFormat(file: File): boolean {
-  return !isPassThroughChatMp4(file);
-}
-
 export function formatChatVideoSizeMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Valida vídeo antes do preview/envio. Lança Error com mensagem amigável. */
+/**
+ * Valida vídeo antes do preview/envio.
+ * Só o tamanho é bloqueado: iPhone grava sempre em .MOV, então rejeitar
+ * container impediria qualquer envio de vídeo pelo iOS.
+ */
 export function assertChatVideoAllowed(file: File): void {
-  if (isUnsupportedChatVideoFormat(file)) {
-    throw new Error(
-      `"${file.name}" é .MOV/WebM e não pode ser enviado pelo painel. ` +
-        `Exporte ou converta para MP4 (até ${CHAT_VIDEO_MAX_LABEL}) e tente de novo.`,
-    );
-  }
   if (file.size > CHAT_VIDEO_MAX_BYTES) {
     throw new Error(
       `"${file.name}" tem ${formatChatVideoSizeMb(file.size)} e o limite é ${CHAT_VIDEO_MAX_LABEL}. ` +
@@ -92,7 +82,7 @@ export function assertChatVideoAllowed(file: File): void {
  * Agora true = formato ou tamanho que o painel rejeita (não comprime mais).
  */
 export function needsChatVideoTranscode(file: File, maxBytes: number): boolean {
-  return file.size > maxBytes || isUnsupportedChatVideoFormat(file);
+  return file.size > maxBytes || !isPassThroughChatMp4(file);
 }
 
 /** Garante File com nome .mp4 e MIME video/mp4 (sem reencode). */

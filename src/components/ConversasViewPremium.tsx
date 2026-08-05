@@ -1640,11 +1640,8 @@ export function ConversasViewPremium({
     } catch (err: any) {
       console.error("Erro ao enviar mídia:", err);
       const message = err?.message || "Falha ao enviar";
-      const isFormat =
-        /MOV|WebM|MP4/i.test(message) && /não pode ser enviado|Exporte|converta/i.test(message);
-      const title = isFormat
-        ? "Formato de vídeo não suportado"
-        : err instanceof ChatVideoSizeLimitError
+      const title =
+        err instanceof ChatVideoSizeLimitError || /limite é 16 MB/i.test(message)
           ? "Vídeo acima do limite"
           : err instanceof ChatVideoPrepareError
             ? "Erro ao preparar vídeo"

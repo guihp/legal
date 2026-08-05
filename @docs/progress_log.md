@@ -1,5 +1,11 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat mobile: corrige envio de mídia no iOS e Android
+
+- **iOS não enviava vídeo:** bloquear `.MOV` barrava tudo, porque a câmera do iPhone grava sempre nesse container. `assertChatVideoAllowed` volta a validar **só tamanho** (16 MB) e o container original é preservado no upload.
+- **Android não enviava nada:** `accept` com entradas por extensão (`.mp4`, `.m4a`) é ignorado pelo picker do Android e podia zerar a lista de arquivos. Agora só wildcards: `image/*,video/*,audio/*,application/pdf`.
+- **Fotos de celular:** `convertImageFileToPng` reduz para no máximo 2048 px antes do canvas (iOS zera canvas acima de ~16.7 MP e PNG de 48 MP passava de 40 MB), usa `createImageBitmap` quando disponível e cai para JPEG se o PNG falhar.
+
 ## 2026-08-05 — Chat: rejeita .MOV/WebM e vídeos >16 MB (sem compressão)
 
 - Compressão no browser com ffmpeg.wasm demorava demais / travava em .MOV.

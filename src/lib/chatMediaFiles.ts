@@ -3,6 +3,7 @@ import {
   assertChatVideoAllowed,
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
+  isPassThroughChatMp4,
   type ChatMediaItemType,
 } from "@/lib/chatMediaKind";
 import { normalizeAudioFileForInstagram } from "@/lib/voiceAudioInstagram";
@@ -18,10 +19,13 @@ export type ChatPreviewItem = {
   caption: string;
 };
 
-/** Só MP4 para vídeo — .MOV/WebM são rejeitados com aviso (sem compressão no browser). */
+/**
+ * Wildcards apenas: Android ignora entradas por extensão no `accept` e o picker
+ * pode não listar arquivo nenhum. iOS entrega vídeo da galeria como .MOV.
+ */
 export const CHAT_FILE_ACCEPT: Record<ChatSurface, string> = {
-  whatsapp: "image/*,video/mp4,.mp4,audio/ogg,audio/webm,application/pdf",
-  instagram: "image/*,video/mp4,.mp4,audio/mp4,audio/x-m4a,.m4a,application/pdf",
+  whatsapp: "image/*,video/*,audio/*,application/pdf",
+  instagram: "image/*,video/*,audio/*,application/pdf",
 };
 
 export async function normalizeAttachmentForChat(
@@ -30,7 +34,7 @@ export async function normalizeAttachmentForChat(
 ): Promise<{ file: File; type: ChatMediaItemType }> {
   const kind = inferChatMediaKindFromFileMeta(file);
   if (!kind) {
-    throw new Error("Arquivo deve ser imagem, áudio, vídeo MP4 (até 16 MB) ou PDF");
+    throw new Error("Arquivo deve ser imagem, áudio, vídeo (até 16 MB) ou PDF");
   }
 
   if (kind === "imagem") {
@@ -49,9 +53,10 @@ export async function normalizeAttachmentForChat(
     return { file: normalized, type: "audio" };
   }
 
+  // Container original é preservado (.MOV do iOS inclusive) — sem reencode.
   if (kind === "video") {
     assertChatVideoAllowed(file);
-    return { file: ensureMp4FileMeta(file), type: "video" };
+    return { file: isPassThroughChatMp4(file) ? ensureMp4FileMeta(file) : file, type: "video" };
   }
 
   // pdf
@@ -86,7 +91,7 @@ export async function prepareChatItemsForSend(
     if (item.type === "video") {
       assertChatVideoAllowed(item.file);
       return {
-        file: ensureMp4FileMeta(item.file),
+        file: isPassThroughChatMp4(item.file) ? ensureMp4FileMeta(item.file) : item.file,
         type: "video",
         caption: item.caption,
       };

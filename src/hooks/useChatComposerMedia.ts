@@ -106,12 +106,9 @@ export function useChatComposerMedia(options: {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Erro ao processar arquivo";
-        const isFormat =
-          /MOV|WebM|MP4/i.test(message) && /não pode ser enviado|Exporte|converta/i.test(message);
         const isSize = /limite|MB/i.test(message) && /mais curto|resolução/i.test(message);
-        const title = isFormat
-          ? "Formato de vídeo não suportado"
-          : isSize || err instanceof ChatVideoSizeLimitError
+        const title =
+          isSize || err instanceof ChatVideoSizeLimitError
             ? "Vídeo acima do limite"
             : err instanceof ChatVideoPrepareError
               ? "Erro ao preparar vídeo"
