@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat: todo vídeo enviado como MP4 real
+
+- `prepareChatItemsForSend` agora converte todo vídeo não-MP4 antes do upload; saída sempre `.mp4` + `video/mp4`.
+- `.MOV` do iPhone tenta primeiro **remux** (`-c copy`), rápido e sem perda de qualidade; se codec impedir, recodifica para H.264 + AAC.
+- Worker principal do `@ffmpeg/ffmpeg` volta a ser servido pelo bundle Vite. O antigo `classWorkerURL` em blob quebrava imports relativos no Safari.
+- Overlay mostra “Preparando conversor” / “Convertendo para MP4” com progresso. MP4 já pronto segue direto, sem conversão.
+
 ## 2026-08-05 — Chat mobile: corrige envio de mídia no iOS e Android
 
 - **iOS não enviava vídeo:** bloquear `.MOV` barrava tudo, porque a câmera do iPhone grava sempre nesse container. `assertChatVideoAllowed` volta a validar **só tamanho** (16 MB) e o container original é preservado no upload.

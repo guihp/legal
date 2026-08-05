@@ -1,5 +1,9 @@
 import { convertImageFileToPng } from "@/lib/chatImage";
 import {
+  convertVideoToMp4ForChat,
+  type CompressVideoProgress,
+} from "@/lib/compressChatVideo";
+import {
   assertChatVideoAllowed,
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
@@ -81,21 +85,33 @@ export async function buildChatPreviewItems(
 }
 
 /**
- * Valida itens imediatamente antes do upload (sem ffmpeg).
- * Vídeos inválidos já devem ter sido barrados no preview; revalida por segurança.
+ * Valida e normaliza itens antes do upload.
+ * Todo vídeo sai como arquivo real MP4 + MIME video/mp4.
  */
 export async function prepareChatItemsForSend(
   items: Array<{ file: File; type: ChatMediaItemType; caption: string }>,
+  options?: {
+    onVideoProgress?: (progress: CompressVideoProgress & { fileName: string }) => void;
+  },
 ): Promise<Array<{ file: File; type: ChatMediaItemType; caption: string }>> {
-  return items.map((item) => {
+  const prepared: Array<{ file: File; type: ChatMediaItemType; caption: string }> = [];
+
+  for (const item of items) {
     if (item.type === "video") {
       assertChatVideoAllowed(item.file);
-      return {
-        file: isPassThroughChatMp4(item.file) ? ensureMp4FileMeta(item.file) : item.file,
+      const mp4 = await convertVideoToMp4ForChat(item.file, {
+        onProgress: (progress) =>
+          options?.onVideoProgress?.({ ...progress, fileName: item.file.name }),
+      });
+      prepared.push({
+        file: mp4,
         type: "video",
         caption: item.caption,
-      };
+      });
+      continue;
     }
-    return { file: item.file, type: item.type, caption: item.caption };
-  });
+    prepared.push({ file: item.file, type: item.type, caption: item.caption });
+  }
+
+  return prepared;
 }
