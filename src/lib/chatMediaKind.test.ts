@@ -44,9 +44,16 @@ describe("chatMediaKind", () => {
     assert.equal(contentTypeForChatUpload(fakeFile("x.mp4", ""), "video"), "video/mp4");
   });
 
-  it("needsChatVideoTranscode para MOV ou tamanho > 16MB", () => {
+  it("needsChatVideoTranscode somente acima de 16MB", () => {
     assert.equal(
       needsChatVideoTranscode(fakeFile("a.mov", "video/quicktime"), CHAT_VIDEO_MAX_BYTES),
+      false,
+    );
+    assert.equal(
+      needsChatVideoTranscode(
+        largeFakeFile("a.mov", "video/quicktime", CHAT_VIDEO_MAX_BYTES + 1),
+        CHAT_VIDEO_MAX_BYTES,
+      ),
       true,
     );
     assert.equal(

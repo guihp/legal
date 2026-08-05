@@ -50,9 +50,20 @@ type FfmpegInstance = FFmpeg;
 let ffmpegLoadPromise: Promise<FfmpegInstance> | null = null;
 
 const FFMPEG_CORE_VERSION = "0.12.6";
-const FFMPEG_CDN_BASES = [
-  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
-  `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+const FFMPEG_PKG_VERSION = "0.12.15";
+const FFMPEG_LOAD_TIMEOUT_MS = 90_000;
+
+type FfmpegCdn = { core: string; worker: string };
+
+const FFMPEG_CDN_BASES: readonly FfmpegCdn[] = [
+  {
+    core: `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+    worker: `https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@${FFMPEG_PKG_VERSION}/dist/esm/worker.js`,
+  },
+  {
+    core: `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`,
+    worker: `https://unpkg.com/@ffmpeg/ffmpeg@${FFMPEG_PKG_VERSION}/dist/esm/worker.js`,
+  },
 ] as const;
 
 function outputName(inputName: string): string {
@@ -60,12 +71,39 @@ function outputName(inputName: string): string {
   return `${base}-chat.mp4`;
 }
 
-async function loadFfmpegFromBase(baseURL: string): Promise<FfmpegInstance> {
+async function loadFfmpegFromBase(cdn: FfmpegCdn): Promise<FfmpegInstance> {
   const ffmpeg = new FFmpeg();
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-  });
+
+  // `classWorkerURL` é obrigatório sob Vite/ESM: sem ele o worker não sobe e
+  // `load()` fica pendente para sempre.
+  const [coreURL, wasmURL, classWorkerURL] = await Promise.all([
+    toBlobURL(`${cdn.core}/ffmpeg-core.js`, "text/javascript"),
+    toBlobURL(`${cdn.core}/ffmpeg-core.wasm`, "application/wasm"),
+    toBlobURL(cdn.worker, "text/javascript"),
+  ]);
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      ffmpeg.load({ coreURL, wasmURL, classWorkerURL }),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error("timeout ao carregar o compressor de vídeo")),
+          FFMPEG_LOAD_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } catch (err) {
+    try {
+      ffmpeg.terminate();
+    } catch {
+      /* instância pode não ter iniciado */
+    }
+    throw err;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+
   return ffmpeg;
 }
 
@@ -74,9 +112,9 @@ async function getFfmpeg(onProgress?: (p: CompressVideoProgress) => void): Promi
     ffmpegLoadPromise = (async () => {
       onProgress?.({ phase: "loading" });
       let lastErr: unknown;
-      for (const baseURL of FFMPEG_CDN_BASES) {
+      for (const cdn of FFMPEG_CDN_BASES) {
         try {
-          return await loadFfmpegFromBase(baseURL);
+          return await loadFfmpegFromBase(cdn);
         } catch (err) {
           lastErr = err;
         }
@@ -153,9 +191,9 @@ async function runCompressPass(
 }
 
 /**
- * Garante MP4 <= 16 MB para envio no chat.
- * - MP4 já ≤16 MB: passa direto (só normaliza MIME/nome).
- * - MOV/WebM ou >16 MB: transcodifica com ffmpeg.wasm (retry de CDN se load falhar).
+ * Reduz o vídeo para ≤ 16 MB, limite da API de envio.
+ * - Dentro do limite: passa direto, qualquer container (MOV/WebM inclusive).
+ * - Acima do limite: transcodifica com ffmpeg.wasm (retry de CDN se load falhar).
  */
 export async function compressVideoForChat(
   file: File,
@@ -166,7 +204,7 @@ export async function compressVideoForChat(
 
   if (canPassThrough) {
     onProgress?.({ phase: "done", ratio: 1 });
-    return ensureMp4FileMeta(file);
+    return isPassThroughChatMp4(file) ? ensureMp4FileMeta(file) : file;
   }
 
   onProgress?.({ phase: "compressing", ratio: 0 });
@@ -208,16 +246,12 @@ export async function compressVideoForChat(
 
     if (err instanceof ChatVideoSizeLimitError) throw err;
 
-    // Fallback: MP4 ≤16 MB — envia original se o compressor falhou.
-    if (file.size <= CHAT_VIDEO_MAX_BYTES && isPassThroughChatMp4(file)) {
-      onProgress?.({ phase: "done", ratio: 1 });
-      return ensureMp4FileMeta(file);
-    }
-
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
     const detail = err instanceof Error ? err.message : String(err);
     throw new ChatVideoPrepareError(
-      `Não foi possível preparar o vídeo para envio (limite ${CHAT_VIDEO_MAX_LABEL}). ` +
-        `Tente um arquivo MP4 menor ou outro navegador. Detalhe: ${detail}`,
+      `Este vídeo tem ~${mb} MB e o limite de envio é ${CHAT_VIDEO_MAX_LABEL}. ` +
+        `A compressão automática falhou, então envie um vídeo mais curto ou em resolução menor. ` +
+        `Detalhe: ${detail}`,
       { cause: err },
     );
   }

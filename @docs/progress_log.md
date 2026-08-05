@@ -1,5 +1,12 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-05 — Chat: vídeo enviado sem compressão até 16 MB
+
+- **Causa do travamento em "Carregando compressor":** `@ffmpeg/core` não está no `package.json` e o `@ffmpeg/ffmpeg@0.12.15` sob Vite/ESM precisa de `classWorkerURL` — sem ele o worker não sobe e `load()` fica pendente para sempre.
+- **Fix principal:** `needsChatVideoTranscode` agora só considera o tamanho. MOV/WebM dentro de 16 MB vão como estão, sem ffmpeg — era o caso da maioria dos envios.
+- **Fix do ffmpeg (só > 16 MB):** `classWorkerURL` via CDN + timeout de 90 s no `load()` com `terminate()`, então falha com mensagem clara em vez de girar sem fim.
+- Erro acima do limite agora informa o tamanho real do arquivo e o que fazer.
+
 ## 2026-08-05 — Chat: preview de mídia instantâneo + múltiplos anexos + legenda por item
 
 - **Causa do "carregando infinito":** `buildChatPreviewItems` rodava `ffmpeg.wasm` (transcode de `.mov`) **antes** de abrir o preview. Vídeo de celular levava minutos.

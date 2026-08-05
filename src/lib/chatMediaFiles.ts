@@ -9,6 +9,7 @@ import {
 import {
   ensureMp4FileMeta,
   inferChatMediaKindFromFileMeta,
+  isPassThroughChatMp4,
   type ChatMediaItemType,
 } from "@/lib/chatMediaKind";
 import { normalizeAudioFileForInstagram } from "@/lib/voiceAudioInstagram";
@@ -109,9 +110,10 @@ export async function prepareChatItemsForSend(
       continue;
     }
 
+    // Dentro do limite: envia o arquivo original, sem reencode.
     if (!item.needsVideoPrepare) {
       prepared.push({
-        file: ensureMp4FileMeta(item.file),
+        file: isPassThroughChatMp4(item.file) ? ensureMp4FileMeta(item.file) : item.file,
         type: "video",
         caption: item.caption,
       });

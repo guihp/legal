@@ -55,10 +55,13 @@ export function isPassThroughChatMp4(file: File): boolean {
   return name.endsWith(".mp4") || mime === "video/mp4" || mime === "video/mpeg";
 }
 
-/** Precisa de ffmpeg: acima do limite OU container que não é MP4 pass-through. */
+/**
+ * Precisa de ffmpeg **somente** acima do limite de bytes da API.
+ * MOV/WebM ≤ limite são enviados como estão: o container é aceito no envio e
+ * transcodificar no browser custa minutos por vídeo.
+ */
 export function needsChatVideoTranscode(file: File, maxBytes: number): boolean {
-  if (file.size > maxBytes) return true;
-  return !isPassThroughChatMp4(file);
+  return file.size > maxBytes;
 }
 
 /** Garante File com nome .mp4 e MIME video/mp4 (sem reencode). */

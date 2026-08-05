@@ -145,8 +145,9 @@ export function ChatMediaPreviewOverlay({
                     {active.file.name}
                   </p>
                   <p className="text-xs text-[var(--cv-text-muted)]">
-                    Este navegador não reproduz o formato original. O vídeo será convertido para MP4
-                    no envio.
+                    {active.needsVideoPrepare
+                      ? "Este navegador não reproduz o formato original. O vídeo será convertido no envio."
+                      : "Este navegador não reproduz o formato original, mas o arquivo será enviado como está."}
                   </p>
                 </div>
               ) : (
