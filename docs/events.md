@@ -32,11 +32,13 @@ Versioned catalog of domain events emitted by the platform.
 | **Recipients** | Same as stage-changed |
 | **Emitter** | DB trigger (typed as `appointment` when entering visit stage); Edge `google-calendar-api` `create_event` via `_shared/userNotifications.notifyAppointmentBooked` |
 | **Note** | Pipeline stages (order): Novo Lead → Qualificado → Visita Agendada → **Visita Realizada** (`visita-realizada`) → Visita Cancelada → Em Negociação → Documentação → Contrato → Fechamento. Moving to `visita-realizada` emits `lead_stage_changed`, not `appointment`. |
+| **Copy** | Title `Visita Agendada`. Body `Visita agendada Para "{lead}" Corretor responsável "{corretor}"`. iOS may still show OS subtitle "from {manifest name}" (not suppressible via Web Notification options). |
 
 ### Payload (`meta` jsonb)
 
 - Same as stage-changed when from trigger; CRM create_event adds `event_id`
 - `route`: `/agenda`
+- Appointment also includes `lead_name`, `broker_id`, `broker_name`
 
 ---
 

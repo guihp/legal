@@ -420,6 +420,7 @@ export async function notifyAppointmentBooked(
   input: {
     companyId: string;
     brokerId?: string | null;
+    brokerName?: string | null;
     clientName?: string | null;
     eventId?: string | null;
     visitAtLabel?: string | null;
@@ -442,30 +443,46 @@ export async function notifyAppointmentBooked(
       if (dup) return;
     }
 
+    const brokerId = input.brokerId ? String(input.brokerId).trim() : "";
     const recipients = await listNotificationRecipientIds(
       service,
       companyId,
-      input.brokerId ?? null,
+      brokerId || null,
     );
     if (!recipients.length) return;
 
     const who = String(input.clientName || "").trim() || "Cliente";
-    const when = String(input.visitAtLabel || "").trim();
-    const body = when
-      ? `Visita agendada para ${who} (${when}).`
-      : `Visita agendada para ${who}.`;
+    let brokerName = String(input.brokerName || "").trim();
+    if (!brokerName && brokerId) {
+      const { data: brokerRow, error: brokerErr } = await service
+        .from("user_profiles")
+        .select("full_name")
+        .eq("id", brokerId)
+        .maybeSingle();
+      if (brokerErr) {
+        console.warn("[userNotifications] broker name:", brokerErr.message);
+      }
+      brokerName = String(brokerRow?.full_name || "").trim();
+    }
+    if (!brokerName) brokerName = "Não atribuído";
+
+    const body =
+      `Visita agendada Para "${who}" Corretor responsável "${brokerName}"`;
 
     const rows = recipients.map((userId) => ({
       company_id: companyId,
       user_id: userId,
       type: "appointment" as const,
-      title: "Visita agendada",
+      title: "Visita Agendada",
       body,
       meta: {
         route: "/agenda",
         lead_id: input.leadId ?? null,
         event_id: eventId || null,
         lead_name: who,
+        broker_id: brokerId || null,
+        broker_name: brokerName,
+        visit_at_label: String(input.visitAtLabel || "").trim() || null,
       },
     }));
 

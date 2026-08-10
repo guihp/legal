@@ -1,5 +1,15 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-10 — Push copy: Visita Agendada
+
+### SUMÁRIO
+- Title/body da notificação `appointment` (visita agendada): título `Visita Agendada`; corpo `Visita agendada Para "{lead}" Corretor responsável "{corretor}"`.
+- SQL trigger `notify_on_lead_stage_change` (migration `20260810180000_fix_visita_agendada_notification_copy.sql`) + Edge `_shared/userNotifications.notifyAppointmentBooked` (+ `google-calendar-api` passa `brokerName`).
+- Subtitle iOS "from IAFÉ Imobi": comportamento do SO / manifest PWA — não removível via `showNotification` options.
+
+### Próximos passos
+- Smoke: mover lead → visita-agendada e confirmar push; CRM Agenda `create_event` idem.
+
 ## 2026-08-10 — Fix upload avatar (bucket `avatars`)
 
 ### Root cause

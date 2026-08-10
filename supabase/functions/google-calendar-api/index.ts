@@ -1754,6 +1754,9 @@ serve(async (req) => {
             await notifyAppointmentBooked(service, {
               companyId: profile.company_id,
               brokerId: matched.broker_id,
+              brokerName: String(
+                brokerProfile?.full_name || matched.broker_name || "",
+              ).trim() || null,
               clientName: clientName || null,
               eventId: created?.id ? String(created.id) : null,
               visitAtLabel: visitAtLabel || null,
