@@ -243,32 +243,30 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     previewSubtitle,
     previewNameFont,
     previewNameSize,
-    previewNameColor,
     previewNameBold,
-    previewSubtitleFont,
-    previewSubtitleSize,
-    previewSubtitleColor,
-    previewSubtitleBold,
     previewLogoSize,
   } = usePreview();
 
   // Usar valores de preview quando estiver no modo preview, senão usar configurações salvas
-  const companyDisplayName = isPreviewMode ? previewName : settings?.display_name;
-  const companyDisplaySubtitle = isPreviewMode ? previewSubtitle : settings?.display_subtitle;
+  const companyDisplayName = (isPreviewMode ? previewName : settings?.display_name)?.trim() || '';
+  const companyDisplaySubtitle =
+    (isPreviewMode ? previewSubtitle : settings?.display_subtitle)?.trim() || '';
   const nameFont = isPreviewMode ? previewNameFont : settings?.company_name_font_family;
   const nameSize = isPreviewMode ? previewNameSize : settings?.company_name_font_size;
-  const nameColor = isPreviewMode ? previewNameColor : settings?.company_name_color;
   const nameBold = isPreviewMode ? previewNameBold : settings?.company_name_bold;
-  const subtitleFont = isPreviewMode ? previewSubtitleFont : settings?.company_subtitle_font_family;
-  const subtitleSize = isPreviewMode ? previewSubtitleSize : settings?.company_subtitle_font_size;
-  const subtitleColor = isPreviewMode ? previewSubtitleColor : settings?.company_subtitle_color;
-  const subtitleBold = isPreviewMode ? previewSubtitleBold : settings?.company_subtitle_bold;
   /** Tamanho vindo do banco (ex.: 40) não deve encolher a logo após o fetch — mínimo visual estável */
   const rawLogoSize = isPreviewMode ? previewLogoSize : settings?.logo_size;
   const sidebarLogoHeightPx =
     rawLogoSize != null && rawLogoSize > 0
       ? Math.max(rawLogoSize, 112)
       : 120;
+
+  const companyLogoUrl = settings?.logo_url?.trim() || '';
+  const hasCompanyLogo = Boolean(companyLogoUrl);
+  /** Com logo da empresa: nome/subtítulo como rótulo secundário sob a imagem. */
+  const secondaryBrandLine = hasCompanyLogo
+    ? companyDisplayName || companyDisplaySubtitle
+    : '';
 
   useEffect(() => {
     // Buscar usuário atual
@@ -380,52 +378,47 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   return (
     <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <SidebarHeader className="px-4 py-6 border-b border-sidebar-border bg-sidebar min-h-[132px] flex flex-col justify-center">
-        <div className="flex flex-col items-center gap-3 w-full">
-          {settings?.logo_url ? (
-            <img
-              src={settings.logo_url}
-              alt="Logo da empresa"
-              style={{
-                height: `${sidebarLogoHeightPx}px`,
-                width: 'auto',
-                maxHeight: '152px',
-              }}
-              className="rounded-xl object-contain"
-            />
-          ) : (
-            <div className="flex w-full items-center justify-center gap-3 px-1">
+        <div className="flex flex-col items-center gap-2.5 w-full">
+          {hasCompanyLogo ? (
+            <>
               <img
-                src="/brand-mark.png"
-                alt=""
-                className="h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
-                aria-hidden
+                src={companyLogoUrl}
+                alt="Logo da empresa"
+                style={{
+                  height: `${sidebarLogoHeightPx}px`,
+                  width: 'auto',
+                  maxHeight: '152px',
+                }}
+                className="rounded-xl object-contain"
               />
-              <div className="min-w-0 text-left">
+              {secondaryBrandLine ? (
                 <p
-                  className="truncate text-base font-semibold leading-tight tracking-tight text-sidebar-foreground sm:text-lg"
+                  className="max-w-full truncate px-1 text-center text-sm font-medium leading-tight text-sidebar-foreground"
                   style={{
                     fontFamily: nameFont || undefined,
-                    fontSize: nameSize ? `${Math.max(nameSize, 18)}px` : undefined,
-                    color: nameColor || undefined,
+                    fontSize: nameSize ? `${Math.min(Math.max(nameSize, 14), 18)}px` : undefined,
                     fontWeight: nameBold ? 700 : 600,
                   }}
                 >
-                  {companyDisplayName || 'IAFÉ IMOBI'}
+                  {secondaryBrandLine}
                 </p>
-                {(companyDisplaySubtitle || 'Gestão Imobiliária') && (
-                  <p
-                    className="mt-0.5 truncate text-xs text-sidebar-foreground/55"
-                    style={{
-                      fontFamily: subtitleFont || undefined,
-                      fontSize: subtitleSize ? `${subtitleSize}px` : undefined,
-                      color: subtitleColor || undefined,
-                      fontWeight: subtitleBold ? 600 : 400,
-                    }}
-                  >
-                    {companyDisplaySubtitle || 'Gestão Imobiliária'}
-                  </p>
-                )}
-              </div>
+              ) : null}
+            </>
+          ) : (
+            <div
+              style={{
+                height: `${sidebarLogoHeightPx}px`,
+                maxHeight: '152px',
+                width: '100%',
+                background: 'transparent',
+              }}
+              className="flex items-center justify-center py-2"
+            >
+              <img
+                src={theme === 'dark' ? '/IMOBI-LOGO-(1).png' : '/IMOBI-LOGO-2.png'}
+                alt="IAFÉ IMOBI"
+                className="h-full w-auto object-contain max-w-[min(100%,280px)]"
+              />
             </div>
           )}
         </div>
