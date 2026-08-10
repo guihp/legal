@@ -2,6 +2,7 @@ import { z } from "zod";
 import { invokeEdge } from "@/integrations/supabase/invoke";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveAgendaEventCorretor } from "@/lib/agendaCorretor";
+import { isAgendaFilledBlock } from "@/components/agenda/helpers";
 
 // Tipagem compartilhada com AgendaView
 export interface AgendaEvent {
@@ -284,7 +285,7 @@ export async function fetchUpcomingFromAgenda(daysAhead: number = 7, limit: numb
 				});
 			}
 			
-			return isFuture && isWithinRange;
+			return isFuture && isWithinRange && !isAgendaFilledBlock(event);
 		})
 		.sort((a, b) => a.date.getTime() - b.date.getTime())
 		.slice(0, limit);

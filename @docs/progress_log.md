@@ -1,5 +1,99 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-10 — Fix upload avatar (bucket `avatars`)
+
+### Root cause
+`UserProfileView` faz upload em `supabase.storage.from('avatars')` com path `{user_id}/…`. No projeto remote só existiam `company-assets` e `property-images` → erro `Bucket not found` mapeado para "Bucket de avatars não configurado…".
+
+### Fix
+- Migration `20260810170000_storage_avatars_bucket_policies.sql`: cria bucket público `avatars` (2MB, MIME imagem) + policies public read / owner write na pasta `auth.uid()`.
+- Aplicada no remote via Supabase MCP `user-imobi`.
+- Front já alinhado (hardcode `avatars`); sem mudança de código.
+
+### Próximos passos
+- Smoke manual: Perfil → upload foto ≤2MB → URL pública em `avatar_url`.
+
+## 2026-08-10 — PWA Push Fase 6: docs + deploy notes (SUMÁRIO)
+
+### SUMÁRIO — PWA + Web Push (fases 1–6)
+
+| Fase | Entrega |
+|------|---------|
+| 1 | PWA shell: `vite-plugin-pwa`, `sw.ts`, manifest, ícones, `.htaccess`, `versionChecker`, `usePwaInstall` |
+| 2 | Schema: `push_subscriptions`, `user_notification_preferences`, novos `user_notifications.type` |
+| 3 | Edge `push-dispatch` + trigger `pg_net` `AFTER INSERT` → fan-out VAPID |
+| 4 | Emissores: `chat_human_reply` / `chat_human_requested` / `agenda_reminder` (+ appointment CRM) |
+| 5 | UI Configurações → Aplicativo + espelho `/profile` (install + prefs + subscribe) |
+| 6 | Docs (`events.md`, schema, hierarquia) + checklist QA/ops Hostinger |
+
+### CI / Hostinger (PWA artifacts)
+
+- GitHub Actions [`.github/workflows/ci.yml`](.github/workflows/ci.yml): `pnpm build` only — **não** há job SFTP Hostinger neste repo.
+- `vite build` (`injectManifest`) emite em `dist/`: `sw.js` (Workbox **inline** no SW — sem `workbox-*.js` na raiz), `manifest.webmanifest`, `.htaccess` (de `public/`), ícones `pwa-*.png`; client usa `assets/workbox-window.prod.es5-*.js`.
+- Deploy Hostinger (manual ou pipeline externo): enviar **todo** o `dist/` — não filtrar só `assets/`. `.htaccess` já protege `sw.js` / manifest / `workbox-*` de rewrite SPA.
+- Workflow OK para PWA — sem mudança no CI. Build verificado (`npm run build`) nesta fase.
+
+### QA checklist (manual)
+
+- [ ] **Android Chrome:** instalar PWA → Ativar notificações → receber push de teste → click abre `meta.route` (ex. `/conversas`, `/agenda`, `/clients`).
+- [ ] **iOS Safari ≥ 16.4:** Adicionar à Tela de Início → abrir pelo ícone (standalone) → Ativar notificações → receber push → click abre rota.
+- [ ] **Prefs off:** `push_enabled=false` ou categoria off → INSERT em `user_notifications` **não** envia push (inbox in-app ainda aparece).
+- [ ] **Stale sub:** endpoint 404/410 removido de `push_subscriptions` após dispatch.
+
+### Ops restantes (humano — ainda não feitos no remote)
+
+1. Aplicar migrations `20260810150000_…` e `20260810160000_…` no projeto Supabase.
+2. Gerar VAPID: `npx web-push generate-vapid-keys`.
+3. Edge secrets: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (+ opcional `PUSH_DISPATCH_SECRET`).
+4. Deploy: `supabase functions deploy push-dispatch` (e edges emissores se ainda não).
+5. Front: `VITE_VAPID_PUBLIC_KEY` (= public key) no `.env` / Hostinger build env; rebuild + upload `dist/`.
+6. Vault SQL: `supabase_anon_key` (obrigatório p/ `pg_net`); opcional `push_dispatch_secret`.
+7. Smoke: `SELECT enqueue_push_for_notification('<uuid>');` ou curl documentado em `supabase/functions/push-dispatch/ENVIRONMENT.md`.
+
+Refs: `docs/events.md` (`in_app.*` + `push.fanout`), `@docs/database-schema.md`, `@docs/hierarquia-usuarios.md`, `ENVIRONMENT.md`.
+
+## 2026-08-10 — PWA Push Fase 5: UI Configurações → Aplicativo
+
+- Nova seção **Aplicativo** (`?section=aplicativo`) em Configurações: Baixar o App (Android `beforeinstallprompt` / iOS A2HS) + Notificações pessoais.
+- Hooks `usePushNotifications` (subscribe/list/remove + VAPID) e `useNotificationPreferences` (RPC `ensure_user_notification_preferences` + toggles).
+- Componente compartilhado `PersonalAppSettings` também espelhado em `/profile` para quem não tem menu Configurações.
+- Prefs pessoais (master + agenda/pipeline/chat_human/connections/system) salvam na hora — todos os roles; independente das Preferências da empresa (gestor).
+
+## 2026-08-10 — PWA Push Fase 4: emissores `user_notifications`
+
+- Shared helper `supabase/functions/_shared/userNotifications.ts`: recipients (corretor + gestores/admins), insert + dedupe, chat/agenda/appointment emitters.
+- **chat_human_reply:** `mensagem-ingest` + `mensagem-media-ingest` quando inbound do cliente e label `humano` / `humano_solicitado` → inbox com `meta.route=/conversas`.
+- **chat_human_requested:** `conversation-label-api` `set_label` → `humano_solicitado` (primeira vez).
+- **agenda_reminder:** `visit-reminder-dispatch` após webhook n8n OK; `meta.route=/agenda`.
+- **appointment (CRM):** `google-calendar-api` `create_event` quando há corretor no calendário (book_visit já cobre via trigger de stage).
+- **pipeline:** trigger `notify_on_lead_stage_change` já emite `meta.route=/clients` (pipeline) + `lead_id` — sem alteração SQL.
+- Docs: `docs/events.md` (`in_app.chat_human_*`, `in_app.agenda_reminder`); fallback de rota no `DashboardHeader`.
+- Sem UI Config nesta fase. Sem commit.
+
+## 2026-08-10 — PWA Push Fase 3: Edge push-dispatch + trigger pg_net
+
+- Edge `supabase/functions/push-dispatch`: carrega `user_notifications`, aplica `user_notification_preferences` (master + categoria), envia Web Push (VAPID via `@negrel/webpush`), remove subs 404/410.
+- Mapa de tipos → prefs: `lead_stage_changed`→pipeline; `appointment`/`agenda_reminder`→agenda; `chat_human_*`→chat_human; `connection_*`→connections; `general`→system.
+- Migration `20260810160000_push_dispatch_trigger_pg_net`: `AFTER INSERT` em `user_notifications` → RPC `enqueue_push_for_notification(uuid)` → `pg_net.http_post` na Edge (vault `supabase_anon_key`; opcional `push_dispatch_secret`).
+- Secrets documentados: `VAPID_*` (Edge) + `VITE_VAPID_PUBLIC_KEY` (`.env.example`). Migrations **não aplicadas** no remote nesta entrega.
+- Próximo: Fase 5 (UI Configurações / subscribe) + emissores Fase 4 se faltarem.
+
+## 2026-08-10 — PWA shell (Fase 1): app instalável
+
+- `vite-plugin-pwa` (injectManifest) + `src/sw.ts`: precache Workbox, `navigateFallback` SPA, stubs `push` + `notificationclick` (`meta.route` ou `/`).
+- Manifest **IAFÉ Imobi** (`standalone`, `start_url: /`, theme `#0a0a0a`), ícones 192/512 em `public/`, links em `index.html`.
+- `public/.htaccess`: MIME de `.webmanifest`/SW; paths `sw.js` / workbox / manifest **não** reescritos para `index.html`.
+- `versionChecker` alinhado ao Workbox: sem limpar caches nem reload automático; toast “Nova versão” + `skipWaiting` via `virtual:pwa-register`.
+- Hook `usePwaInstall` (`beforeinstallprompt` + detecção iOS Safari / A2HS). UI Configurações e push real ficam nas fases seguintes.
+
+## 2026-08-10 — PWA Push Fase 2: schema subscriptions + preferências
+
+- Migration `20260810150000_push_subscriptions_and_notification_preferences`: tabelas `push_subscriptions` e `user_notification_preferences` com RLS own-row + company scope via `user_profiles`.
+- Helper `ensure_user_notification_preferences()` cria defaults (todos `true`) no primeiro acesso sem sobrescrever prefs existentes.
+- CHECK de `user_notifications.type` estendido com `chat_human_reply`, `chat_human_requested`, `agenda_reminder`.
+- Stubs TS: `src/lib/push/` (types + mapper snake↔camel). Sem Edge push-dispatch / PWA UI nesta fase.
+- Migration **não aplicada** no remote (arquivo local only).
+
 ## 2026-08-05 — Android: reload cancelava a seleção de arquivo
 
 - **Causa:** abrir o seletor de arquivos no Android deixa a página `hidden`; ao voltar, o `visibilitychange` do `versionChecker` rodava `checkForUpdate()` e um hash novo disparava `location.reload()` no meio da seleção — o usuário voltava pra tela recarregada e repetia o ciclo.

@@ -4,6 +4,7 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { writeFileSync } from "fs";
 import { createHash } from "crypto";
+import { VitePWA } from "vite-plugin-pwa";
 
 /**
  * Plugin Vite que gera um arquivo `build-meta.json` na pasta de saída
@@ -49,6 +50,69 @@ export default defineConfig(({ mode }) => ({
     mode === 'development' &&
     componentTagger(),
     buildMetaPlugin(),
+    VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      registerType: 'prompt',
+      // Registro manual em versionChecker via virtual:pwa-register
+      injectRegister: false,
+      includeAssets: [
+        'Favicon.png',
+        'apple-touch-icon.png',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'favicon.ico',
+      ],
+      manifest: {
+        name: 'IAFÉ Imobi',
+        short_name: 'IAFÉ Imobi',
+        description: 'IAFÉ IMOBI - Plataforma de Gestão de Imóveis',
+        theme_color: '#0a0a0a',
+        background_color: '#0a0a0a',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        start_url: '/',
+        scope: '/',
+        lang: 'pt-BR',
+        icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webp}', 'manifest.webmanifest'],
+        // build-meta must stay network-only (versionChecker); skip bulky public assets
+        globIgnores: [
+          '**/build-meta.json',
+          '**/check-env.html',
+          '**/Documento_1.png',
+          '**/favicon_imobi.png',
+          '**/favicon_imobi1.png',
+          '**/IMOBI-LOGO-(1).png',
+        ],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
+      devOptions: {
+        enabled: false,
+      },
+    }),
   ].filter(Boolean),
   resolve: {
     alias: {

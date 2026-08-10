@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifyAgendaReminder } from "../_shared/userNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -81,6 +82,29 @@ serve(async (req) => {
           last_error: null,
         })
         .eq("id", job.id);
+
+      // Inbox row for push/outbox (best-effort; n8n webhook already sent)
+      try {
+        const payload = (job.payload || {}) as Record<string, unknown>;
+        const corretor = (payload.corretor || {}) as Record<string, unknown>;
+        const visitaData = String(payload.visita_data || "").trim();
+        const visitaHora = String(payload.visita_hora || "").trim();
+        const visitAtLabel = [visitaData, visitaHora].filter(Boolean).join(" ").trim();
+        await notifyAgendaReminder(service, {
+          companyId: String(payload.company_id || ""),
+          leadId: payload.lead_id != null ? String(payload.lead_id) : null,
+          eventId: payload.event_id != null ? String(payload.event_id) : null,
+          jobId: String(job.id),
+          brokerId: corretor.id != null ? String(corretor.id) : null,
+          clientName: payload.nome_cliente != null ? String(payload.nome_cliente) : null,
+          reminderType: payload.lembrete_tipo != null
+            ? String(payload.lembrete_tipo)
+            : null,
+          visitAtLabel: visitAtLabel || null,
+        });
+      } catch (notifyErr) {
+        console.warn("agenda_reminder_notify_failed", notifyErr);
+      }
 
       sent += 1;
     } catch (e: unknown) {

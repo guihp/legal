@@ -18,7 +18,7 @@ Versioned catalog of domain events emitted by the platform.
 
 - `lead_id`, `lead_name`
 - `from_stage` / `to_stage` (+ `*_label` PT)
-- `route`: `/clients`
+- `route`: `/clients` (pipeline Kanban; `lead_id` in meta for deep context)
 
 ---
 
@@ -28,14 +28,112 @@ Versioned catalog of domain events emitted by the platform.
 |-------|--------|
 | **Name** | `in_app.appointment` |
 | **Channel** | In-app (`user_notifications`) |
-| **When** | Lead stage changes **to** visita agendada (`visita-agendada` / `Visita Agendada`), including `schedule-api` `book_visit` and CRM Kanban |
+| **When** | Lead stage changes **to** visita agendada (`visita-agendada` / `Visita Agendada`), including `schedule-api` `book_visit` and CRM Kanban; **also** CRM Agenda `google-calendar-api` `create_event` when a broker calendar is matched (no stage change) |
 | **Recipients** | Same as stage-changed |
-| **Emitter** | Same trigger (typed as `appointment` when entering visit stage) |
+| **Emitter** | DB trigger (typed as `appointment` when entering visit stage); Edge `google-calendar-api` `create_event` via `_shared/userNotifications.notifyAppointmentBooked` |
 | **Note** | Pipeline stages (order): Novo Lead → Qualificado → Visita Agendada → **Visita Realizada** (`visita-realizada`) → Visita Cancelada → Em Negociação → Documentação → Contrato → Fechamento. Moving to `visita-realizada` emits `lead_stage_changed`, not `appointment`. |
 
 ### Payload (`meta` jsonb)
 
-- Same as stage-changed; `route`: `/agenda`
+- Same as stage-changed when from trigger; CRM create_event adds `event_id`
+- `route`: `/agenda`
+
+---
+
+## in_app.chat_human_reply
+
+| Field | Value |
+|-------|--------|
+| **Name** | `in_app.chat_human_reply` |
+| **Channel** | In-app (`user_notifications`) — outbox for Web Push |
+| **When** | Client inbound message (`type` lead/cliente/…) while session has attendance label `humano` or `humano_solicitado` |
+| **Recipients** | Lead broker (`id_corretor_responsavel` or `user_id`) + active `gestor`/`admin` |
+| **Emitter** | Edge `mensagem-ingest` / `mensagem-media-ingest` via `_shared/userNotifications.notifyChatHumanReply` |
+| **Dedupe** | Skip if `meta.mensagem_id` already notified for the company |
+
+### Payload (`meta` jsonb)
+
+- `route`: `/conversas`
+- `session_id`, `channel` (`whatsapp` \| `instagram`)
+- `lead_id`, `lead_name`, `mensagem_id` (optional)
+
+---
+
+## in_app.chat_human_requested
+
+| Field | Value |
+|-------|--------|
+| **Name** | `in_app.chat_human_requested` |
+| **Channel** | In-app (`user_notifications`) |
+| **When** | `conversation-label-api` `set_label` applies status `humano_solicitado` (first time for that session) |
+| **Recipients** | Same as chat_human_reply |
+| **Emitter** | Edge `conversation-label-api` via `_shared/userNotifications.notifyChatHumanRequested` |
+
+### Payload (`meta` jsonb)
+
+- `route`: `/conversas`
+- `session_id`, `channel`, `lead_id`, `lead_name`
+
+---
+
+## in_app.agenda_reminder
+
+| Field | Value |
+|-------|--------|
+| **Name** | `in_app.agenda_reminder` |
+| **Channel** | In-app (`user_notifications`) |
+| **When** | `visit-reminder-dispatch` successfully sends a pending reminder job (1 day / 3 hours) to n8n |
+| **Recipients** | Broker from job payload + active `gestor`/`admin` |
+| **Emitter** | Edge `visit-reminder-dispatch` via `_shared/userNotifications.notifyAgendaReminder` |
+| **Dedupe** | Skip if `meta.job_id` already notified |
+
+### Payload (`meta` jsonb)
+
+- `route`: `/agenda`
+- `lead_id`, `event_id`, `job_id`, `reminder_type`, `lead_name`
+
+---
+
+## push.fanout (Web Push)
+
+| Field | Value |
+|-------|--------|
+| **Name** | `push.fanout` |
+| **Channel** | Web Push (PWA) via Edge `push-dispatch` |
+| **When** | `AFTER INSERT` on `user_notifications` (any type) |
+| **Emitter** | SQL trigger `trg_user_notifications_enqueue_push` → RPC `enqueue_push_for_notification` → `pg_net` → `POST /functions/v1/push-dispatch` |
+| **Alt** | Dashboard Database Webhook on `user_notifications` INSERT (same payload shapes accepted) |
+| **Gate** | `user_notification_preferences`: `push_enabled` + category (`pipeline` / `agenda` / `chat_human` / `connections` / `system`) |
+| **Targets** | Rows in `push_subscriptions` for `user_id`; stale endpoints (404/410) deleted |
+
+### Type → preference category
+
+| `user_notifications.type` | Pref column |
+|---------------------------|-------------|
+| `lead_stage_changed` | `pipeline` |
+| `appointment`, `agenda_reminder` | `agenda` |
+| `chat_human_reply`, `chat_human_requested` | `chat_human` |
+| `connection_request`, `connection_approved`, `connection_rejected` | `connections` |
+| `general` (+ unknown) | `system` |
+
+### Edge payload
+
+```json
+{ "notification_id": "<uuid>" }
+```
+
+Also accepts `{ "notification_ids": ["…"] }` or Supabase webhook `{ "record": { "id": "…" } }`.
+
+### Secrets (Edge Functions Dashboard)
+
+| Secret | Notes |
+|--------|--------|
+| `VAPID_PUBLIC_KEY` | Classic base64url (same as `VITE_VAPID_PUBLIC_KEY`) |
+| `VAPID_PRIVATE_KEY` | Classic base64url **or** JSON JWK / exported `@negrel/webpush` keys |
+| `VAPID_SUBJECT` | `mailto:ops@…` |
+| `PUSH_DISPATCH_SECRET` | Optional; if set, require `x-push-secret` (vault `push_dispatch_secret`) |
+
+Vault for trigger: `supabase_anon_key` (required for `pg_net`); optional `push_dispatch_secret`.
 
 ---
 
@@ -183,7 +281,7 @@ Persistência (LeadViewModal): `leads.conversation_summary` (text).
 
 | `action` | Descrição |
 |----------|-----------|
-| `set_label` | Upsert aditivo em `conversation_contact_labels` (unique por session+status). Tags (`follow_up_*`, custom) **não** removem `ai_ativa`. Modos `ai_ativa`/`humano`/`humano_solicitado` são exclusivos entre si. |
+| `set_label` | Upsert aditivo em `conversation_contact_labels` (unique por session+status). Tags (`follow_up_*`, custom) **não** removem `ai_ativa`. Modos `ai_ativa`/`humano`/`humano_solicitado` são exclusivos entre si. Ao aplicar `humano_solicitado` (primeira vez), emite `in_app.chat_human_requested`. |
 | `get_labels` | Lista `{ session_id, status }` por canal + `session_ids[]` |
 | `list_catalog` | Lista catálogo `company_ai_labels` da empresa |
 | `upsert_catalog` | Cria/edita etiqueta (gestor/admin/service_role); system: não altera slug/`is_system` |

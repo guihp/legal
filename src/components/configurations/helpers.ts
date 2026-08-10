@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Building2, CircleDot, Contrast, LayoutPanelLeft } from 'lucide-react';
+import { Building2, CircleDot, Contrast, LayoutPanelLeft, Smartphone } from 'lucide-react';
 import { formatBrazilianMobileInput, normalizePhoneForStorage } from '@/lib/normalizePhone';
 import type { OwnCompanyData } from '@/hooks/useOwnCompany';
 import {
@@ -56,6 +56,7 @@ export const SECTION_NAV: ReadonlyArray<{
   { id: 'endereco', label: 'Endereço', Icon: CircleDot },
   { id: 'plano', label: 'Plano e assinatura', Icon: LayoutPanelLeft },
   { id: 'preferencias', label: 'Preferências', Icon: Contrast },
+  { id: 'aplicativo', label: 'Aplicativo', Icon: Smartphone },
 ];
 
 export function asText(value: unknown): string {

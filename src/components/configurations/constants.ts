@@ -3,6 +3,7 @@ export const CONFIG_SECTIONS = [
   'endereco',
   'plano',
   'preferencias',
+  'aplicativo',
 ] as const;
 
 export type ConfigSectionId = (typeof CONFIG_SECTIONS)[number];

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendVisitBookedAlertToBroker } from "../_shared/email.ts";
+import { notifyAppointmentBooked } from "../_shared/userNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1727,6 +1728,40 @@ serve(async (req) => {
             propertyLabel: String(created?.summary || eventBody?.summary || "").trim() || null,
             propertyAddress: String(created?.location || eventBody?.location || "").trim() || null,
           });
+
+          // Inbox appointment when CRM create_event does not move leads.stage
+          // (book_visit path already emits via DB trigger on visita-agendada).
+          try {
+            let visitAtLabel = "";
+            if (startRaw) {
+              const d = new Date(startRaw);
+              if (!Number.isNaN(d.getTime())) {
+                visitAtLabel = `${d.toLocaleDateString("pt-BR", {
+                  timeZone: "America/Sao_Paulo",
+                })} ${d.toLocaleTimeString("pt-BR", {
+                  timeZone: "America/Sao_Paulo",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                })}`;
+              }
+            }
+            const leadIdFromEvent = String(
+              eventBody?.extendedProperties?.private?.lead_id ||
+                created?.extendedProperties?.private?.lead_id ||
+                "",
+            ).trim();
+            await notifyAppointmentBooked(service, {
+              companyId: profile.company_id,
+              brokerId: matched.broker_id,
+              clientName: clientName || null,
+              eventId: created?.id ? String(created.id) : null,
+              visitAtLabel: visitAtLabel || null,
+              leadId: leadIdFromEvent || null,
+            });
+          } catch (notifyErr) {
+            console.error("visit_booked_inbox_failed", notifyErr);
+          }
         } else {
           console.log("visit_booked_email_skip", {
             reason: "no_broker_for_calendar",

@@ -41,6 +41,7 @@ import { CompanyDataSection } from './sections/CompanyDataSection';
 import { AddressSection } from './sections/AddressSection';
 import { PlanSection } from './sections/PlanSection';
 import { PreferencesSection } from './sections/PreferencesSection';
+import { AppSection } from './sections/AppSection';
 
 function prefsEqual(a: PreferencesState, b: PreferencesState): boolean {
   return (
@@ -341,6 +342,7 @@ export function ConfigurationsView() {
             {section === 'preferencias' && (
               <PreferencesSection prefs={prefs} isManager={isManager} onChange={patchPrefs} />
             )}
+            {section === 'aplicativo' && <AppSection />}
           </div>
 
           <aside className="space-y-4 min-w-0 xl:sticky xl:top-4">

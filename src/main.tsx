@@ -44,6 +44,6 @@ createRoot(document.getElementById("root")!).render(
   // </React.StrictMode>
 );
 
-// Verificação automática de nova versão após deploy (só em produção).
-// Faz polling a cada 5 min no /build-meta.json e recarrega se mudou.
+// Produção: registra SW (PWA) + detecta deploy via /build-meta.json.
+// Prompt “Nova versão” + skipWaiting — sem reload agressivo (Workbox).
 startVersionChecker();

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifyChatHumanRequested } from "../_shared/userNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -244,6 +245,18 @@ serve(async (req) => {
 
       // Atendimento: exclusivos entre si; tags (follow_up_*, custom) são aditivas.
       const attendance = new Set(["ai_ativa", "humano", "humano_solicitado"]);
+      let previousWasRequested = false;
+      if (status === "humano_solicitado") {
+        const { data: existingRequested } = await service
+          .from("conversation_contact_labels")
+          .select("id")
+          .eq("company_id", profile.company_id)
+          .eq("channel", channel)
+          .eq("session_id", sessionId)
+          .eq("status", "humano_solicitado")
+          .maybeSingle();
+        previousWasRequested = !!existingRequested?.id;
+      }
       if (attendance.has(status)) {
         await service
           .from("conversation_contact_labels")
@@ -261,6 +274,16 @@ serve(async (req) => {
         .single();
 
       if (error) return json({ success: false, error: error.message }, 400);
+
+      if (status === "humano_solicitado") {
+        await notifyChatHumanRequested(service, {
+          companyId: profile.company_id,
+          channel,
+          sessionId,
+          previousWasRequested,
+        });
+      }
+
       return json({ success: true, data });
     }
 

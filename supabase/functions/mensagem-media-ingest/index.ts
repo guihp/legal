@@ -29,6 +29,7 @@ import {
   hookFollowUpOnMensagem,
   parseFromFollowUpFlag,
 } from "../_shared/followUpCycle.ts";
+import { notifyChatHumanReply } from "../_shared/userNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -543,6 +544,20 @@ serve(async (req) => {
         hookErr instanceof Error ? hookErr.message : hookErr,
       );
     }
+
+    const savedPhone = String(saved.phone || meta.phone || "").trim();
+    const savedType = String(saved.type || meta.msgType || "lead");
+    await notifyChatHumanReply(service, {
+      companyId: meta.companyId,
+      phone: savedPhone,
+      type: savedType,
+      plataforma: String(saved.plataforma || meta.plataforma || "WhatsApp"),
+      mensagemId:
+        (saved.mensagem_id != null ? String(saved.mensagem_id) : null) ||
+        meta.mensagemId ||
+        null,
+      textPreview: meta.text || null,
+    });
 
     return json({
       ok: true,

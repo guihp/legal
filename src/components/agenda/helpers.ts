@@ -247,6 +247,19 @@ export function filterEventsByStatus(
   return events;
 }
 
+export function isAgendaFilledBlock(event: Pick<AgendaEventLike, 'property' | 'client'>): boolean {
+  const property = String(event.property || '').trim().toLowerCase();
+  const client = String(event.client || '').trim().toLowerCase();
+  // Placeholders / padrões que não devem aparecer no painel da Agenda.
+  return (
+    property.startsWith('bloqueado - agenda preenchida') ||
+    property.startsWith('bloqueado -') ||
+    (property === 'bloqueado' && client.startsWith('agenda preenchida')) ||
+    property.startsWith('reunião') ||
+    property.startsWith('reuniao')
+  );
+}
+
 export function getUpcomingEvents(
   events: AgendaEventLike[],
   fromDate: Date,
@@ -255,7 +268,7 @@ export function getUpcomingEvents(
   const start = new Date(fromDate);
   start.setHours(0, 0, 0, 0);
   return events
-    .filter((e) => e.date >= start)
+    .filter((e) => e.date >= start && !isAgendaFilledBlock(e))
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, limit);
 }

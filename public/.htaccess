@@ -1,7 +1,28 @@
 # Vite/React SPA fallback for Hostinger (Apache)
 ErrorDocument 404 /index.html
+
+# MIME types for PWA assets
+<IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest
+  AddType application/javascript .js
+  AddType text/javascript .js
+</IfModule>
+
+# Service worker / workbox must not be cached aggressively
+<IfModule mod_headers.c>
+  <FilesMatch "^(sw\.js|workbox-[a-zA-Z0-9_-]+\.js|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Never rewrite PWA entrypoints to index.html (explicit, even if file missing)
+  RewriteRule ^sw\.js$ - [L]
+  RewriteRule ^workbox-[a-zA-Z0-9_-]+\.js$ - [L]
+  RewriteRule ^manifest\.webmanifest$ - [L]
+  RewriteRule ^registerSW\.js$ - [L]
 
   # Serve existing files directly
   RewriteCond %{REQUEST_FILENAME} -f [OR]

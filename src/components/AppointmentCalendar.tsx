@@ -38,6 +38,7 @@ import {
   getTypeBadgeClasses,
   getUpcomingEvents,
   getStartOfWeek,
+  isAgendaFilledBlock,
   isConfirmedStatus,
   isVisitedStatus,
   type AgendaViewMode,
@@ -320,6 +321,11 @@ export function AppointmentCalendar({
     
     if (isGhostEvent) {
       console.log("🧹 AppointmentCalendar: Removido evento fantasma com dados padrão");
+      return false;
+    }
+
+    // 8. Placeholders internos de agenda cheia — não mostrar no painel
+    if (isAgendaFilledBlock(apt)) {
       return false;
     }
     
@@ -725,8 +731,8 @@ export function AppointmentCalendar({
       : `${validAppointments.length} eventos · ${selectedAgendaName || 'calendário'}`;
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-4 sm:gap-5 min-w-0">
-      <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm min-w-0 overflow-hidden">
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-4 sm:gap-5 min-w-0 items-start">
+      <div className="rounded-xl sm:rounded-2xl border border-border bg-card shadow-sm min-w-0 overflow-hidden self-start h-fit">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border px-4 py-4 sm:px-5 sm:py-5">
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-semibold text-foreground capitalize">

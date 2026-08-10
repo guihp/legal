@@ -25,8 +25,9 @@ function notificationRoute(n: Notification): string | null {
   const meta = n.meta || n.data || {};
   const route = typeof meta.route === "string" ? meta.route : null;
   if (route) return route;
-  if (n.type === "appointment") return "/agenda";
+  if (n.type === "appointment" || n.type === "agenda_reminder") return "/agenda";
   if (n.type === "lead_stage_changed") return "/clients";
+  if (n.type === "chat_human_reply" || n.type === "chat_human_requested") return "/conversas";
   if (n.type.startsWith("connection_")) return "/connections";
   return null;
 }

@@ -20,6 +20,7 @@ import {
   hookFollowUpOnMensagem,
   parseFromFollowUpFlag,
 } from "../_shared/followUpCycle.ts";
+import { notifyChatHumanReply } from "../_shared/userNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -138,14 +139,30 @@ serve(async (req) => {
     }
 
     const msgType = body.type != null ? String(body.type) : "lead";
+    const plataforma =
+      body.plataforma != null ? String(body.plataforma) : "WhatsApp";
     await hookFollowUpOnMensagem(service, {
       companyId,
       phone,
-      plataforma: body.plataforma != null ? String(body.plataforma) : "WhatsApp",
+      plataforma,
       instancia: body.instancia != null ? String(body.instancia) : null,
       type: msgType,
       mensageType: body.mensage_type != null ? String(body.mensage_type) : null,
       fromFollowUp: parseFromFollowUpFlag(body),
+    });
+
+    // Best-effort: inbox row when client replies under human attendance
+    const row = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+    await notifyChatHumanReply(service, {
+      companyId,
+      phone,
+      type: msgType,
+      plataforma,
+      mensagemId:
+        (row?.mensagem_id != null ? String(row.mensagem_id) : null) ||
+        mensagemId ||
+        null,
+      textPreview: body.text != null ? String(body.text) : null,
     });
 
     return json({ ok: true, row: data, duplicate_handled: true });

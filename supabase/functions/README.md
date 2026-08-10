@@ -146,7 +146,22 @@ A edge: baixa a mídia → Storage → **INSERT** em `mensagens` (`text` + `cont
 
 **Alternativa direta (RPC):** `POST /rest/v1/rpc/upsert_mensagem` com parâmetros `p_company_id`, `p_phone`, `p_mensagem_id`, etc.
 
-### 7. vivareal-scraper
+### 7. push-dispatch
+**Arquivo:** `push-dispatch/index.ts`  
+**Propósito:** Fan-out Web Push a partir de `user_notifications` (outbox). Respeita `user_notification_preferences` e limpa `push_subscriptions` 404/410.  
+**Endpoint:** `POST /functions/v1/push-dispatch`  
+**Auth:** Bearer `service_role`, ou `x-push-secret` (= `PUSH_DISPATCH_SECRET`). Sem secret dedicado, JWT do gateway (anon via `pg_net`) basta.
+
+**Body:**
+```json
+{ "notification_id": "uuid" }
+```
+Também: `{ "notification_ids": ["…"] }` ou webhook `{ "record": { "id": "…" } }`.
+
+**Secrets:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, opcional `PUSH_DISPATCH_SECRET`.  
+**Trigger:** migration `20260810160000` — `enqueue_push_for_notification` via `pg_net` (vault `supabase_anon_key`).
+
+### 8. vivareal-scraper
 **Arquivo:** `vivareal-scraper/index.ts`
 **Propósito:** Fazer scraping interno do VivaReal para importar imóveis automaticamente
 **Permissões:** Usuários autenticados podem importar imóveis da sua empresa
