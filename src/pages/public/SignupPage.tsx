@@ -545,7 +545,7 @@ export default function SignupPage() {
             <img
               src="/IMOBI-LOGO-(1).png"
               alt="IAFÉ IMOBI"
-              className="h-14 w-auto max-w-[min(100%,280px)] object-contain drop-shadow-lg"
+              className="h-20 w-auto max-w-[min(100%,320px)] object-contain drop-shadow-lg sm:h-24"
             />
           </div>
           <p className="text-gray-400">Complete seu cadastro para acessar a plataforma</p>

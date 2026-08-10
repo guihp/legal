@@ -52,7 +52,7 @@ export function PreviewProvider({ children }: PreviewProviderProps) {
   const [previewSubtitleSize, setPreviewSubtitleSize] = useState(12);
   const [previewSubtitleColor, setPreviewSubtitleColor] = useState('#9CA3AF');
   const [previewSubtitleBold, setPreviewSubtitleBold] = useState(false);
-  const [previewLogoSize, setPreviewLogoSize] = useState(40);
+  const [previewLogoSize, setPreviewLogoSize] = useState(72);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   const value: PreviewContextType = {

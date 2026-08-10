@@ -44,9 +44,12 @@ export default function LandingPage() {
                         animate={{ opacity: 1, x: 0 }}
                         className="flex items-center gap-2"
                     >
-                        <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-tr from-blue-500 to-purple-600 rounded-lg">
-                            <Bot className="w-5 h-5 text-white" />
-                        </div>
+                        <img
+                            src="/brand-mark.png"
+                            alt=""
+                            className="h-10 w-10 shrink-0 object-contain"
+                            aria-hidden
+                        />
                         <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
                             IAFÉ IMOBI
                         </span>
@@ -373,9 +376,12 @@ export default function LandingPage() {
                 <div className="container mx-auto px-6">
                     <div className="flex flex-col md:flex-row justify-between items-center gap-8">
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 flex items-center justify-center bg-gray-800 rounded-lg">
-                                <Bot className="w-5 h-5 text-gray-400" />
-                            </div>
+                            <img
+                                src="/brand-mark.png"
+                                alt=""
+                                className="h-10 w-10 shrink-0 object-contain"
+                                aria-hidden
+                            />
                             <span className="text-xl font-bold text-gray-300">IAFÉ IMOBI</span>
                         </div>
 

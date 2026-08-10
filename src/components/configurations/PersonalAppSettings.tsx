@@ -1,4 +1,4 @@
-import { Bell, Download, Loader2, Share, Smartphone, Trash2 } from 'lucide-react';
+import { Bell, Loader2, Share, Smartphone, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -115,9 +115,12 @@ export function PersonalAppSettings({ compact = false, className }: Props) {
         )}
       >
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-            <Download className="h-4 w-4" />
-          </div>
+          <img
+            src="/brand-mark.png"
+            alt=""
+            className="h-11 w-11 shrink-0 object-contain"
+            aria-hidden
+          />
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-foreground">Baixar o App</h2>
             <p className="text-sm text-muted-foreground mt-0.5">

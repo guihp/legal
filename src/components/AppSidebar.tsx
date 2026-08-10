@@ -267,8 +267,8 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const rawLogoSize = isPreviewMode ? previewLogoSize : settings?.logo_size;
   const sidebarLogoHeightPx =
     rawLogoSize != null && rawLogoSize > 0
-      ? Math.max(rawLogoSize, 88)
-      : 104;
+      ? Math.max(rawLogoSize, 112)
+      : 120;
 
   useEffect(() => {
     // Buscar usuário atual
@@ -379,7 +379,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
   return (
     <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <SidebarHeader className="px-4 py-6 border-b border-sidebar-border bg-sidebar min-h-[120px] flex flex-col justify-center">
+      <SidebarHeader className="px-4 py-6 border-b border-sidebar-border bg-sidebar min-h-[132px] flex flex-col justify-center">
         <div className="flex flex-col items-center gap-3 w-full">
           {settings?.logo_url ? (
             <img
@@ -388,25 +388,44 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
               style={{
                 height: `${sidebarLogoHeightPx}px`,
                 width: 'auto',
-                maxHeight: '140px',
+                maxHeight: '152px',
               }}
               className="rounded-xl object-contain"
             />
           ) : (
-            <div
-              style={{
-                height: `${sidebarLogoHeightPx}px`,
-                maxHeight: '140px',
-                width: '100%',
-                background: 'transparent',
-              }}
-              className="flex items-center justify-center py-2"
-            >
+            <div className="flex w-full items-center justify-center gap-3 px-1">
               <img
-                src={theme === 'dark' ? '/IMOBI-LOGO-(1).png' : '/IMOBI-LOGO-2.png'}
-                alt="IAFÉ IMOBI"
-                className="h-full w-auto object-contain max-w-[min(100%,280px)]"
+                src="/brand-mark.png"
+                alt=""
+                className="h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
+                aria-hidden
               />
+              <div className="min-w-0 text-left">
+                <p
+                  className="truncate text-base font-semibold leading-tight tracking-tight text-sidebar-foreground sm:text-lg"
+                  style={{
+                    fontFamily: nameFont || undefined,
+                    fontSize: nameSize ? `${Math.max(nameSize, 18)}px` : undefined,
+                    color: nameColor || undefined,
+                    fontWeight: nameBold ? 700 : 600,
+                  }}
+                >
+                  {companyDisplayName || 'IAFÉ IMOBI'}
+                </p>
+                {(companyDisplaySubtitle || 'Gestão Imobiliária') && (
+                  <p
+                    className="mt-0.5 truncate text-xs text-sidebar-foreground/55"
+                    style={{
+                      fontFamily: subtitleFont || undefined,
+                      fontSize: subtitleSize ? `${subtitleSize}px` : undefined,
+                      color: subtitleColor || undefined,
+                      fontWeight: subtitleBold ? 600 : 400,
+                    }}
+                  >
+                    {companyDisplaySubtitle || 'Gestão Imobiliária'}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

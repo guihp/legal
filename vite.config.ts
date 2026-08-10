@@ -59,6 +59,7 @@ export default defineConfig(({ mode }) => ({
       injectRegister: false,
       includeAssets: [
         'Favicon.png',
+        'brand-mark.png',
         'apple-touch-icon.png',
         'pwa-192x192.png',
         'pwa-512x512.png',

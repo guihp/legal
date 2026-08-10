@@ -205,7 +205,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <img
               src="/IMOBI-LOGO-(1).png"
               alt="IAFÉ IMOBI"
-              className="h-16 max-h-16 w-auto max-w-[min(100%,280px)] object-contain"
+              className="h-20 max-h-20 w-auto max-w-[min(100%,320px)] object-contain sm:h-24 sm:max-h-24"
             />
           </div>
 
@@ -278,7 +278,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           <img
             src="/IMOBI-LOGO-2.png"
             alt="IAFÉ IMOBI"
-            className="h-20 max-h-20 w-auto max-w-[min(100%,280px)] object-contain"
+            className="h-24 max-h-24 w-auto max-w-[min(100%,320px)] object-contain"
           />
         </div>
 

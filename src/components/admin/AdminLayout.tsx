@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   LayoutDashboard, Building2, History, Settings, LogOut,
-  Shield, ChevronDown, Menu, X, Users
+  ChevronDown, Menu, X, Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -93,9 +93,12 @@ export function AdminLayout({ userName, userEmail }: AdminLayoutProps) {
         {/* Logo */}
         <div className="p-6 border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shrink-0">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
+            <img
+              src="/brand-mark.png"
+              alt=""
+              className="h-11 w-11 shrink-0 object-contain"
+              aria-hidden
+            />
             <div>
               <h1 className="text-lg font-bold text-white">IAFÉ IMOBI</h1>
               <p className="text-xs text-red-400">Super Admin</p>

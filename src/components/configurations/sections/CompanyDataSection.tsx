@@ -64,11 +64,11 @@ export function CompanyDataSection({
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-xl border border-border/70 bg-muted/30 p-3 sm:p-4">
-        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-card flex items-center justify-center">
+        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-border bg-card flex items-center justify-center">
           {logoUrl ? (
-            <img src={logoUrl} alt="Logo da empresa" className="h-full w-full object-contain" />
+            <img src={logoUrl} alt="Logo da empresa" className="h-full w-full object-contain p-1.5" />
           ) : (
-            <span className="text-xs text-muted-foreground">logo</span>
+            <img src="/brand-mark.png" alt="IAFÉ IMOBI" className="h-16 w-16 object-contain" />
           )}
         </div>
         <div className="min-w-0 flex-1">

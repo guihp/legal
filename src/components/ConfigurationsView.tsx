@@ -774,16 +774,15 @@ export function ConfigurationsView() {
                               className="rounded-lg object-contain shadow-md"
                             />
                           ) : (
-                            <div 
-                              style={{ 
-                                height: `${previewLogoSize}px`, 
-                                width: `${previewLogoSize}px`,
-                                background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)'
+                            <img
+                              src="/brand-mark.png"
+                              alt="IAFÉ IMOBI"
+                              style={{
+                                height: `${Math.max(previewLogoSize, 56)}px`,
+                                width: `${Math.max(previewLogoSize, 56)}px`,
                               }}
-                              className="rounded-lg flex items-center justify-center text-white shadow-md"
-                            >
-                              <Building2 className="h-5 w-5" />
-                            </div>
+                              className="rounded-lg object-contain shadow-md"
+                            />
                           )}
                           <div className="flex-1">
                             <div className="space-y-2">
@@ -791,8 +790,8 @@ export function ConfigurationsView() {
                               <Slider
                                 value={[previewLogoSize]}
                                 onValueChange={handleLogoSizeChange}
-                                min={32}
-                                max={80}
+                                min={56}
+                                max={140}
                                 step={4}
                                 className="flex-1"
                                 disabled={updating === 'logo_size'}

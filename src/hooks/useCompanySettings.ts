@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS: Partial<CompanySettings> = {
   company_subtitle_font_size: 12,
   company_subtitle_color: '#9CA3AF',
   company_subtitle_bold: false,
-  logo_size: 40,
+  logo_size: 72,
 };
 
 export function useCompanySettings() {
