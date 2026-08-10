@@ -17,6 +17,7 @@ import {
   buildAgendaKpis,
   filterEventsByStatus,
   getAgentDotClass,
+  isAgendaFilledBlock,
   resolveAgendaEventStatus,
   type AgendaStatusFilter,
   type AgendaViewMode,
@@ -1324,31 +1325,37 @@ export function AgendaView() {
     }
   };
 
+  // Placeholders Reunião/Bloqueado stay out of KPIs, chips and calendar panel.
+  const visibleEvents = useMemo(
+    () => events.filter((e) => !isAgendaFilledBlock(e)),
+    [events],
+  );
+
   const filteredEvents = useMemo(
-    () => filterEventsByStatus(events, statusFilter),
-    [events, statusFilter],
+    () => filterEventsByStatus(visibleEvents, statusFilter),
+    [visibleEvents, statusFilter],
   );
 
   const sortedAgentNames = useMemo(() => {
     const names = new Set<string>();
-    for (const e of events) {
+    for (const e of visibleEvents) {
       if (e.corretor?.trim()) names.add(e.corretor.trim());
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-  }, [events]);
+  }, [visibleEvents]);
 
   const agentChips = useMemo(() => {
     const chips = [
       {
         id: 'Todos',
         label: 'Todos',
-        count: events.length,
+        count: visibleEvents.length,
         dotClass: 'bg-muted-foreground/50',
       },
     ];
     for (const cal of corretores) {
       const name = cal.full_name;
-      const count = events.filter(
+      const count = visibleEvents.filter(
         (e) => e.calendarId === cal.id || e.corretor === name,
       ).length;
       chips.push({
@@ -1359,9 +1366,9 @@ export function AgendaView() {
       });
     }
     return chips;
-  }, [events, corretores, sortedAgentNames]);
+  }, [visibleEvents, corretores, sortedAgentNames]);
 
-  const kpis = useMemo(() => buildAgendaKpis(events), [events]);
+  const kpis = useMemo(() => buildAgendaKpis(visibleEvents), [visibleEvents]);
 
   const handleGoToday = () => {
     const today = new Date();

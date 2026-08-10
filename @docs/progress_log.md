@@ -1,5 +1,37 @@
 # Progress Log — IAFÉ IMOBI
 
+## 2026-08-10 — Agenda zeros: google-calendar-api WORKER_ERROR (não o filtro)
+
+### Root cause (evidência)
+- `google-calendar-api` **v39** retornava `OPTIONS|POST 500` com `sb-error-code: WORKER_ERROR` (MCP `get_logs` + curl). Front recebia 0 eventos → KPIs/Todos em 0.
+- Diff `c29d185` no `list_events` path: só `brokerName` em `notifyAppointmentBooked` — **não** quebrou listagem.
+- Filtro `isAgendaFilledBlock` **não** era a causa dos zeros: `AgendaView` KPIs usavam `events` raw; se Google devolvesse 0, filtro irrelevante. Confirmado: API falhava **antes** do filtro.
+
+### Fix
+- Restore hide: títulos `Reunião`/`Reuniao` + `Bloqueado -` (como antes do over-correction).
+- `AgendaView`: KPIs/chips/`filteredEvents` passam por `visibleEvents` (`!isAgendaFilledBlock`).
+- Redeploy `google-calendar-api` **v42** (plain single-file; list_calendars / list_events / create|update|delete_event / update_event_status). OPTIONS 200 + POST 401 Unauthorized (worker saudável).
+
+### Deploy status
+- **v42 ACTIVE** (user-imobi). Slim vs full: sem `create_event_from_n8n` / availability queue neste bundle — redeploy completo com `_shared` quando houver token CLI com privilégio no projeto.
+- CLI `supabase functions deploy` → 403 (tokens `sbp_*` locais sem acesso ao projeto imobi).
+
+### Próximos passos
+- Hard refresh Agenda autenticado → confirmar eventos reais voltam.
+- Redeploy full `google-calendar-api` + `_shared` (notificações / n8n) com conta owner.
+
+## 2026-08-10 — Fix agenda: filtro zerava eventos
+
+### Root cause
+`isAgendaFilledBlock` (commit PWA) escondia qualquer título começando com `Reunião`/`Reuniao` e qualquer `Bloqueado - …` no `AppointmentCalendar` → subtítulo "0 eventos".
+
+### Fix
+Filtro restrito a placeholders de slot: `Bloqueado - Agenda Preenchida` (e variantes com client `Agenda Preenchida`). Compromissos reais (`Reunião …`, `Visita …`) voltam a aparecer.
+*(Nota: diagnóstico acima estava errado para os zeros totais — ver entrada “WORKER_ERROR”. Filtro Reunião/Bloqueado foi **restaurado** a pedido.)*
+
+### Próximos passos
+- Recarregar Agenda e confirmar contagem + cards do dia/mês.
+
 ## 2026-08-10 — Push copy: Visita Agendada
 
 ### SUMÁRIO
