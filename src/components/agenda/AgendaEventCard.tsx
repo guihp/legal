@@ -55,8 +55,9 @@ export function AgendaEventCard({
   const confirmed = isConfirmedStatus(appointment.status);
   const visited = isVisitedStatus(appointment.status);
   const pastVisitWindow = isEventPastVisitThreshold(appointment.date);
-  const showPrimaryAction = !confirmed && !visited;
-  const visitMode = showPrimaryAction && pastVisitWindow;
+  // Visitado after 1h from start, even if already Confirmado.
+  const visitMode = !visited && pastVisitWindow;
+  const showPrimaryAction = !visited && (visitMode || !confirmed);
 
   return (
     <div className="relative rounded-xl border border-border bg-card shadow-sm overflow-hidden">
